@@ -85,6 +85,13 @@ A **frame** is just a coordinate system — an origin point plus three axes (X, 
 directions. Every body in a robot has one: it tells you "where is this link, and which way is it
 pointing?" relative to something else.
 
+For example, the wrist frame of a robot arm might be represented as:
+- **origin:** `[0.4, 0.0, 0.6]` — where the wrist joint is in the world (in meters)
+- **orientation:** a 3×3 rotation matrix describing which way it's facing
+
+In MuJoCo, `data.xpos[body_id]` gives you the origin and `data.xmat[body_id]` gives you the
+orientation — together they fully describe that body's frame in world space.
+
 Every body in MuJoCo has a position and orientation in **world space** — the fixed global frame
 anchored at the origin. When the arm moves, each link's frame moves with it.
 
