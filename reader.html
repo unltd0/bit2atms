@@ -494,7 +494,7 @@ body {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 14px 8px 10px;
+  padding: 7px 14px 7px 10px;
   cursor: pointer;
   transition: background 0.12s;
   border-left: 2px solid transparent;
@@ -526,15 +526,13 @@ body {
 .ch-item:hover .ch-badge { color: var(--text2); }
 .ch-item.active .ch-badge { background: var(--accent); color: #fff; }
 
-.ch-label { flex: 1; font-size: 12.5px; line-height: 1.3; font-family: var(--font-ui); }
+.ch-label-wrap { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ch-label { font-size: 12.5px; line-height: 1.3; font-family: var(--font-ui); }
 .ch-time {
   font-size: 10px;
   color: var(--text3);
-  flex-shrink: 0;
   font-family: var(--font-ui);
-  background: var(--bg4);
-  padding: 1px 5px;
-  border-radius: 4px;
+  width: fit-content;
 }
 .ch-item.active .ch-time { color: var(--text2); }
 
@@ -834,6 +832,8 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
   letter-spacing: -4px;
 }
 .ch-hero h1 { margin: 0 0 12px; }
+.ch-hero-intro { margin: 0 0 12px; color: var(--text2); font-size: 15px; }
+.ch-hero-meta { margin: 0; line-height: 1.8; font-size: 13px; color: var(--text2); }
 .ch-meta-row {
   display: flex;
   gap: 10px;
@@ -1409,9 +1409,10 @@ function extractMeta(markdown) {
   // Strip "Chapter N — " prefix so sidebar shows just the short title
   const title = rawTitle ? rawTitle.replace(/^Chapter\s+\d+\s+[—–-]+\s+/, '') : null;
 
-  // Extract time from **Time:** X line
+  // Extract time from **Time:** X — use only the first clause (before period or comma)
   const timeMatch = markdown.match(/\*\*Time:\*\*\s*([^\n]+)/);
-  const time = timeMatch ? timeMatch[1].trim() : null;
+  const rawTime = timeMatch ? timeMatch[1].trim() : null;
+  const time = rawTime ? rawTime.split(/[.,]/)[0].trim() : null;
 
   return { title, time };
 }
@@ -1615,15 +1616,17 @@ function renderSidebar(){
     label.className='ch-label';
     label.textContent=ch.title;
 
-    el.appendChild(badge);
-    el.appendChild(label);
-
+    const wrap=document.createElement('div');
+    wrap.className='ch-label-wrap';
+    wrap.appendChild(label);
     if(ch.time){
       const t=document.createElement('div');
       t.className='ch-time';
       t.textContent=ch.time;
-      el.appendChild(t);
+      wrap.appendChild(t);
     }
+    el.appendChild(badge);
+    el.appendChild(wrap);
     el.addEventListener('click',()=>nav(ch.id));
     list.appendChild(el);
   });
@@ -1778,11 +1781,13 @@ function wrapHero(el, ch){
     const sib=next;
     next=sib.nextSibling;
     if(sib.tagName==='P'&&sib.innerHTML.includes('<strong>')){
+      sib.classList.add('ch-hero-meta');
       hero.appendChild(sib);
     } else if(sib.tagName==='HR'||sib.tagName==='H2'||sib.tagName==='H3'){
       break;
     } else if(sib.tagName==='P'){
-      break;
+      sib.classList.add('ch-hero-intro');
+      hero.appendChild(sib);
     }
   }
 }
