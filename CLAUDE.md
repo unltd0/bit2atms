@@ -2,6 +2,12 @@
 
 Open-source, follow-along courses on Physical AI: robot manipulation, sim-to-real transfer, Vision-Language-Action models, and more.
 
+## Ground rules
+
+- **Never `git commit` or `git push` without explicit user permission.** Make all file changes, then stop and ask before committing or pushing.
+
+---
+
 ## Quick links
 
 - **Live site**: https://unltd0.github.io/bit2atms/reader.html
