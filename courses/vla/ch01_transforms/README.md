@@ -86,11 +86,27 @@ directions. Every body in a robot has one: it tells you "where is this link, and
 pointing?" relative to something else.
 
 For example, the wrist frame of a robot arm might be represented as:
-- **origin:** `[0.4, 0.0, 0.6]` — where the wrist joint is in the world (in meters)
-- **orientation:** a 3×3 rotation matrix describing which way it's facing
 
-In MuJoCo, `data.xpos[body_id]` gives you the origin and `data.xmat[body_id]` gives you the
-orientation — together they fully describe that body's frame in world space.
+**Origin** — where the wrist joint sits in the world, in meters:
+```
+[0.4, 0.0, 0.6]
+ ^^^  ^^^  ^^^
+  x    y    z
+0.4m right of robot base, centered front-to-back, 0.6m up
+```
+
+**Orientation** — three unit vectors describing which way the frame's axes point in world space:
+```
+[[1, 0, 0],   ← wrist's X axis points in world +X (right)
+ [0, 0, 1],   ← wrist's Y axis points in world +Z (up)
+ [0,-1, 0]]   ← wrist's Z axis points in world -Y (forward)
+```
+Each row is one axis of the frame expressed in world coordinates. When the wrist rotates,
+these numbers change — the origin may stay the same but the axes reorient.
+
+In MuJoCo, `data.xpos[body_id]` gives you the origin and `data.xmat[body_id]` gives you this
+matrix (stored as 9 flat numbers, reshape to 3×3). Together they fully describe where that
+body is and which way it's facing.
 
 Every body in MuJoCo has a position and orientation in **world space** — the fixed global frame
 anchored at the origin. When the arm moves, each link's frame moves with it.
