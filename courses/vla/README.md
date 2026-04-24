@@ -27,9 +27,6 @@ which python                       # should point inside bit2atms-env/
 
 # Base packages used from Chapter 1 onward
 pip install mujoco numpy matplotlib scipy
-
-# Robot models (used from Chapter 1 onward)
-git clone https://github.com/google-deepmind/mujoco_menagerie ~/mujoco_menagerie
 ```
 
 Keep the env active whenever you work through this curriculum. Additional packages are
