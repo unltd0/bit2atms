@@ -23,18 +23,6 @@ you need — but grounded in a running simulation, not abstract math.
 
 ---
 
-## Install
-
-```bash
-pip install mujoco numpy matplotlib
-```
-
-Verify:
-```python
-import mujoco
-print(mujoco.__version__)  # should be 3.x
-```
-
 ---
 
 ## Part 1 — The MuJoCo Mental Model
@@ -211,11 +199,6 @@ The two projects below build up to solving this using a real robot model.
 **What you're building:** Load the Franka Panda from MuJoCo Menagerie, open the interactive
 viewer, move joints to different configurations, and read the resulting body poses. This is
 the workflow you'll use in every subsequent chapter.
-
-First, clone MuJoCo Menagerie:
-```bash
-git clone https://github.com/google-deepmind/mujoco_menagerie.git ~/mujoco_menagerie
-```
 
 Create `learning/ch01_mujoco/read_robot_state.py`:
 

@@ -15,7 +15,7 @@
 Do this once before starting Chapter 1.
 
 ```bash
-# Create a virtual environment
+# Create a virtual environment (Python 3.10–3.12 recommended)
 python3 -m venv bit2atms-env
 
 # Activate it
@@ -24,10 +24,16 @@ source bit2atms-env/bin/activate   # macOS / Linux
 
 # Verify you're in the env
 which python                       # should point inside bit2atms-env/
+
+# Base packages used from Chapter 1 onward
+pip install mujoco numpy matplotlib scipy
+
+# Robot models (used from Chapter 1 onward)
+git clone https://github.com/google-deepmind/mujoco_menagerie ~/mujoco_menagerie
 ```
 
-Keep the env active whenever you work through this curriculum. All `pip install` commands
-in each chapter install into it. To deactivate: `deactivate`.
+Keep the env active whenever you work through this curriculum. Additional packages are
+installed per chapter as needed. To deactivate: `deactivate`.
 
 ---
 
