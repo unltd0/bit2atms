@@ -77,10 +77,7 @@ Robots are described in XML called MJCF. The key structure:
 
 ---
 
-## Part 2 — Coordinate Frames and Transforms (What You Need)
-
-You don't need to derive rotation matrices from scratch. You need to know what MuJoCo
-gives you and how to use it.
+## Part 2 — Coordinate Frames and Transforms
 
 ### Everything is relative to a frame
 
