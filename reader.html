@@ -2089,8 +2089,8 @@ const SIZES = ['Tiny','Small','Medium','Large','XL'];
 let sizeIdx = LS.get('vla_size', 2); // 0–4, default Medium
 
 function applyAppearance(){
-  const theme = LS.get('vla_theme','dusk');
-  const font  = LS.get('vla_font','serif');
+  const theme = LS.get('vla_theme','paper');
+  const font  = LS.get('vla_font','sans');
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.font  = font;
 
