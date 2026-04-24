@@ -81,32 +81,33 @@ Robots are described in XML called MJCF. The key structure:
 
 ### Coordinate frames
 
-A **frame** is just a coordinate system — an origin point plus three axes (X, Y, Z) that define
-directions. Every body in a robot has one: it tells you "where is this link, and which way is it
-pointing?" relative to something else.
+A **frame** is a coordinate system attached to a body — an origin point plus three axes (X, Y, Z).
+Every link in a robot has one. It answers two questions: *where is this body?* and *which way is it facing?*
 
-For example, the wrist frame of a robot arm might be represented as:
+A frame has two parts:
 
-**Origin** — where the wrist joint sits in the world, in meters:
-```
+**Origin** — the position of the body in 3D space, as `[x, y, z]` in meters.
+
+```text Origin e.g.
 [0.4, 0.0, 0.6]
- ^^^  ^^^  ^^^
   x    y    z
-0.4m right of robot base, centered front-to-back, 0.6m up
 ```
+This wrist joint is 0.4 m to the right of the robot base, centered front-to-back, 0.6 m off the ground.
 
-**Orientation** — three unit vectors describing which way the frame's axes point in world space:
+**Orientation** — three unit vectors (rows) that say which way each of the body's local axes points
+in world space. Stored as a 3×3 matrix.
+
+```text Orientation e.g.
+[[1, 0, 0],   ← body's X axis points in world +X (right)
+ [0, 0, 1],   ← body's Y axis points in world +Z (up)
+ [0,-1, 0]]   ← body's Z axis points in world -Y (forward)
 ```
-[[1, 0, 0],   ← wrist's X axis points in world +X (right)
- [0, 0, 1],   ← wrist's Y axis points in world +Z (up)
- [0,-1, 0]]   ← wrist's Z axis points in world -Y (forward)
-```
-Each row is one axis of the frame expressed in world coordinates. When the wrist rotates,
-these numbers change — the origin may stay the same but the axes reorient.
+When the wrist rotates, the origin may stay fixed but these rows change — they always describe
+where the body's axes are pointing right now.
 
 In MuJoCo, `data.xpos[body_id]` gives you the origin and `data.xmat[body_id]` gives you this
-matrix (stored as 9 flat numbers, reshape to 3×3). Together they fully describe where that
-body is and which way it's facing.
+matrix (stored as 9 flat numbers — reshape to 3×3 to read it). Together they fully describe
+where a body is and which way it's facing.
 
 Every body in MuJoCo has a position and orientation in **world space** — the fixed global frame
 anchored at the origin. When the arm moves, each link's frame moves with it.
