@@ -1402,12 +1402,47 @@ function resolveFileUrl(filePath) {
   return `https://raw.githubusercontent.com/${githubRepo}/${githubBranch}/${filePath}`;
 }
 
+function extractMeta(markdown) {
+  // Extract title from first # heading: "# Chapter 1 — Title" → "Title" or full heading
+  const titleMatch = markdown.match(/^#\s+(.+)/m);
+  const rawTitle = titleMatch ? titleMatch[1].trim() : null;
+  // Strip "Chapter N — " prefix so sidebar shows just the short title
+  const title = rawTitle ? rawTitle.replace(/^Chapter\s+\d+\s+[—–-]+\s+/, '') : null;
+
+  // Extract time from **Time:** X line
+  const timeMatch = markdown.match(/\*\*Time:\*\*\s*([^\n]+)/);
+  const time = timeMatch ? timeMatch[1].trim() : null;
+
+  return { title, time };
+}
+
 async function boot() {
   CONFIG = await fetch('config.json').then(r => r.json());
   document.title = CONFIG.repoTitle || document.title;
-  CHAPTERS = CONFIG.courses.flatMap(course =>
+
+  const rawChapters = CONFIG.courses.flatMap(course =>
     course.chapters.map(ch => ({ ...ch, courseId: course.id, courseTitle: course.title }))
   );
+
+  // Fetch all chapter files in parallel to extract title + time from Markdown
+  CHAPTERS = await Promise.all(rawChapters.map(async ch => {
+    // Only fetch if title or time is missing from config
+    if (!ch.title || !ch.time) {
+      try {
+        const text = await fetch(resolveFileUrl(ch.file)).then(r => r.ok ? r.text() : '');
+        const meta = extractMeta(text);
+        return {
+          ...ch,
+          title: ch.title || meta.title || ch.id,
+          time:  ch.time  || meta.time  || null,
+        };
+      } catch {
+        return { ...ch, title: ch.title || ch.id };
+      }
+    }
+    return ch;
+  }));
+
   const defaultChapter = CHAPTERS[0]?.id || 'overview';
   state.cur = LS.get('vla_cur', defaultChapter);
   await init();

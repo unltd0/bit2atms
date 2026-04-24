@@ -73,15 +73,10 @@ bit2atms/
 ### config.json chapter entry shape
 
 ```json
-{
-  "id": "ch01",
-  "num": "01",
-  "title": "Chapter Title",
-  "file": "courses/<id>/ch01_topic/README.md",
-  "time": "2–3d",
-  "color": "accent"
-}
+{ "id": "ch01", "num": "01", "file": "courses/<id>/ch01_topic/README.md", "color": "accent" }
 ```
+
+`title` and `time` are read automatically from each chapter's `README.md` — no need to duplicate them here.
 
 Color options: `accent` `accentg` `accentp` `accento` `accenty` `accentr`
 

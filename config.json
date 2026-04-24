@@ -8,17 +8,17 @@
       "title": "Vision-Language-Action (VLA)",
       "description": "10-chapter curriculum from transforms to physical hardware.",
       "chapters": [
-        { "id": "readme",   "num": "○", "title": "Curriculum Guide",      "file": "courses/vla/README.md",                   "time": null,   "color": "accent"  },
-        { "id": "ch01",     "num": "01", "title": "MuJoCo Fundamentals",  "file": "courses/vla/ch01_transforms/README.md",   "time": "1–2d", "color": "accentg" },
-        { "id": "ch02",     "num": "02", "title": "Control & Gymnasium",  "file": "courses/vla/ch02_mujoco/README.md",        "time": "2–3d", "color": "accent"  },
-        { "id": "ch03",     "num": "03", "title": "Kinematics & Motion",  "file": "courses/vla/ch03_kinematics/README.md",   "time": "3–4d", "color": "accentp" },
-        { "id": "ch04",     "num": "04", "title": "Reinforcement Learning","file": "courses/vla/ch04_rl/README.md",           "time": "4–5d", "color": "accento" },
-        { "id": "ch05",     "num": "05", "title": "Imitation Learning",   "file": "courses/vla/ch05_imitation/README.md",    "time": "5–7d", "color": "accent"  },
-        { "id": "ch06",     "num": "06", "title": "VLA Models",           "file": "courses/vla/ch06_vla/README.md",          "time": "4–5d", "color": "accentp" },
-        { "id": "ch07",     "num": "07", "title": "Sim-to-Real",          "file": "courses/vla/ch07_sim_to_real/README.md",  "time": "4–5d", "color": "accentg" },
-        { "id": "ch08",     "num": "08", "title": "ROS 2 Integration",    "file": "courses/vla/ch08_ros2/README.md",         "time": "3–4d", "color": "accento" },
-        { "id": "ch09",     "num": "09", "title": "Physical Hardware",    "file": "courses/vla/ch09_hardware/README.md",     "time": "1–2w", "color": "accenty" },
-        { "id": "ch10",     "num": "10", "title": "Capstone Projects",    "file": "courses/vla/ch10_capstone/README.md",     "time": "2–4w", "color": "accentr" }
+        { "id": "readme",   "num": "○", "file": "courses/vla/README.md",                   "color": "accent"  },
+        { "id": "ch01",     "num": "01", "file": "courses/vla/ch01_transforms/README.md",   "color": "accentg" },
+        { "id": "ch02",     "num": "02", "file": "courses/vla/ch02_mujoco/README.md",        "color": "accent"  },
+        { "id": "ch03",     "num": "03", "file": "courses/vla/ch03_kinematics/README.md",   "color": "accentp" },
+        { "id": "ch04",     "num": "04", "file": "courses/vla/ch04_rl/README.md",           "color": "accento" },
+        { "id": "ch05",     "num": "05", "file": "courses/vla/ch05_imitation/README.md",    "color": "accent"  },
+        { "id": "ch06",     "num": "06", "file": "courses/vla/ch06_vla/README.md",          "color": "accentp" },
+        { "id": "ch07",     "num": "07", "file": "courses/vla/ch07_sim_to_real/README.md",  "color": "accentg" },
+        { "id": "ch08",     "num": "08", "file": "courses/vla/ch08_ros2/README.md",         "color": "accento" },
+        { "id": "ch09",     "num": "09", "file": "courses/vla/ch09_hardware/README.md",     "color": "accenty" },
+        { "id": "ch10",     "num": "10", "file": "courses/vla/ch10_capstone/README.md",     "color": "accentr" }
       ]
     }
   ]

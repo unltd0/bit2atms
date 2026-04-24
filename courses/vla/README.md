@@ -33,18 +33,18 @@ in each chapter install into it. To deactivate: `deactivate`.
 
 ## Curriculum Map
 
-| # | Chapter | Hardware | Time |
-|---|---------|----------|------|
-| 1 | MuJoCo Fundamentals | Laptop only | 1–2 days |
-| 2 | Control & Gymnasium | Laptop only | 2–3 days |
-| 3 | Kinematics & Motion Planning | Laptop only | 3–4 days |
-| 4 | Reinforcement Learning (Applied) | GPU helpful | 4–5 days |
-| 5 | Imitation Learning (ACT + Diffusion) | GPU needed | 5–7 days |
-| 6 | Vision-Language-Action Models | 16 GB GPU | 4–5 days |
-| 7 | Sim-to-Real Transfer | GPU helpful | 4–5 days |
-| 8 | ROS 2 & System Integration | Docker/Linux | 3–4 days |
-| 9 | Physical Hardware (SO-101) | ~$250 arm + camera | 1–2 weeks |
-| 10 | Capstone Projects | Varies | 2–4 weeks |
+| # | Chapter |
+|---|---------|
+| 1 | [MuJoCo Fundamentals](ch01_transforms/README.md) |
+| 2 | [Control & Gymnasium](ch02_mujoco/README.md) |
+| 3 | [Kinematics & Motion Planning](ch03_kinematics/README.md) |
+| 4 | [Reinforcement Learning (Applied)](ch04_rl/README.md) |
+| 5 | [Imitation Learning (ACT + Diffusion)](ch05_imitation/README.md) |
+| 6 | [Vision-Language-Action Models](ch06_vla/README.md) |
+| 7 | [Sim-to-Real Transfer](ch07_sim_to_real/README.md) |
+| 8 | [ROS 2 & System Integration](ch08_ros2/README.md) |
+| 9 | [Physical Hardware (SO-101)](ch09_hardware/README.md) |
+| 10 | [Capstone Projects](ch10_capstone/README.md) |
 
 ---
 
