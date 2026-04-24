@@ -27,6 +27,7 @@ env/
 *.db3
 logs/
 runs/
+.playwright-mcp/
 
 # Workspace: your personal exercise files are tracked by default.
 # If you want to keep your work private, uncomment the line below:
