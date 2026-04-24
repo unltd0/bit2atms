@@ -1,150 +1,35 @@
-# Chapter 2 — Simulation with MuJoCo
+# Chapter 2 — Control & Gymnasium
 
-**Time:** 3–5 days
-**Hardware:** Any laptop, no GPU needed
-**Prerequisites:** Chapter 1 (transforms), Python classes, basic physics intuition
+**Time:** 2–3 days
+**Hardware:** Any laptop, no GPU
+**Prerequisites:** Chapter 1 (MuJoCo basics — model/data, viewer, reading body poses)
 
 ---
 
 ## Why This Chapter Exists
 
-All the learning algorithms in this curriculum — RL, imitation learning, sim-to-real — need a simulator to train in. MuJoCo is that simulator. But the gap most people hit isn't understanding physics — it's not knowing how to get a robot model into the sim, how to read joint states, how to apply control, or how to make the sim compatible with standard training libraries.
+You can load a robot and read its state. Now you need to make it move — and do it in a way
+that every training library can talk to.
 
-This chapter fills that operational gap. By the end you'll have a working Gymnasium environment wrapping a real robot model — the exact interface that Stable Baselines 3, LeRobot, and every other library expects. Everything from Chapter 3 onward builds directly on this.
+This chapter covers two things. First: how to actually control a robot in MuJoCo, which
+means understanding actuator types and writing a PD controller. Second: how to wrap a
+simulation into a Gymnasium environment — the standard interface that Stable Baselines 3,
+LeRobot, and every other RL/IL library expects. Everything from Chapter 4 onward builds
+directly on this.
 
----
+### If you can answer these, you can skip this chapter
 
-## Part 1 — What MuJoCo Is and How It Works
-
-### The Core Loop
-
-MuJoCo runs a physics simulation in discrete timesteps. At each step:
-1. Read control inputs (joint torques or positions you set)
-2. Compute forces from contacts, joints, actuators
-3. Integrate dynamics forward in time (default timestep: 2ms)
-4. Update positions and velocities of all bodies
-
-You interact with MuJoCo through two objects:
-- **`mjModel`** — the static model (geometry, masses, joint limits). Doesn't change during simulation.
-- **`mjData`** — the dynamic state (positions, velocities, forces). Changes every step.
-
-### The MJCF Format
-
-MuJoCo describes robots in XML called MJCF (MuJoCo Modeling Format). The key elements:
-
-```xml
-<mujoco>
-  <worldbody>
-    <body name="link1" pos="0 0 0">
-      <joint name="joint1" type="hinge" axis="0 0 1"/>
-      <geom type="capsule" size="0.05 0.2"/>
-      <body name="link2" pos="0 0 0.4">
-        <joint name="joint2" type="hinge" axis="0 1 0"/>
-        <geom type="capsule" size="0.04 0.15"/>
-      </body>
-    </body>
-  </worldbody>
-  <actuator>
-    <motor name="act1" joint="joint1" gear="100"/>
-  </actuator>
-</mujoco>
-```
-
-Key concepts:
-- **`body`** — a rigid link. Nested bodies are connected by joints.
-- **`joint`** — defines how a body can move relative to its parent (hinge=revolute, slide=prismatic, free=6-DOF)
-- **`geom`** — the collision/visual shape attached to a body
-- **`actuator`** — what generates forces (motor, position servo, etc.)
-
-### Install
-
-```bash
-pip install mujoco gymnasium gymnasium-robotics
-```
-
-Verify:
-```python
-import mujoco
-print(mujoco.__version__)  # should be 3.x
-```
+1. What is the difference between a `motor` actuator and a `position` actuator in MuJoCo?
+2. Your PD controller oscillates but eventually settles. Which gain do you increase?
+3. What does `env.step(action)` return, and what does each element mean?
 
 ---
 
-## Part 2 — Key MuJoCo API Concepts
+## Part 1 — Actuator Types
 
-### Loading and Stepping
+MuJoCo gives you three actuator types. The choice affects how you write your controller.
 
-```python
-import mujoco
-import mujoco.viewer
-
-# Load from XML string
-xml = """
-<mujoco>
-  <worldbody>
-    <geom type="plane" size="1 1 0.1"/>
-    <body name="box" pos="0 0 0.5">
-      <freejoint/>
-      <geom type="box" size="0.1 0.1 0.1" mass="1"/>
-    </body>
-  </worldbody>
-</mujoco>
-"""
-model = mujoco.MjModel.from_xml_string(xml)
-data = mujoco.MjData(model)
-
-# Run 1 second of simulation
-for _ in range(int(1.0 / model.opt.timestep)):
-    mujoco.mj_step(model, data)
-
-print(f"Box final height: {data.qpos[2]:.4f}")
-```
-
-### Reading State
-
-```python
-# Joint positions and velocities (for non-free joints)
-qpos = data.qpos   # shape: (nq,)  — all generalized positions
-qvel = data.qvel   # shape: (nv,)  — all generalized velocities
-
-# Body positions in world frame
-body_id = model.body('box').id
-pos = data.xpos[body_id]   # [x, y, z]
-rot = data.xmat[body_id]   # 3x3 rotation matrix (flattened to 9)
-
-# End-effector site position (if you define a site in MJCF)
-site_id = model.site('ee').id
-ee_pos = data.site_xpos[site_id]
-```
-
-### Setting Control
-
-```python
-# For motor actuators: set torque
-data.ctrl[0] = 10.0   # actuator 0 gets 10 Nm
-
-# For position servo actuators (gear + kp defined in MJCF):
-data.ctrl[0] = target_angle   # target joint position
-```
-
-### Contacts
-
-```python
-# After mj_step, contact forces are in data.contact
-for i in range(data.ncon):
-    contact = data.contact[i]
-    force = np.zeros(6)
-    mujoco.mj_contactForce(model, data, i, force)
-    print(f"Contact {i}: force={force[:3]}")
-```
-
----
-
-## Part 3 — Actuator Types
-
-Understanding the difference is important — it changes how you write controllers.
-
-**`motor`** — applies raw torque. You control force directly.
+**`motor`** — applies raw torque. You are responsible for stabilizing the joint.
 ```xml
 <actuator>
   <motor joint="joint1" gear="1"/>
@@ -154,7 +39,7 @@ Understanding the difference is important — it changes how you write controlle
 data.ctrl[0] = 5.0  # 5 Nm torque
 ```
 
-**`position`** — built-in PD servo. You set a target angle, the actuator drives there.
+**`position`** — built-in PD servo. Set a target angle; the actuator drives there.
 ```xml
 <actuator>
   <position joint="joint1" kp="100" kv="10"/>
@@ -164,194 +49,92 @@ data.ctrl[0] = 5.0  # 5 Nm torque
 data.ctrl[0] = 1.57  # target angle in radians
 ```
 
-**`velocity`** — set target joint velocity.
+**`velocity`** — set a target joint velocity.
 
-For learning, position actuators are easiest to start with. For real robot control research, torque (motor) actuators give you more physical accuracy.
+For learning, `position` actuators are the easiest starting point — you command where to go
+and the sim handles stability. For research that needs physical accuracy (force control,
+compliance, contact-rich manipulation), `motor` actuators give you more control but require
+your own stabilizing controller.
 
 ---
 
-## Part 4 — The PD Controller
+## Part 2 — The PD Controller
 
-When using `motor` actuators you implement your own controller. The standard is a PD (Proportional-Derivative) controller:
+When using `motor` actuators you implement the controller yourself. The standard is PD:
 
 ```
-torque = kp * (target_angle - current_angle) - kd * current_velocity
+torque = kp × (target_angle − current_angle) − kd × current_velocity
 ```
 
-- `kp` (proportional gain): how hard to push toward the target. Too low → slow. Too high → oscillation.
-- `kd` (derivative gain): damping. Prevents overshoot by resisting velocity.
+- **kp** (proportional): how hard to push toward the target. Too low → slow. Too high → oscillates.
+- **kd** (derivative): damping. Resists velocity, prevents overshoot.
 
-Good starting values for a robot arm joint:
-- `kp = 100` (in simulation units; depends on link mass and length)
-- `kd = 10`
+Good starting values for a robot arm joint: `kp = 100`, `kd = 10`.
+For a heavier arm like the Franka Panda: `kp = 400`, `kd = 40`.
+
+Tuning intuition:
+- Oscillates and doesn't settle → increase `kd`
+- Settles too slowly → increase `kp` (then re-tune `kd` if it starts oscillating)
+- Steady-state error remains → add integral term (rarely needed in sim)
+
+---
+
+## Part 3 — Gymnasium Environments
+
+Gymnasium is the standard interface all RL and IL libraries use. Every environment has:
+
+```python
+obs, info        = env.reset()
+obs, rew, term, trunc, info = env.step(action)
+```
+
+- **`obs`** — what the agent observes (joint angles, EE position, etc.)
+- **`rew`** — scalar reward for this step
+- **`term`** — True if the episode ended naturally (task succeeded or catastrophic failure)
+- **`trunc`** — True if the episode hit the time limit
+- **`action`** — what the agent sends (joint torques, target angles, etc.)
+
+Your MuJoCo environment wraps the physics loop inside `step()` and defines the observation
+and action spaces. This is the contract libraries like Stable Baselines 3 depend on.
 
 ---
 
 ## External Resources
 
-1. **MuJoCo Documentation — Programming Guide**
-   The primary reference. Read "Getting Started" and "Simulation" sections.
-   → https://mujoco.readthedocs.io/en/stable/programming/index.html
-
-2. **MuJoCo MJCF XML Reference**
-   Every XML element and attribute. Bookmark this — you'll use it constantly.
-   → https://mujoco.readthedocs.io/en/stable/XMLreference.html
-
-3. **MuJoCo Tutorial Notebooks (Colab)**
-   Interactive notebooks from DeepMind covering key features.
-   → Search "MuJoCo tutorial colab deepmind" — the official tutorial set
-
-4. **Gymnasium Documentation**
-   The interface all RL and IL libraries expect. Read "Basic Usage" and "Creating Environments".
+1. **Gymnasium Documentation — Creating Environments**
+   Read "Basic Usage" and "Creating Custom Environments".
    → https://gymnasium.farama.org/
 
-5. **MuJoCo Model Zoo (GitHub)**
-   Pre-built MJCF models of real robots (Franka Panda, UR5, IIWA, etc.)
-   → https://github.com/google-deepmind/mujoco_menagerie
+2. **MuJoCo XML Reference — actuator section**
+   Every actuator parameter explained. Bookmark it.
+   → https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator
+
+3. **Stable Baselines 3 — Getting Started**
+   The RL library you'll use in Chapter 4. Shows how it consumes a Gym environment.
+   → https://stable-baselines3.readthedocs.io/en/master/guide/quickstart.html
 
 ---
 
-## Project 2A — Build a Physics Scene
+## Project 2A — PD Controller: Tune the Gains
 
-Create `learning/ch02_mujoco/01_basic_scene.py`:
+**What you're building:** A single-joint pendulum with a `motor` actuator and your own PD
+controller. You'll plot joint angle vs. time for four gain combinations to build intuition
+for what kp/kd actually do.
+
+This matters because in Chapter 3, IK hands you target joint angles — and a PD controller
+is what executes them on the robot.
+
+Create `learning/ch02_control/pd_gains.py`:
 
 ```python
-import mujoco
-import mujoco.viewer
-import numpy as np
-import time
-
-XML = """
-<mujoco model="basic_scene">
-  <option timestep="0.002" gravity="0 0 -9.81"/>
-
-  <visual>
-    <headlight ambient="0.3 0.3 0.3"/>
-  </visual>
-
-  <worldbody>
-    <!-- Ground plane -->
-    <geom name="floor" type="plane" size="2 2 0.1" rgba="0.8 0.8 0.8 1"/>
-
-    <!-- A falling box -->
-    <body name="box1" pos="0 0 1.0">
-      <freejoint name="box1_joint"/>
-      <geom type="box" size="0.1 0.1 0.1" mass="1" rgba="0.2 0.5 0.8 1"/>
-    </body>
-
-    <!-- A falling sphere, offset -->
-    <body name="sphere1" pos="0.3 0 1.5">
-      <freejoint name="sphere1_joint"/>
-      <geom type="sphere" size="0.08" mass="0.5" rgba="0.8 0.3 0.2 1"/>
-    </body>
-  </worldbody>
-</mujoco>
 """
-
-def run_scene():
-    model = mujoco.MjModel.from_xml_string(XML)
-    data = mujoco.MjData(model)
-
-    print(f"Timestep: {model.opt.timestep}s")
-    print(f"Bodies: {model.nbody}")
-    print(f"Geoms: {model.ngeom}")
-
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-        start = time.time()
-        while viewer.is_running() and time.time() - start < 10.0:
-            mujoco.mj_step(model, data)
-
-            # Print contact info every 200 steps
-            if data.time % 0.4 < model.opt.timestep:
-                if data.ncon > 0:
-                    print(f"t={data.time:.2f}s  contacts={data.ncon}")
-                    for i in range(data.ncon):
-                        force = np.zeros(6)
-                        mujoco.mj_contactForce(model, data, i, force)
-                        print(f"  contact {i}: normal_force={np.linalg.norm(force[:3]):.2f}N")
-
-            viewer.sync()
-
-if __name__ == "__main__":
-    run_scene()
-```
-
-**What to observe:** Objects fall, bounce, and generate contact forces. The contact normal force spikes on impact and settles to the object's weight.
-
----
-
-## Project 2B — Load and Control a Robot Arm
-
-First, download the Franka Panda model from MuJoCo Menagerie:
-```bash
-git clone https://github.com/google-deepmind/mujoco_menagerie.git
-```
-
-Create `learning/ch02_mujoco/02_robot_arm.py`:
-
-```python
-import mujoco
-import mujoco.viewer
+Visualize how PD gain choices affect joint control on a simple pendulum.
+Run this before tuning gains on any real robot or more complex sim.
+"""
 import numpy as np
-import time
-import os
-
-# Path to Franka model — adjust to your menagerie location
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
-
-def run_arm():
-    model = mujoco.MjModel.from_xml_path(FRANKA_XML)
-    data = mujoco.MjData(model)
-
-    print(f"Robot: {model.nbody} bodies, {model.njnt} joints, {model.nu} actuators")
-    print("Joint names:")
-    for i in range(model.njnt):
-        print(f"  [{i}] {model.joint(i).name}  range: {model.jnt_range[i]}")
-
-    # Target: hold a neutral pose
-    neutral_pose = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785])
-
-    # PD gains
-    kp = np.array([400, 400, 400, 400, 250, 150, 50])
-    kd = np.array([40,  40,  40,  40,  25,  15,  5 ])
-
-    mujoco.mj_resetDataKeyframe(model, data, 0)  # use default keyframe if exists
-
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-        start = time.time()
-        while viewer.is_running() and time.time() - start < 15.0:
-            # PD controller
-            q = data.qpos[:7]
-            dq = data.qvel[:7]
-            torques = kp * (neutral_pose - q) - kd * dq
-            data.ctrl[:7] = np.clip(torques, -87, 87)  # Franka torque limits
-
-            mujoco.mj_step(model, data)
-            viewer.sync()
-
-            if data.time % 1.0 < model.opt.timestep:
-                ee_site = model.site('attachment_site').id if 'attachment_site' in [
-                    model.site(i).name for i in range(model.nsite)] else None
-                if ee_site is not None:
-                    ee_pos = data.site_xpos[ee_site]
-                    print(f"t={data.time:.1f}s  EE pos: {ee_pos}")
-
-if __name__ == "__main__":
-    run_arm()
-```
-
----
-
-## Project 2C — PD Controller Deep Dive
-
-Create `learning/ch02_mujoco/03_pd_controller.py` to study how PD gains affect behavior:
-
-```python
 import mujoco
-import numpy as np
 import matplotlib.pyplot as plt
 
-# Simple 1-DOF pendulum to study PD behavior
 PENDULUM_XML = """
 <mujoco model="pendulum">
   <option timestep="0.002"/>
@@ -370,63 +153,131 @@ PENDULUM_XML = """
 </mujoco>
 """
 
-def simulate_pd(kp, kd, target_angle=1.0, duration=5.0):
+def simulate_pd(kp: float, kd: float, target: float = 1.0, duration: float = 5.0):
     model = mujoco.MjModel.from_xml_string(PENDULUM_XML)
-    data = mujoco.MjData(model)
-
-    times, angles, targets = [], [], []
-
-    steps = int(duration / model.opt.timestep)
-    for _ in range(steps):
-        q = data.qpos[0]
-        dq = data.qvel[0]
-        torque = kp * (target_angle - q) - kd * dq
+    data  = mujoco.MjData(model)
+    times, angles = [], []
+    for _ in range(int(duration / model.opt.timestep)):
+        torque = kp * (target - data.qpos[0]) - kd * data.qvel[0]
         data.ctrl[0] = np.clip(torque, -20, 20)
         mujoco.mj_step(model, data)
         times.append(data.time)
-        angles.append(q)
-        targets.append(target_angle)
-
+        angles.append(data.qpos[0])
     return np.array(times), np.array(angles)
 
-def compare_gains():
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+if __name__ == "__main__":
     configs = [
-        (10,  0.1,  "Low kp, low kd — slow, underdamped"),
-        (10,  5.0,  "Low kp, high kd — slow, overdamped"),
-        (200, 1.0,  "High kp, low kd — fast, oscillates"),
-        (200, 30.0, "High kp, high kd — fast, well-damped (good)"),
+        (10,  0.5,  "Low kp, low kd — slow, underdamped"),
+        (10,  8.0,  "Low kp, high kd — slow, overdamped"),
+        (200, 1.0,  "High kp, low kd — fast but oscillates"),
+        (200, 30.0, "High kp, high kd — fast and settled (good)"),
     ]
 
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     for ax, (kp, kd, title) in zip(axes.flatten(), configs):
         t, q = simulate_pd(kp, kd)
-        ax.plot(t, q, label=f'angle', color='steelblue')
+        ax.plot(t, q, color='steelblue', linewidth=2)
         ax.axhline(1.0, color='red', linestyle='--', label='target')
-        ax.set_title(f'{title}\nkp={kp}, kd={kd}')
-        ax.set_xlabel('Time (s)')
-        ax.set_ylabel('Joint angle (rad)')
+        ax.set_title(f"{title}\nkp={kp}, kd={kd}")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Joint angle (rad)")
         ax.legend()
         ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.suptitle('PD Gain Effects on Joint Control', y=1.02, fontsize=14)
-    plt.savefig('pd_gains.png', dpi=150, bbox_inches='tight')
+    plt.savefig("pd_gains.png", dpi=150, bbox_inches="tight")
     plt.show()
     print("Saved pd_gains.png")
-
-if __name__ == "__main__":
-    compare_gains()
+    print("\nTakeaway: high kp + high kd = fast settling without oscillation.")
+    print("The bottom-right plot is your target behavior.")
 ```
 
-**What to observe:** High kp + low kd causes oscillation. High kd overdamps (too slow). The well-tuned bottom-right case reaches target quickly without oscillating.
+Run it:
+```bash
+cd learning/ch02_control
+python pd_gains.py
+```
 
 ---
 
-## Project 2D — Build a Gymnasium Environment
+## Project 2B — Control a Real Robot Arm
 
-Create `learning/ch02_mujoco/04_gym_env.py`:
+**What you're building:** Load the Franka Panda, hold a target pose with a PD controller,
+and watch the arm stabilize in the viewer. This is the same controller pattern used in
+Chapter 3 to execute IK solutions.
+
+```bash
+git clone https://github.com/google-deepmind/mujoco_menagerie.git ~/mujoco_menagerie
+```
+
+Create `learning/ch02_control/hold_pose.py`:
 
 ```python
+"""
+Hold a target joint configuration with a PD controller on the Franka Panda.
+The same pattern is used in Chapter 3 to track IK-computed target angles.
+"""
+import numpy as np
+import mujoco
+import mujoco.viewer
+import time
+import os
+
+FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+
+# Franka neutral pose (radians)
+NEUTRAL = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785])
+
+# PD gains tuned for Franka's inertia — kp higher for shoulder joints
+KP = np.array([400, 400, 400, 400, 250, 150, 50], dtype=float)
+KD = np.array([ 40,  40,  40,  40,  25,  15,  5], dtype=float)
+
+# Franka joint torque limits (Nm)
+TORQUE_LIMITS = np.array([87, 87, 87, 87, 12, 12, 12], dtype=float)
+
+def run(target: np.ndarray, duration: float = 10.0) -> None:
+    model = mujoco.MjModel.from_xml_path(FRANKA_XML)
+    data  = mujoco.MjData(model)
+    mujoco.mj_resetDataKeyframe(model, data, 0)
+
+    with mujoco.viewer.launch_passive(model, data) as viewer:
+        t_start = time.time()
+        while viewer.is_running() and time.time() - t_start < duration:
+            q  = data.qpos[:7]
+            dq = data.qvel[:7]
+            torques = KP * (target - q) - KD * dq
+            data.ctrl[:7] = np.clip(torques, -TORQUE_LIMITS, TORQUE_LIMITS)
+            mujoco.mj_step(model, data)
+            viewer.sync()
+
+            if data.time % 2.0 < model.opt.timestep:
+                err = np.max(np.abs(target - data.qpos[:7]))
+                print(f"t={data.time:.1f}s  max joint error: {np.degrees(err):.2f}°")
+
+if __name__ == "__main__":
+    if not os.path.exists(FRANKA_XML):
+        print("Clone MuJoCo Menagerie first.")
+        exit(1)
+    print("Holding neutral pose. Watch the arm stabilize in the viewer.")
+    run(NEUTRAL)
+```
+
+Run it, then try changing `NEUTRAL` to a different configuration and re-run.
+
+---
+
+## Project 2C — Build a Gymnasium Environment
+
+**What you're building:** Wrap a 2-DOF planar reach task into a proper Gymnasium
+environment. This is the interface Chapter 4 (RL) plugs straight into.
+
+Create `learning/ch02_control/reach_env.py`:
+
+```python
+"""
+2-DOF planar reach task as a Gymnasium environment.
+Stable Baselines 3 and LeRobot both consume environments in this format.
+"""
 import numpy as np
 import mujoco
 import gymnasium as gym
@@ -435,11 +286,8 @@ from gymnasium import spaces
 REACH_XML = """
 <mujoco model="reach">
   <option timestep="0.002"/>
-
   <worldbody>
     <geom name="floor" type="plane" size="1 1 0.1" rgba="0.9 0.9 0.9 1"/>
-
-    <!-- Simple 2-DOF planar arm -->
     <body name="base" pos="0 0 0.1">
       <geom type="cylinder" size="0.05 0.05" rgba="0.5 0.5 0.5 1"/>
       <body name="link1" pos="0 0 0.05">
@@ -452,13 +300,10 @@ REACH_XML = """
         </body>
       </body>
     </body>
-
-    <!-- Target sphere (we'll move this programmatically) -->
     <body name="target" pos="0.4 0.1 0.1" mocap="true">
       <geom type="sphere" size="0.03" rgba="1 0.2 0.2 0.7"/>
     </body>
   </worldbody>
-
   <actuator>
     <motor name="act1" joint="joint1" gear="10" ctrllimited="true" ctrlrange="-5 5"/>
     <motor name="act2" joint="joint2" gear="10" ctrllimited="true" ctrlrange="-5 5"/>
@@ -467,137 +312,134 @@ REACH_XML = """
 """
 
 class ReachEnv(gym.Env):
-    metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 50}
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
 
     def __init__(self, render_mode=None):
         self.render_mode = render_mode
         self.model = mujoco.MjModel.from_xml_string(REACH_XML)
-        self.data = mujoco.MjData(self.model)
+        self.data  = mujoco.MjData(self.model)
 
-        self.ee_site_id = self.model.site('ee').id
-        self.target_body_id = self.model.body('target').id
+        self._ee_site_id     = self.model.site("ee").id
+        self._target_body_id = self.model.body("target").id
+        self._target_pos     = np.array([0.4, 0.1])
+        self._step_count     = 0
 
-        # Observation: [joint1_pos, joint2_pos, joint1_vel, joint2_vel, ee_x, ee_y, target_x, target_y]
-        obs_low  = np.array([-np.pi, -2.5, -10, -10, -1, -1, -1, -1], dtype=np.float32)
-        obs_high = np.array([ np.pi,  2.5,  10,  10,  1,  1,  1,  1], dtype=np.float32)
-        self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
-
-        # Action: torques for 2 joints
+        # obs: [q1, q2, dq1, dq2, ee_x, ee_y, target_x, target_y]
+        self.observation_space = spaces.Box(
+            low  = np.array([-np.pi, -2.5, -10, -10, -1, -1, -1, -1], dtype=np.float32),
+            high = np.array([ np.pi,  2.5,  10,  10,  1,  1,  1,  1], dtype=np.float32),
+        )
         self.action_space = spaces.Box(
-            low=np.array([-5.0, -5.0], dtype=np.float32),
-            high=np.array([5.0, 5.0], dtype=np.float32)
+            low=-np.array([5.0, 5.0], dtype=np.float32),
+            high=np.array([5.0, 5.0], dtype=np.float32),
         )
 
-        self._target_pos = np.array([0.4, 0.1])
-        self._max_steps = 500
-        self._step_count = 0
-
-        if render_mode == 'human':
+        if render_mode == "human":
+            import mujoco.viewer
             self._viewer = mujoco.viewer.launch_passive(self.model, self.data)
 
-    def _get_obs(self):
-        q = self.data.qpos[:2].copy()
-        dq = self.data.qvel[:2].copy()
-        ee_pos = self.data.site_xpos[self.ee_site_id][:2].copy()
-        return np.concatenate([q, dq, ee_pos, self._target_pos]).astype(np.float32)
+    def _get_obs(self) -> np.ndarray:
+        q   = self.data.qpos[:2].copy()
+        dq  = self.data.qvel[:2].copy()
+        ee  = self.data.site_xpos[self._ee_site_id][:2].copy()
+        return np.concatenate([q, dq, ee, self._target_pos]).astype(np.float32)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
-
-        # Randomize initial joint angles
         self.data.qpos[:2] = self.np_random.uniform(-1.0, 1.0, size=2)
-
-        # Randomize target position (reachable workspace)
-        r = self.np_random.uniform(0.15, 0.5)
-        theta = self.np_random.uniform(-np.pi/2, np.pi/2)
+        r     = self.np_random.uniform(0.15, 0.5)
+        theta = self.np_random.uniform(-np.pi / 2, np.pi / 2)
         self._target_pos = np.array([r * np.cos(theta), r * np.sin(theta)])
-
-        # Move the mocap target body
         self.data.mocap_pos[0, :2] = self._target_pos
-
         mujoco.mj_forward(self.model, self.data)
         self._step_count = 0
         return self._get_obs(), {}
 
     def step(self, action):
         self.data.ctrl[:2] = action
-        for _ in range(5):  # 5 physics steps per env step (10ms per env step)
+        for _ in range(5):  # 5 × 2ms = 10ms per env step → 100 Hz
             mujoco.mj_step(self.model, self.data)
-
         self._step_count += 1
-        obs = self._get_obs()
 
-        ee_pos = self.data.site_xpos[self.ee_site_id][:2]
-        dist = np.linalg.norm(ee_pos - self._target_pos)
+        ee   = self.data.site_xpos[self._ee_site_id][:2]
+        dist = np.linalg.norm(ee - self._target_pos)
 
-        # Reward: negative distance + bonus for being very close
-        reward = -dist
-        if dist < 0.05:
-            reward += 1.0
+        reward     = -dist + (1.0 if dist < 0.05 else 0.0)
+        terminated = dist < 0.03
+        truncated  = self._step_count >= 500
 
-        terminated = dist < 0.03  # success if within 3cm
-        truncated = self._step_count >= self._max_steps
-
-        if self.render_mode == 'human':
+        if self.render_mode == "human":
             self._viewer.sync()
 
-        return obs, reward, terminated, truncated, {'distance': dist}
+        return self._get_obs(), reward, terminated, truncated, {"distance": float(dist)}
 
     def close(self):
-        if self.render_mode == 'human' and hasattr(self, '_viewer'):
+        if self.render_mode == "human" and hasattr(self, "_viewer"):
             self._viewer.close()
 
 
-def test_env():
+if __name__ == "__main__":
     env = ReachEnv()
     obs, _ = env.reset()
-    print(f"Observation space: {env.observation_space}")
-    print(f"Action space: {env.action_space}")
-    print(f"Initial obs shape: {obs.shape}")
+    print(f"Observation space : {env.observation_space}")
+    print(f"Action space      : {env.action_space}")
+    print(f"Initial obs       : {obs}")
 
-    total_reward = 0
-    for step in range(200):
+    total_reward = 0.0
+    for step in range(300):
         action = env.action_space.sample()
-        obs, reward, terminated, truncated, info = env.step(action)
-        total_reward += reward
-        if terminated or truncated:
-            print(f"Episode ended at step {step+1}, total reward: {total_reward:.2f}")
+        obs, rew, term, trunc, info = env.step(action)
+        total_reward += rew
+        if term or trunc:
+            print(f"Episode ended at step {step + 1}  total reward: {total_reward:.2f}")
             obs, _ = env.reset()
-            total_reward = 0
+            total_reward = 0.0
 
-    print("Environment test passed.")
     env.close()
-
-if __name__ == "__main__":
-    test_env()
+    print("Environment works. Plug this into Stable Baselines 3 in Chapter 4.")
 ```
 
-Test it:
+Run it:
 ```bash
-python 04_gym_env.py
+python reach_env.py
 ```
 
 ---
 
-## Self-Check Questions
+## Self-Check
 
-Before moving to Chapter 3, answer these:
+1. What is the difference between `motor` and `position` actuators? When would you choose each?
 
-1. What is the difference between `model` and `data` in MuJoCo, and why are they separate?
-2. What is the difference between position control and torque control for a robot joint? When would you choose each?
-3. What happens if your PD controller's `kp` is too high? What do you see in the simulation?
-4. Your environment's `step()` runs 5 MuJoCo steps per call. What is the effective control frequency if MuJoCo's timestep is 2ms?
-5. What is a `freejoint` and when would you use it?
-6. What does `mj_forward()` do that `mj_step()` doesn't?
-7. You see joint positions oscillating around the target, never converging. Which gain do you increase?
+   **Answer:** `motor` applies raw torque — you write the stabilizing controller. `position`
+   has a built-in PD servo, you just command the target angle. Use `position` for learning
+   experiments; `motor` when you need physical accuracy (force control, contact-rich tasks).
 
-**Answer to Q2:** Position control (via `position` actuator or PD controller) is simpler — you command an angle and the actuator drives there. Torque control (`motor` actuator) lets you command raw force — more physically accurate, required for force-sensitive tasks, but harder to stabilize. Use position control for learning; torque control for research or when you need compliance.
-**Answer to Q4:** 5 × 2ms = 10ms per env step → 100 Hz control frequency.
-**Answer to Q7:** Increase `kd` (damping). The oscillation is underdamped behavior.
+2. Your PD controller's joint angle oscillates around the target and never settles. Which
+   gain do you increase and why?
+
+   **Answer:** Increase `kd`. The oscillation is underdamped — the derivative term resists
+   velocity and damps out the overshoot.
+
+3. `env.step()` runs 5 MuJoCo steps. The sim timestep is 2ms. What is the control frequency?
+
+   **Answer:** 5 × 2ms = 10ms per step → 100 Hz.
+
+4. What does `terminated=True` mean vs `truncated=True`?
+
+   **Answer:** `terminated` means the episode ended for task reasons (success or failure).
+   `truncated` means the time limit was hit. RL algorithms treat these differently when
+   computing value targets.
+
+5. You want to add the wrist camera image to the observation. What changes in the env?
+
+   **Answer:** Render an offscreen camera with `mujoco.Renderer`, add the pixel array to
+   `_get_obs()`, and update `observation_space` to include a `Dict` or `Box` for image data.
 
 ---
 
 ## What's Next
 
-In Chapter 3 you'll load a full 6-DOF robot arm into MuJoCo and use the Pink IK library to compute joint angles that put the end-effector at any target position — the foundation for all manipulation.
+Chapter 3 introduces inverse kinematics: given a target end-effector position in world space,
+compute the joint angles to get there. The PD controller you just built is exactly what
+executes those joint angle targets on the robot.

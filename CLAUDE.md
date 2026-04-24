@@ -125,6 +125,10 @@ Example prompts:
 
 ## Course content guidelines
 
+See [courses/vla/course_guideline_for_claude.md](courses/vla/course_guideline_for_claude.md) for the full guideline (audience, tone, what to include/exclude) — use it when reviewing or generating VLA course content.
+
+
+
 - Each chapter is a single `README.md` — plain Markdown, no front matter
 - YouTube URLs on their own line auto-embed in the reader
 - Link liberally to papers, repos, and external docs — this is a curated guide, not a walled garden

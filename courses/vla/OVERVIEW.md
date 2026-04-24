@@ -8,8 +8,8 @@ Each chapter has its own full course material. Start from Ch.01 and work forward
 
 | # | Chapter | Hardware | Time | File |
 |---|---------|----------|------|------|
-| 1 | Foundations: Transforms & FK | Laptop only | 2–3 days | [ch01_transforms/README.md](ch01_transforms/README.md) |
-| 2 | Simulation with MuJoCo | Laptop only | 3–5 days | [ch02_mujoco/README.md](ch02_mujoco/README.md) |
+| 1 | MuJoCo Fundamentals | Laptop only | 1–2 days | [ch01_transforms/README.md](ch01_transforms/README.md) |
+| 2 | Control & Gymnasium | Laptop only | 2–3 days | [ch02_mujoco/README.md](ch02_mujoco/README.md) |
 | 3 | Kinematics & Motion Planning | Laptop only | 3–4 days | [ch03_kinematics/README.md](ch03_kinematics/README.md) |
 | 4 | Reinforcement Learning (Applied) | GPU helpful | 4–5 days | [ch04_rl/README.md](ch04_rl/README.md) |
 | 5 | Imitation Learning (ACT + Diffusion) | GPU needed | 5–7 days | [ch05_imitation/README.md](ch05_imitation/README.md) |
@@ -44,8 +44,8 @@ Each `chXX/README.md` is a **self-sufficient course document** with:
 ## Core Tools (Install Before Starting)
 
 ```bash
-# Chapter 1 — math only
-pip install numpy matplotlib
+# Chapter 1 — MuJoCo basics
+pip install mujoco numpy matplotlib
 
 # Chapter 2 — simulation
 pip install mujoco gymnasium gymnasium-robotics

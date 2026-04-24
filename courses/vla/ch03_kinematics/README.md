@@ -2,15 +2,15 @@
 
 **Time:** 3–4 days
 **Hardware:** Any laptop, no GPU
-**Prerequisites:** Chapters 1–2 (transforms, MuJoCo basics)
+**Prerequisites:** Chapters 1–2 (MuJoCo basics, PD control)
 
 ---
 
 ## Why This Chapter Exists
 
-In Chapter 2 you controlled a robot by setting joint angles directly. That works for simple experiments, but the moment you want to do anything useful — move the hand to a target, follow a trajectory, execute a pick — you need to work in Cartesian space (X, Y, Z positions) and convert to joint angles automatically. That conversion is IK, and without it you're manually solving equations every time you move.
+In Chapter 2 you wrote a PD controller that holds a target joint angle. That's useful, but the moment you want to do anything practical — move the hand to a target position, follow a trajectory, execute a pick — you need to work in Cartesian space (X, Y, Z) and convert automatically to joint angles. That conversion is IK.
 
-The deeper gap this fills: learned policies (Chapter 5 onward) output actions in Cartesian space. To execute them on a real or simulated robot, something has to turn those actions into joint commands. That something is what you build here.
+The deeper gap this fills: learned policies (Chapter 5 onward) output actions in Cartesian space. To execute them on a real or simulated robot, something has to turn those Cartesian targets into joint commands. That something is what you build here.
 
 ### If you can answer these, you can skip this chapter
 
@@ -19,37 +19,14 @@ The deeper gap this fills: learned policies (Chapter 5 onward) output actions in
 
 ---
 
-## Part 1 — Forward Kinematics (The Math That Actually Matters)
+## Part 1 — Forward Kinematics (Quick Recap)
 
-You built FK in Chapter 1 for a 2D arm. Here's the 3D version more formally.
+You already used FK in Chapter 1: `mj_forward()` takes joint angles and gives you body
+positions in world space via `data.xpos`. That's FK — nothing more.
 
-### Denavit-Hartenberg Parameters
-
-For real robot arms, FK is described using Denavit-Hartenberg (DH) parameters — a convention for systematically chaining frames from base to end-effector.
-
-Each link has 4 parameters: `(a, α, d, θ)`:
-- `a` — link length (translation along X)
-- `α` — link twist (rotation around X)
-- `d` — link offset (translation along Z)
-- `θ` — joint angle (rotation around Z, this is the variable we control)
-
-The 4×4 transform from joint i to joint i+1:
-```
-T_i = Rot_z(θ_i) @ Trans_z(d_i) @ Trans_x(a_i) @ Rot_x(α_i)
-```
-
-Chain all links:
-```
-T_base_to_ee = T_0 @ T_1 @ T_2 @ ... @ T_n
-```
-
-**You don't need to memorize DH params.** MJCF models encode this directly in the XML. The Pink library reads the model and handles all FK internally.
-
-### What FK Gives You
-
-Given joint angles `q = [q1, q2, ..., q7]`, FK returns:
-- **Position:** `p = [x, y, z]` of the end-effector in the world frame
-- **Orientation:** `R` (3×3 rotation matrix) or quaternion
+For IK we need the inverse: given a desired end-effector position, find the joint angles.
+Pink handles this. But to use it well, you need to understand the Jacobian — the bridge
+between joint space and Cartesian space.
 
 ---
 
@@ -628,14 +605,19 @@ q_dot = J_pinv @ desired_ee_vel  # joint velocities
 
 ## What's Not Needed Here
 
-**DH parameter derivation:** You don't need to derive DH tables from scratch. The robot XML models encode the geometry directly, and Pink/Pinocchio read them automatically.
+**DH parameter derivation:** The robot XML encodes geometry directly. Pink/Pinocchio read
+it automatically. You never need to derive or read a DH table.
 
-**Gradient-based IK from scratch:** Pink handles this correctly with joint limits, velocity limits, and singularity handling built in. Rolling your own is only valuable if you need to understand the internals deeply — come back to it later.
+**Gradient-based IK from scratch:** Pink handles joint limits, velocity limits, and
+singularity avoidance correctly. Rolling your own only makes sense if you need custom
+constraints — which you don't at this stage.
 
-**Motion planning with obstacle avoidance (RRT, PRM):** This is a whole sub-field. Not needed for imitation learning (Ch.5) because the policy outputs actions directly. If you need it later, MoveIt 2 (Ch.8) handles this.
+**Motion planning with obstacle avoidance (RRT, PRM):** Not needed for imitation learning
+(Chapter 5) because the policy outputs actions directly. If you need it later, MoveIt 2
+(Chapter 8) handles this.
 
 ---
 
 ## What's Next
 
-Chapter 4 uses RL to learn control policies. But the motion primitives you built here (IK, Cartesian trajectories) are exactly what gets executed at deployment in later chapters — a learned policy outputs target EE positions, and your IK + PD controller tracks them on the real robot.
+Chapter 4 uses RL to learn control policies. The motion stack you now have — IK computes target joint angles, PD controller (from Chapter 2) executes them — is exactly what runs at deployment. A learned policy outputs target EE positions; this stack converts them to robot motion.
