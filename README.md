@@ -4,12 +4,12 @@ Open-source, follow-along courses for building intelligent physical systems — 
 
 ## Read online
 
-**[Open the reader →](https://OWNER.github.io/bit2atms/reader.html)**
+**[Open the reader →](https://unltd0.github.io/bit2atms/reader.html)**
 
 Or clone and open locally:
 
 ```bash
-git clone https://github.com/OWNER/bit2atms.git
+git clone https://github.com/unltd0/bit2atms.git
 cd bit2atms
 python3 -m http.server 8080
 # open http://localhost:8080/reader.html
