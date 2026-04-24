@@ -79,10 +79,14 @@ Robots are described in XML called MJCF. The key structure:
 
 ## Part 2 — Coordinate Frames and Transforms
 
-### Everything is relative to a frame
+### Coordinate frames
 
-Every body in MuJoCo has a position and orientation in **world space**. When the arm moves,
-all link frames move with it. The world frame is fixed at the origin.
+A **frame** is just a coordinate system — an origin point plus three axes (X, Y, Z) that define
+directions. Every body in a robot has one: it tells you "where is this link, and which way is it
+pointing?" relative to something else.
+
+Every body in MuJoCo has a position and orientation in **world space** — the fixed global frame
+anchored at the origin. When the arm moves, each link's frame moves with it.
 
 ```
 world → base → shoulder → elbow → wrist → end-effector
