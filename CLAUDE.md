@@ -59,7 +59,7 @@ bit2atms/
 │       ├── README.md    # Full curriculum doc
 │       └── ch01_transforms/README.md … ch10_capstone/README.md
 └── workspace/
-    └── vla/             # Learner scratchpad — ch01_starter.py … ch10_starter.py
+    └── vla/             # Learner scratchpad — create files here as you work through projects
 ```
 
 ---
@@ -68,7 +68,7 @@ bit2atms/
 
 1. Create `courses/<id>/` with `OVERVIEW.md`, `README.md`, and chapter folders
 2. Add an entry to `config.json` under `courses[]` — the reader picks it up automatically
-3. Add `workspace/<id>/chXX_starter.py` stubs for each chapter
+3. Add a `workspace/<id>/` folder — learners create their own files as they work through projects
 4. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full walkthrough
 
 ### config.json chapter entry shape
@@ -132,5 +132,5 @@ See [courses/vla/course_guideline_for_claude.md](courses/vla/course_guideline_fo
 - Each chapter is a single `README.md` — plain Markdown, no front matter
 - YouTube URLs on their own line auto-embed in the reader
 - Link liberally to papers, repos, and external docs — this is a curated guide, not a walled garden
-- Every chapter should have a **Projects** section pointing learners to `workspace/<course>/chXX_starter.py`
+- Every chapter should have a **Projects** section telling learners where to create their files (e.g. `learning/ch01_mujoco/`)
 - State hardware requirements explicitly: `Laptop only` / `GPU helpful` / `GPU 8 GB+` / `Physical robot`

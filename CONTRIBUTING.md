@@ -26,12 +26,8 @@
    ```
    Available `color` values: `accent`, `accentg`, `accentp`, `accento`, `accenty`, `accentr`
 
-3. **Add workspace starters** in `workspace/your-course-id/`:
-   ```
-   workspace/your-course-id/
-   ├── ch01_starter.py
-   └── ...
-   ```
+3. **Add a workspace folder** `workspace/your-course-id/` — learners create their own files
+   as they work through projects. No starter files needed.
 
 4. Open a PR. The reader picks up the new course automatically from `config.json` — no reader.html changes needed.
 
@@ -39,7 +35,7 @@
 
 - Each `README.md` is standalone Markdown — no front matter needed
 - Link to external resources freely; embed YouTube URLs on their own line for auto-embed
-- Include a "Projects" section with concrete coding tasks pointing to `workspace/` files
+- Include a "Projects" section with concrete coding tasks and explicit file paths (e.g. `learning/ch01_mujoco/`)
 - Keep hardware requirements explicit (laptop-only vs GPU vs physical robot)
 
 ## Running locally
