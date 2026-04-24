@@ -1174,12 +1174,12 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
   border: 1px solid var(--border2);
   border-bottom: none;
   border-radius: 8px 8px 0 0;
-  padding: 7px 14px;
+  padding: 4px 10px;
 }
 .code-header + pre { border-radius: 0 0 8px 8px; border-top: none; border: 1px solid var(--border2); }
-.code-lang-wrap { display: flex; align-items: center; gap: 7px; }
+.code-lang-wrap { display: flex; align-items: center; gap: 6px; }
 .code-lang-dot {
-  width: 9px; height: 9px;
+  width: 7px; height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--text3);
@@ -1201,7 +1201,7 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
 .lang-default { background: var(--text3); }
 .lang-text    { background: var(--bg5); }
 
-.code-lang { font-size: 10.5px; font-weight: 700; color: var(--text2); letter-spacing: 0.4px; font-family: var(--font-ui); }
+.code-lang { font-size: 9.5px; font-weight: 700; color: var(--text2); letter-spacing: 0.4px; font-family: var(--font-ui); }
 .code-copy {
   font-size: 11px;
   color: var(--text3);
@@ -1523,9 +1523,12 @@ const LANG_META = {
 };
 
 renderer.code = function(code, lang){
-  const key = (lang||'').toLowerCase().trim();
+  // Support "lang Title e.g." — first word is language, rest is display title
+  const parts = (lang||'').trim().split(/\s+/);
+  const key = parts[0].toLowerCase();
+  const title = parts.length > 1 ? parts.slice(1).join(' ') : null;
   const meta = LANG_META[key];
-  const displayLabel = meta ? meta[0] : (key || 'Code');
+  const displayLabel = title || (meta ? meta[0] : (key || 'Code'));
   const langClass    = meta ? meta[1] : 'lang-default';
 
   // Highlight: use explicit lang if hljs knows it, else auto-detect
