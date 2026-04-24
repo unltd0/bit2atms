@@ -33,22 +33,121 @@ in each chapter install into it. To deactivate: `deactivate`.
 
 ## Curriculum Map
 
-```
-Chapter 1  → Foundations (Python math, coordinate systems, rigid body transforms)
-Chapter 2  → Simulation with MuJoCo
-Chapter 3  → Robot Kinematics & Motion Planning
-Chapter 4  → Reinforcement Learning for Robots (applied)
-Chapter 5  → Imitation Learning (ACT, Diffusion Policy) ← most important
-Chapter 6  → Vision + Language + Action (VLA Models)
-Chapter 7  → Sim-to-Real Transfer
-Chapter 8  → ROS 2 & System Integration
-Chapter 9  → Physical Hardware (Low-Cost Robots)
-Chapter 10 → Capstone: Full Manipulation Pipelines
+| # | Chapter | Hardware | Time |
+|---|---------|----------|------|
+| 1 | MuJoCo Fundamentals | Laptop only | 1–2 days |
+| 2 | Control & Gymnasium | Laptop only | 2–3 days |
+| 3 | Kinematics & Motion Planning | Laptop only | 3–4 days |
+| 4 | Reinforcement Learning (Applied) | GPU helpful | 4–5 days |
+| 5 | Imitation Learning (ACT + Diffusion) | GPU needed | 5–7 days |
+| 6 | Vision-Language-Action Models | 16 GB GPU | 4–5 days |
+| 7 | Sim-to-Real Transfer | GPU helpful | 4–5 days |
+| 8 | ROS 2 & System Integration | Docker/Linux | 3–4 days |
+| 9 | Physical Hardware (SO-101) | ~$250 arm + camera | 1–2 weeks |
+| 10 | Capstone Projects | Varies | 2–4 weeks |
+
+---
+
+## Hardware Buying Guide
+
+Chapters 1–7 need only your laptop. Chapter 8 needs Docker. Chapter 9 needs hardware.
+
+Buy in this order:
+1. **SO-101 arm** (~$250) — core of Chapter 9
+2. **USB camera or Logitech C930** (~$80) — needed for visual policies
+3. **LED lighting panel** (~$40) — critical for consistent visual policies
+4. **Intel RealSense D435** (~$200) — needed only for Capstone A depth-based picking
+
+Total minimum for Chapter 9: ~$370. Total for Capstone A: ~$570.
+
+---
+
+## Chapter 1 — MuJoCo Fundamentals
+
+**Time:** 1–2 days
+
+---
+
+### Requirements
+
+**Knowledge Prerequisites**
+
+- Python (functions, classes, NumPy basics)
+- Basic physics intuition (what is a joint, what is a frame)
+- No robotics background needed
+
+**Knowledge Check — answer these before starting:**
+1. You load a Franka arm in MuJoCo. How do you read the end-effector position in world space?
+2. What is the difference between `model` and `data` in MuJoCo?
+3. You set `data.ctrl[0] = 1.57`. What happens, and what type of actuator does that assume?
+
+**Hardware Requirements**
+
+- Any laptop, Python 3.12+, no GPU
+
+**Install:**
+```bash
+pip install mujoco numpy matplotlib
+# Clone robot models
+git clone https://github.com/google-deepmind/mujoco_menagerie ~/mujoco_menagerie
 ```
 
 ---
 
-## Chapter 1 — Foundations
+### What You Need to Know
+
+- **`mjModel` vs `mjData`** — static description vs. live state; every MuJoCo program uses both
+- **`mj_step()` vs `mj_forward()`** — advance physics vs. just compute FK from current qpos
+- **`data.xpos` / `data.xmat`** — body position and rotation matrix in world frame
+- **Coordinate frames and transforms** — every body has a pose; poses chain from world → base → ... → end-effector
+- **Quaternion convention** — MuJoCo uses `[w, x, y, z]`; scipy/ROS use `[x, y, z, w]`
+
+---
+
+### Read
+
+- [MuJoCo Documentation — Getting Started](https://mujoco.readthedocs.io/en/stable/programming/index.html) — "Installation", "Programming Guide", mjModel/mjData sections
+- [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) — real robot MJCF models you'll use throughout
+
+---
+
+### Build: Project 1A — Load a Robot, Read Its State
+
+Load the Franka Panda from MuJoCo Menagerie, open the viewer, move joints to two
+configurations, and print the resulting end-effector position. Understand that `mj_forward()`
+is forward kinematics.
+
+```
+learning/ch01_mujoco/
+  read_robot_state.py    # load robot, print joint names, read body poses, demo 2 configs
+```
+
+---
+
+### Build: Project 1B — Camera-to-World Transform
+
+Given a cup position in camera frame, compute its world-frame position by reading the
+wrist body transform from MuJoCo. Run with two different arm configurations and observe
+that the world position changes even though the cup didn't move.
+
+```
+learning/ch01_mujoco/
+  camera_to_world.py     # chain body transforms to localize an object in world space
+```
+
+---
+
+### Chapter 1 Outcome
+
+After finishing this chapter you will:
+- Load any robot from MuJoCo Menagerie and read its state
+- Understand `model`/`data`, `mj_step()`/`mj_forward()`, and body pose APIs
+- Read and chain coordinate transforms using data MuJoCo already computes for you
+- Know the quaternion convention difference between MuJoCo and scipy/ROS
+
+---
+
+## Chapter 2 — Control & Gymnasium
 
 **Time:** 2–3 days
 
@@ -58,185 +157,74 @@ Chapter 10 → Capstone: Full Manipulation Pipelines
 
 **Knowledge Prerequisites**
 
-You should be comfortable with:
-- Python (functions, classes, NumPy basics)
-- High-school linear algebra (vectors, matrix multiplication)
-- Basic trigonometry (sin, cos, what an angle means)
+- Chapter 1 complete (MuJoCo basics — model/data, viewer, reading body poses)
+- Python classes
 
 **Knowledge Check — answer these before starting:**
-1. What does multiplying two matrices represent geometrically? → [3Blue1Brown: Linear transformations (ep. 3)](https://www.youtube.com/watch?v=kYB8IZa5AuE)
-2. What is the dot product of two unit vectors, and what does it tell you? → [3Blue1Brown: Dot products (ep. 9)](https://www.youtube.com/watch?v=LyGKycYT2v0)
-3. What's the difference between a vector and a point in 3D space? → [3Blue1Brown: Vectors (ep. 1)](https://www.youtube.com/watch?v=fNk_zzaMoSs)
-4. If I rotate a point 90° around the Z-axis, where does (1, 0, 0) end up? → [3Blue1Brown: Linear transformations (ep. 3)](https://www.youtube.com/watch?v=kYB8IZa5AuE)
-
-Can't answer these? Watch [3Blue1Brown: Essence of Linear Algebra](https://www.youtube.com/playlist?list=PLZHQObOWTQDPD3MizzM2xVFitgF8hE_ab) episodes 1–5 (≈2 hours total) before starting.
+1. What is the difference between a `motor` actuator and a `position` actuator in MuJoCo?
+2. Your PD controller oscillates but eventually settles. Which gain do you increase?
+3. What does `env.step(action)` return, and what does each element mean?
 
 **Hardware Requirements**
 
-- Any laptop or desktop with Python 3.12+
-- No GPU needed
-- No special hardware
+- Any laptop, no GPU
+
+**Install:**
+```bash
+pip install gymnasium
+```
 
 ---
 
 ### What You Need to Know
 
-- **Coordinate frames** — world frame vs. robot base frame vs. end-effector frame
-- **Rigid body transforms** — rotation matrices (3×3), homogeneous transforms (4×4)
-- **Quaternions** — how robots represent orientation without gimbal lock
-- **SE(3)** — the mathematical space robots move in (3D position + 3D orientation)
-- **Forward kinematics** — given joint angles, compute where the end-effector is
-
-You don't need to derive proofs. You need to recognize and use these representations confidently.
+- **Actuator types** — `motor` (raw torque, you write the controller) vs. `position` (built-in servo)
+- **PD control** — `torque = kp × (target − current) − kd × velocity`; kp drives toward target, kd damps oscillation
+- **Gymnasium interface** — `reset()`, `step()`, `observation_space`, `action_space`; the contract all RL/IL libraries depend on
+- **Control frequency** — sim timestep × steps-per-env-step = how fast your policy runs
 
 ---
 
 ### Read
 
-- [Modern Robotics — Ch. 2 and 3 (free online)](https://hades.mech.northwestern.edu/index.php/Modern_Robotics) — configuration space and rigid body motion
-- [3Blue1Brown: Essence of Linear Algebra](https://www.youtube.com/playlist?list=PLZHQObOWTQDPD3MizzM2xVFitgF8hE_ab) — episodes 1–5 if needed
+- [Gymnasium — Creating Custom Environments](https://gymnasium.farama.org/) — "Basic Usage" and "Creating Environments"
+- [MuJoCo XML Reference — actuator section](https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator)
+- [Stable Baselines 3 — Getting Started](https://stable-baselines3.readthedocs.io/en/master/guide/quickstart.html) — shows how it consumes a Gym env
 
 ---
 
-### Build: Project 1A — Transforms from Scratch
+### Build: Project 2A — PD Controller: Tune the Gains
 
-Build a small Python library (no robotics imports) that:
-
-1. Creates rotation matrices from Euler angles (roll, pitch, yaw)
-2. Creates 4×4 homogeneous transforms (rotation + translation combined)
-3. Chains transforms (multiply them to compose)
-4. Converts between quaternions and rotation matrices
-5. Visualizes a coordinate frame in matplotlib (3 colored arrows, one per axis)
-
-**Why:** Every robotics library wraps these internally. Build them once and you'll never be confused by them again.
+Use a 1-DOF pendulum with a `motor` actuator. Simulate four kp/kd combinations and plot
+joint angle vs. time. See underdamped oscillation, overdamping, and well-tuned behavior.
 
 ```
-learning/ch01_transforms/
-  transforms.py       # your math library
-  visualize.py        # plot coordinate frames
-  test_transforms.py  # sanity checks (rotate, chain, invert)
+learning/ch02_control/
+  pd_gains.py     # simulate and plot 4 gain combinations
 ```
 
 ---
 
-### Build: Project 1B — Animate a 2D Robot Arm
+### Build: Project 2B — Control a Real Robot Arm
 
-Using only matplotlib + your transform library:
-1. Implement forward kinematics for a 3-link planar (2D) arm
-2. Draw the arm as connected lines in matplotlib
-3. Animate it sweeping through a range of joint angles
-4. Add a target point; compute which joint angles get the end-effector closest
+Load the Franka Panda, hold a target joint configuration with a PD controller, and watch
+the arm stabilize in the viewer. This is the same pattern used in Chapter 3 to execute IK solutions.
 
 ```
-learning/ch01_transforms/
-  arm_fk.py       # forward kinematics
-  arm_animate.py  # animation
+learning/ch02_control/
+  hold_pose.py    # PD controller on Franka, tune gains, observe in viewer
 ```
 
 ---
 
-### Chapter 1 Outcome
+### Build: Project 2C — Build a Gymnasium Environment
 
-After finishing this chapter you will:
-- Understand and implement 3D coordinate transforms from scratch
-- Know the difference between rotation matrices, Euler angles, and quaternions — and when each is used
-- Have implemented forward kinematics for a planar arm without any library
-- Be able to read and reason about 4×4 transform matrices in any robotics codebase
-
----
-
-## Chapter 2 — Simulation with MuJoCo
-
-**Time:** 3–5 days
-
----
-
-### Requirements
-
-**Knowledge Prerequisites**
-
-- Completed Chapter 1 (transforms, FK)
-- Python classes and inheritance
-- Basic understanding of physics: forces, torques, friction
-
-**Knowledge Check — answer these before starting:**
-1. What is the difference between a joint and a body in a rigid body simulation? → [MuJoCo Overview (2 min read)](https://mujoco.readthedocs.io/en/stable/overview.html)
-2. What does a torque do vs. a force? → [Khan Academy: Torque (5 min)](https://www.khanacademy.org/science/physics/torque-angular-momentum/torque-tutorial/v/introduction-to-torque)
-
-**Hardware Requirements**
-
-- Laptop or desktop, any OS
-- GPU not required (MuJoCo runs on CPU efficiently)
-- 4 GB RAM minimum
-
-**Install:**
-```bash
-pip install mujoco gymnasium gymnasium-robotics
-```
-
----
-
-### What MuJoCo Is
-
-MuJoCo (Multi-Joint dynamics with Contact) is the industry-standard physics simulator for robot learning. It is fast, numerically accurate for contact physics, and is used by DeepMind, Google, and most research labs. Free and open-source since 2022.
-
----
-
-### Read
-
-- [MuJoCo Getting Started](https://mujoco.readthedocs.io/en/stable/programming/index.html) — first 3 sections
-- [MuJoCo MJCF XML Reference](https://mujoco.readthedocs.io/en/stable/XMLreference.html) — skim; you'll return to this constantly
-- [Gymnasium Docs](https://gymnasium.farama.org/) — the interface all RL and IL frameworks expect
-
----
-
-### Build: Project 2A — Your First MuJoCo Scene
-
-Build an interactive scene:
-1. A ground plane + a box that falls, bounces, and slides
-2. Add a second object; observe collisions
-3. Apply forces programmatically and observe dynamics
-4. Read back contact forces between objects
+Wrap a 2-DOF planar reach task into a Gymnasium environment with randomized targets.
+Verify it with a random policy. This is the interface Chapter 4 (RL) plugs straight into.
 
 ```
-learning/ch02_mujoco/
-  01_basic_scene.xml    # your first MJCF model
-  01_basic_scene.py     # load and simulate
-  02_contacts.py        # detect and print contact forces
-```
-
----
-
-### Build: Project 2B — Load and Control a Robot Arm
-
-Use the Franka Panda MJCF model (included in MuJoCo examples):
-1. Load the arm in MuJoCo
-2. Run position control: move each joint to a target angle
-3. Implement a PD controller for smooth, damped motion
-4. Read joint states: position, velocity, applied torque
-
-```
-learning/ch02_mujoco/
-  03_robot_arm.py       # load Franka, visualize
-  04_pd_controller.py   # smooth joint control
-```
-
----
-
-### Build: Project 2C — Gymnasium Environment Wrapper
-
-Wrap your arm scene as a Gymnasium `Env`:
-- `reset()` → randomize initial joint angles, return observation
-- `step(action)` → apply joint torques, return (obs, reward, terminated, truncated, info)
-- `observation_space` and `action_space` defined
-- Simple reward: negative distance from end-effector to a target sphere
-
-This is the interface all RL and imitation learning libraries expect. Getting this right matters for every future chapter.
-
-```
-learning/ch02_mujoco/
-  05_gym_env.py       # custom Gym environment
-  05_test_env.py      # run random policy to verify
+learning/ch02_control/
+  reach_env.py    # full Gym env: reset, step, obs/action spaces, reward
 ```
 
 ---
@@ -244,11 +232,10 @@ learning/ch02_mujoco/
 ### Chapter 2 Outcome
 
 After finishing this chapter you will:
-- Build and run physics scenes from MuJoCo XML (MJCF)
-- Load real robot models and control them with position and torque commands
-- Implement a basic PD controller
-- Wrap any simulation as a Gymnasium environment — the universal interface for robot learning
-- Understand how contact forces work in simulation
+- Understand `motor` vs. `position` actuators and when to use each
+- Implement and tune a PD controller
+- Wrap any MuJoCo sim as a Gymnasium environment
+- Have the control foundation that IK (Chapter 3) and RL (Chapter 4) build on
 
 ---
 
@@ -1317,10 +1304,10 @@ After completing a capstone you will:
 
 ## Suggested Weekly Schedule
 
-### Week 1 — Foundations + Simulation
-- Days 1–2: Chapter 1 (transforms, FK)
-- Days 3–5: Chapter 2 (MuJoCo, Gymnasium wrapper)
-- Days 6–7: Chapter 3 (IK, Cartesian control)
+### Week 1 — Simulation + Control + Kinematics
+- Days 1–2: Chapter 1 (MuJoCo fundamentals, reading robot state)
+- Days 3–4: Chapter 2 (PD control, Gymnasium wrapper)
+- Days 5–7: Chapter 3 (IK, Cartesian control, pick trajectory)
 
 ### Week 2 — Learning Algorithms
 - Days 1–2: Chapter 4 (RL: SAC, reward shaping, HER)

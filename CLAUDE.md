@@ -55,8 +55,7 @@ bit2atms/
 ├── .nojekyll            # Disables Jekyll so GitHub Pages serves .md files
 ├── courses/
 │   └── vla/             # Vision-Language-Action course
-│       ├── OVERVIEW.md
-│       ├── README.md    # Full curriculum doc
+│       ├── README.md    # Full curriculum guide (single source of truth)
 │       └── ch01_transforms/README.md … ch10_capstone/README.md
 └── workspace/
     └── vla/             # Learner scratchpad — create files here as you work through projects

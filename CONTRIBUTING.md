@@ -5,8 +5,7 @@
 1. **Create the course folder** under `courses/`:
    ```
    courses/your-course-id/
-   ├── OVERVIEW.md
-   ├── README.md
+   ├── README.md          # full curriculum guide (chapter table, prereqs, projects)
    ├── ch01_topic/README.md
    ├── ch02_topic/README.md
    └── ...
@@ -19,7 +18,7 @@
      "title": "Your Course Title",
      "description": "One-line description.",
      "chapters": [
-       { "id": "overview", "num": "○", "title": "Overview", "file": "courses/your-course-id/OVERVIEW.md" },
+       { "id": "readme", "num": "○", "title": "Curriculum Guide", "file": "courses/your-course-id/README.md" },
        { "id": "ch01", "num": "01", "title": "Chapter Title", "file": "courses/your-course-id/ch01_topic/README.md", "time": "2–3d", "color": "accent" }
      ]
    }
