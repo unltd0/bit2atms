@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Robot / simulation outputs
+*.bag
+*.db3
+logs/
+runs/
+
+# Workspace: your personal exercise files are tracked by default.
+# If you want to keep your work private, uncomment the line below:
+# workspace/

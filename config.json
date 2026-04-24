@@ -1,0 +1,26 @@
+{
+  "repoTitle": "bit2atms — Physical AI Courseware",
+  "githubRepo": "unltd0/bit2atms",
+  "githubBranch": "main",
+  "courses": [
+    {
+      "id": "vla",
+      "title": "Vision-Language-Action (VLA)",
+      "description": "10-chapter curriculum from transforms to physical hardware.",
+      "chapters": [
+        { "id": "overview", "num": "○", "title": "Overview",              "file": "courses/vla/OVERVIEW.md",                 "time": null,   "color": "accent"  },
+        { "id": "readme",   "num": "●", "title": "Full Curriculum",       "file": "courses/vla/README.md",                   "time": null,   "color": "accent"  },
+        { "id": "ch01",     "num": "01", "title": "Transforms & FK",      "file": "courses/vla/ch01_transforms/README.md",   "time": "2–3d", "color": "accentg" },
+        { "id": "ch02",     "num": "02", "title": "MuJoCo Simulation",    "file": "courses/vla/ch02_mujoco/README.md",        "time": "3–5d", "color": "accent"  },
+        { "id": "ch03",     "num": "03", "title": "Kinematics & Motion",  "file": "courses/vla/ch03_kinematics/README.md",   "time": "3–4d", "color": "accentp" },
+        { "id": "ch04",     "num": "04", "title": "Reinforcement Learning","file": "courses/vla/ch04_rl/README.md",           "time": "4–5d", "color": "accento" },
+        { "id": "ch05",     "num": "05", "title": "Imitation Learning",   "file": "courses/vla/ch05_imitation/README.md",    "time": "5–7d", "color": "accent"  },
+        { "id": "ch06",     "num": "06", "title": "VLA Models",           "file": "courses/vla/ch06_vla/README.md",          "time": "4–5d", "color": "accentp" },
+        { "id": "ch07",     "num": "07", "title": "Sim-to-Real",          "file": "courses/vla/ch07_sim_to_real/README.md",  "time": "4–5d", "color": "accentg" },
+        { "id": "ch08",     "num": "08", "title": "ROS 2 Integration",    "file": "courses/vla/ch08_ros2/README.md",         "time": "3–4d", "color": "accento" },
+        { "id": "ch09",     "num": "09", "title": "Physical Hardware",    "file": "courses/vla/ch09_hardware/README.md",     "time": "1–2w", "color": "accenty" },
+        { "id": "ch10",     "num": "10", "title": "Capstone Projects",    "file": "courses/vla/ch10_capstone/README.md",     "time": "2–4w", "color": "accentr" }
+      ]
+    }
+  ]
+}
