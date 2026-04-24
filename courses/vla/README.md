@@ -10,6 +10,27 @@
 
 ---
 
+## Environment Setup
+
+Do this once before starting Chapter 1.
+
+```bash
+# Create a virtual environment
+python3 -m venv vla-env
+
+# Activate it
+source vla-env/bin/activate        # macOS / Linux
+# vla-env\Scripts\activate         # Windows
+
+# Verify you're in the env
+which python                       # should point inside vla-env/
+```
+
+Keep the env active whenever you work through this curriculum. All `pip install` commands
+in each chapter install into it. To deactivate: `deactivate`.
+
+---
+
 ## Curriculum Map
 
 ```
