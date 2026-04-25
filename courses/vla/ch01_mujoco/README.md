@@ -21,7 +21,7 @@ chapter.
 **Install:**
 ```bash
 pip install mujoco numpy matplotlib scipy pink pin robot_descriptions quadprog
-git clone https://github.com/google-deepmind/mujoco_menagerie ~/mujoco_menagerie
+git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
 ```
 
 **Skip if you can answer:**
@@ -60,16 +60,24 @@ MuJoCo splits everything into two objects:
 - **`mjData`** — the live state: joint positions, velocities, contact forces, body poses.
   Updated every call to `mj_step()`.
 
+Three things to know:
+
+- `MjModel` is read-only — it's the robot's blueprint (geometry, masses, joint limits). Load it once.
+- `MjData` holds everything that changes during simulation: joint angles, velocities, body poses, contact forces.
+- `mj_step()` advances physics by one timestep (default 2 ms): reads `data.ctrl`, computes forces, updates `data`.
+
+You can verify this yourself:
+
 ```python
-import mujoco
-
-model = mujoco.MjModel.from_xml_path("scene.xml")  # load once
-data  = mujoco.MjData(model)                        # mutable state
-mujoco.mj_step(model, data)                         # advance physics one timestep
+import mujoco, os
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+model = mujoco.MjModel.from_xml_path(FRANKA_XML)
+data  = mujoco.MjData(model)
+print(f"Time before step: {data.time:.4f}s")
+mujoco.mj_step(model, data)
+print(f"Time after step:  {data.time:.4f}s  (Δ = {model.opt.timestep*1000:.1f} ms)")
+print(f"Joint 0 position: {data.qpos[0]:.4f} rad  (unchanged — no control signal yet)")
 ```
-
-Default timestep is 2 ms. At each step MuJoCo reads `data.ctrl`, computes forces,
-integrates dynamics, and writes new positions/velocities into `data`.
 
 ### Coordinate frames
 
@@ -99,7 +107,7 @@ import mujoco
 import mujoco.viewer
 import os
 
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 def print_robot_info(model: mujoco.MjModel) -> None:
     print(f"Bodies: {model.nbody}  Joints: {model.njnt}  Actuators: {model.nu}")
@@ -132,7 +140,7 @@ def demo_two_configurations(model: mujoco.MjModel, data: mujoco.MjData) -> None:
 if __name__ == "__main__":
     if not os.path.exists(FRANKA_XML):
         print("Troubleshooting: clone Menagerie first:")
-        print("  git clone https://github.com/google-deepmind/mujoco_menagerie ~/mujoco_menagerie")
+        print("  git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie")
         raise SystemExit(1)
 
     model = mujoco.MjModel.from_xml_path(FRANKA_XML)
@@ -208,7 +216,7 @@ import numpy as np
 import mujoco
 import os
 
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 def make_T(pos: np.ndarray, mat_flat: np.ndarray) -> np.ndarray:
     """Build a 4×4 homogeneous transform from MuJoCo xpos and xmat."""
@@ -400,7 +408,7 @@ import pinocchio as pin
 from robot_descriptions.loaders.pinocchio import load_robot_description
 import os, time as time_module
 
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 if __name__ == "__main__":
     if not os.path.exists(FRANKA_XML):

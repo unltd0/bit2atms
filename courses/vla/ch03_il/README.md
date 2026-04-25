@@ -24,8 +24,8 @@ quantity affects performance. These skills directly transfer to Chapter 7 (real 
 
 **Install:**
 ```bash
-git clone https://github.com/huggingface/lerobot ~/lerobot
-cd ~/lerobot
+git clone https://github.com/huggingface/lerobot workspace/ext/lerobot
+cd workspace/ext/lerobot
 pip install -e ".[simulation]"
 ```
 
@@ -232,7 +232,7 @@ compounding errors. [Read more: ACT paper](https://arxiv.org/abs/2304.13705)
 
 ```bash workspace/vla/ch03/train_act.sh
 # Train ACT on pusht demos (~30 min on GPU, several hours on CPU)
-cd ~/lerobot
+cd workspace/ext/lerobot
 python lerobot/scripts/train.py \
   --policy.type=act \
   --dataset.repo_id=local/pusht_demos \
@@ -303,7 +303,7 @@ captures them. [Read more: Diffusion Policy paper](https://arxiv.org/abs/2303.04
 
 ```bash workspace/vla/ch03/train_diffusion.sh
 # Diffusion Policy trains slower than ACT — ~1–2 hrs on GPU for 80k steps
-cd ~/lerobot
+cd workspace/ext/lerobot
 python lerobot/scripts/train.py \
   --policy.type=diffusion \
   --dataset.repo_id=local/pusht_demos \
@@ -335,7 +335,7 @@ as they come in.
 you limit which episodes are used. Run this five times:
 
 ```bash workspace/vla/ch03/data_scaling.sh
-cd ~/lerobot
+cd workspace/ext/lerobot
 for N in 10 25 50 100 200; do
   python lerobot/scripts/train.py \
     --policy.type=act \

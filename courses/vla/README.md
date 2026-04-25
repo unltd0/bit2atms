@@ -20,13 +20,13 @@ source bit2atms-env/bin/activate   # macOS / Linux
 
 # Ch.1 — MuJoCo & Robot Fundamentals
 pip install mujoco numpy matplotlib scipy pink pin robot_descriptions quadprog
-git clone https://github.com/google-deepmind/mujoco_menagerie ~/mujoco_menagerie
+git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
 
 # Ch.2 — Reinforcement Learning (add when you reach Ch.2)
 pip install stable-baselines3[extra] gymnasium gymnasium-robotics
 
 # Ch.3 — Imitation Learning (add when you reach Ch.3)
-# git clone https://github.com/huggingface/lerobot ~/lerobot && cd ~/lerobot && pip install -e ".[simulation]"
+# git clone https://github.com/huggingface/lerobot workspace/ext/lerobot && cd workspace/ext/lerobot && pip install -e ".[simulation]"
 ```
 
 Each chapter's README also lists its installs at the top.
@@ -76,7 +76,7 @@ and failure analysis. This is the core skill for robot manipulation.
 
 **Install:**
 ```bash
-git clone https://github.com/huggingface/lerobot ~/lerobot && cd ~/lerobot
+git clone https://github.com/huggingface/lerobot workspace/ext/lerobot && cd workspace/ext/lerobot
 pip install -e ".[simulation]"
 ```
 
