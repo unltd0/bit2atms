@@ -72,7 +72,7 @@ is what ACT and Diffusion Policy expect as input.
 ```python workspace/vla/ch03/collect_demos.py
 """Collect demonstrations in gym_pusht using a scripted oracle. Saves a LeRobotDataset."""
 import numpy as np
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets import LeRobotDataset
 import gymnasium as gym
 import gym_pusht
 
@@ -130,7 +130,7 @@ def collect(n_demos: int, save_dir: str) -> None:
                 "action": action,
                 "task": TASK,
             })
-        dataset.save_episode(task=TASK)
+        dataset.save_episode()
         if (ep + 1) % 10 == 0:
             print(f"Collected {ep+1}/{n_demos} demos")
 
@@ -160,7 +160,7 @@ in your dataset: action distributions, trajectory diversity, and failure cases.
 """Visualize a LeRobotDataset: action distributions, trajectory samples, coverage."""
 import numpy as np
 import matplotlib.pyplot as plt
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets import LeRobotDataset
 
 SAVE_DIR = "./data/pusht_demos"
 
@@ -246,7 +246,7 @@ python lerobot/scripts/train.py \
 ```python workspace/vla/ch03/eval_policy.py
 """Evaluate a trained LeRobot policy over N trials. Reports success rate."""
 import numpy as np
-from lerobot.common.policies.act.modeling_act import ACTPolicy
+from lerobot.policies.act.modeling_act import ACTPolicy
 import gymnasium as gym
 import gym_pusht
 import torch
@@ -406,7 +406,7 @@ import numpy as np
 import gymnasium as gym
 import gym_pusht
 import torch
-from lerobot.common.policies.act.modeling_act import ACTPolicy
+from lerobot.policies.act.modeling_act import ACTPolicy
 
 FAILURE_CATEGORIES = [
     "A: never reached block",

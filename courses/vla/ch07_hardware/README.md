@@ -78,7 +78,7 @@ demos.
 PORT=/dev/ttyUSB0   # or /dev/tty.usbserial-XXXX on macOS
 
 # Verify all motors are detected
-python -c "from lerobot.common.robot_devices.motors.feetech import FeetechMotorsBus; \
+python -c "from lerobot.motors.feetech import FeetechMotorsBus; \
            b = FeetechMotorsBus(port='$PORT', motors={'joint_1': (1, 'sts3215')}); \
            b.connect(); print('Connected')"
 
@@ -124,11 +124,12 @@ python lerobot/scripts/control_robot.py teleoperate \
 ```python workspace/vla/ch07/check_workspace.py
 """Move to a grid of joint angles and record which are reachable without collision.
 The SO-101 has 6 DOF (joint_1 through joint_6) — unlike the 7-DOF Franka from Ch01.
-Note: verify the send_action API against your installed LeRobot version —
-the dict-keyed form below may differ. Check lerobot/common/robot_devices/robots/so101.py.
+Note: LeRobot's robot API changed in v0.3+ — lerobot.common.robot_devices was removed.
+Check lerobot/robots/ in your installed version for the current import and class name.
+The structure below is illustrative; adapt to your installed version.
 """
 import numpy as np
-from lerobot.common.robot_devices.robots.factory import make_robot
+from lerobot.robots.so_follower import SOFollower as make_robot  # adapt to your version
 
 def check_workspace(robot_config: str, calibration_path: str) -> None:
     robot = make_robot(robot_config)

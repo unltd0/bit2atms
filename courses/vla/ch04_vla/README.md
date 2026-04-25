@@ -71,7 +71,7 @@ import numpy as np
 import gymnasium as gym
 import gym_pusht
 import torch
-from lerobot.common.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
 INSTRUCTIONS = [
     "push the T block into the target area",
@@ -134,7 +134,7 @@ import numpy as np
 import gymnasium as gym
 import gym_pusht
 import torch
-from lerobot.common.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
 # Groups: semantically equivalent phrasings vs. semantically different tasks
 INSTRUCTION_GROUPS = {
