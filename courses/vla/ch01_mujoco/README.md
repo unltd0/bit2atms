@@ -20,7 +20,7 @@ chapter.
 
 **Install:**
 ```bash
-pip install mujoco numpy matplotlib scipy pink pin robot_descriptions quadprog
+pip install mujoco numpy matplotlib scipy pink pinocchio robot_descriptions quadprog
 git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
 ```
 
@@ -55,16 +55,9 @@ joint configurations, and print the resulting body poses.
 
 MuJoCo splits everything into two objects:
 
-- **`MjModel`** — the static description: geometry, masses, joint limits, actuator types.
-  Loaded once from an XML file. Never changes during simulation.
-- **`MjData`** — the live state: joint positions, velocities, contact forces, body poses.
-  Updated every call to `mj_step()`.
-
-Three things to know:
-
-- `MjModel` is read-only — it's the robot's blueprint (geometry, masses, joint limits). Load it once.
-- `MjData` holds everything that changes during simulation: joint angles, velocities, body poses, contact forces.
-- `mj_step()` advances physics by one timestep (default 2 ms): reads `data.ctrl`, computes forces, updates `data`.
+- **`MjModel`** — the static description: geometry, masses, joint limits, actuator types. Load it once from an XML file; it never changes.
+- **`MjData`** — the live state: joint positions, velocities, body poses, contact forces. Updated every call to `mj_step()`.
+- **`mj_step()`** — advances physics by one timestep (default 2 ms): reads `data.ctrl`, computes forces, writes back to `data`.
 
 You can verify this yourself:
 
@@ -302,7 +295,7 @@ not simulating dynamics. You'd add `mj_step()` when you need contact forces or i
 
 ## Resources
 
-1. [MuJoCo Programming Guide](https://mujoco.readthedocs.io/en/stable/programming/index.html) — read the mjModel/mjData and Simulation sections
+1. [MuJoCo Programming Guide](https://mujoco.readthedocs.io/en/stable/programming/index.html) — read the MjModel/MjData and Simulation sections
 2. [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) — all robot models used in this course
 3. [Pink documentation](https://jmirabel.github.io/pink/) — task definitions and solver API
 4. [MuJoCo Tutorial Colab (DeepMind)](https://colab.research.google.com/github/deepmind/mujoco/blob/main/python/tutorial.ipynb) — interactive walkthrough of viewer and core API

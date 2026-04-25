@@ -27,21 +27,22 @@ ARM_XML = """<?xml version="1.0"?>
 </mujoco>
 """
 
-TARGET       = np.array([0.5, -0.3])
+# Target joint angles in radians [j1, j2]
+TARGET_QPOS  = np.array([0.5, -0.3])
 SIM_DURATION = 3.0
 
 def run_pd(kp: float, kd: float) -> tuple[np.ndarray, np.ndarray]:
-    model = mujoco.MjModel.from_xml_string(ARM_XML)
-    data  = mujoco.MjData(model)
-    steps = int(SIM_DURATION / model.opt.timestep)
-    time  = np.zeros(steps)
-    q     = np.zeros((steps, 2))
+    model      = mujoco.MjModel.from_xml_string(ARM_XML)
+    data       = mujoco.MjData(model)
+    steps      = int(SIM_DURATION / model.opt.timestep)
+    timestamps = np.zeros(steps)
+    q          = np.zeros((steps, 2))
     for i in range(steps):
-        data.ctrl[:2] = kp * (TARGET - data.qpos[:2]) - kd * data.qvel[:2]
+        data.ctrl[:2] = kp * (TARGET_QPOS - data.qpos[:2]) - kd * data.qvel[:2]
         mujoco.mj_step(model, data)
-        time[i] = data.time
-        q[i]    = data.qpos[:2]
-    return time, q
+        timestamps[i] = data.time
+        q[i]          = data.qpos[:2]
+    return timestamps, q
 
 if __name__ == "__main__":
     configs = [
@@ -51,11 +52,11 @@ if __name__ == "__main__":
         (200, 30, "kp=200 kd=30  well-tuned high stiffness"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    fig.suptitle("PD Controller — joint 1 trajectory")
+    fig.suptitle("PD Controller — joint j1 trajectory")
     for ax, (kp, kd, label) in zip(axes.flat, configs):
-        time, q = run_pd(kp, kd)
-        ax.plot(time, np.degrees(q[:, 0]))
-        ax.axhline(np.degrees(TARGET[0]), color="r", linestyle="--", label="target")
+        timestamps, q = run_pd(kp, kd)
+        ax.plot(timestamps, np.degrees(q[:, 0]))
+        ax.axhline(np.degrees(TARGET_QPOS[0]), color="r", linestyle="--", label="target")
         ax.set_title(label); ax.set_xlabel("time (s)"); ax.set_ylabel("angle (deg)")
         ax.legend()
     plt.tight_layout()

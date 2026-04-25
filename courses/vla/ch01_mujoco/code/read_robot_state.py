@@ -28,10 +28,13 @@ def demo_two_configurations(model: mujoco.MjModel, data: mujoco.MjData) -> None:
     data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
     mujoco.mj_forward(model, data)
     print(f"\nNeutral pose  — EE: {np.round(data.xpos[ee_id], 3)}")
+    read_body_poses(model, data)
 
     data.qpos[:7] = [0.785, -0.785, 0, -2.356, 0, 1.571, 0.785]
     mujoco.mj_forward(model, data)
-    print(f"Rotated pose  — EE: {np.round(data.xpos[ee_id], 3)}")
+    print(f"\nRotated pose  — EE: {np.round(data.xpos[ee_id], 3)}")
+    read_body_poses(model, data)
+
     print("\nSame arm, joint 0 rotated 45° → different EE position. That's FK.")
 
 if __name__ == "__main__":
@@ -43,7 +46,6 @@ if __name__ == "__main__":
     model = mujoco.MjModel.from_xml_path(FRANKA_XML)
     data  = mujoco.MjData(model)
     print_robot_info(model)
-    read_body_poses(model, data)
     demo_two_configurations(model, data)
 
     print("\nLaunching viewer — Ctrl+drag to move joints. Close to exit.")
