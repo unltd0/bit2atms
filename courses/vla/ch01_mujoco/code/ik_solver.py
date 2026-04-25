@@ -27,6 +27,7 @@ if __name__ == "__main__":
     # Load into Pink/Pinocchio for IK (tested with pink>=0.9).
     robot = load_robot_description("panda_description")
     # Start Pinocchio at the same neutral pose as MuJoCo to avoid a jump on frame 1.
+    # Franka panda_description has 9 DOF (7 arm + 2 finger); [:7] sets the arm joints.
     q0 = robot.q0.copy()
     q0[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
     configuration = pink.Configuration(robot.model, robot.data, q0)

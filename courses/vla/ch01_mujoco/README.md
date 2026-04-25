@@ -63,8 +63,10 @@ MuJoCo splits everything into two objects:
 You can verify this yourself:
 
 ```python
-import mujoco
-model = mujoco.MjModel.from_xml_path("workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+import mujoco, os
+xml = "workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml"
+assert os.path.exists(xml), "Clone Menagerie first: git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie"
+model = mujoco.MjModel.from_xml_path(xml)
 data  = mujoco.MjData(model)
 print(f"Time before step: {data.time:.4f}s")
 mujoco.mj_step(model, data)
@@ -72,7 +74,7 @@ print(f"Time after step:  {data.time:.4f}s  (Δ = {model.opt.timestep*1000:.1f} 
 print(f"Joint 0 position: {data.qpos[0]:.4f} rad  (unchanged — no control signal yet)")
 ```
 
-Run this from the repo root after cloning Menagerie.
+Run from the repo root.
 
 ### Coordinate frames
 
@@ -107,8 +109,9 @@ signal and falls under gravity — that's expected. To explore poses: double-cli
 to select it, then use the joint sliders in the right UI panel. Ctrl+drag on a selected
 body applies an external force perturbation (not joint control).
 
-**Headless / no display?** Comment out the `with mujoco.viewer...` block. The two
-`print(f"... pose — EE: ...")` lines above it are the actual deliverable.
+**Headless / no display?** Comment out the `with mujoco.viewer...` block at the bottom
+of the script. The EE and body position printouts from `demo_two_configurations` are the
+actual deliverable.
 
 ---
 

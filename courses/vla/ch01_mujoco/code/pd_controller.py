@@ -27,9 +27,9 @@ ARM_XML = """<?xml version="1.0"?>
 </mujoco>
 """
 
-# Target joint angles in radians [j1, j2]
-TARGET_QPOS  = np.array([0.5, -0.3])
-SIM_DURATION = 3.0
+# Module-level constants shared across all runs
+TARGET_QPOS  = np.array([0.5, -0.3])  # target joint angles in radians [j1, j2]
+SIM_DURATION = 3.0                     # seconds
 
 def run_pd(model: mujoco.MjModel, kp: float, kd: float) -> tuple[np.ndarray, np.ndarray]:
     data       = mujoco.MjData(model)

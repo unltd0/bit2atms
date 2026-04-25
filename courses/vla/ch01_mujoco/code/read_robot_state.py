@@ -15,7 +15,7 @@ def print_robot_info(model: mujoco.MjModel) -> None:
         print(f"  [{i}] {name:30s}  [{np.degrees(lo):.0f}°, {np.degrees(hi):.0f}°]")
 
 def read_body_poses(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    mujoco.mj_forward(model, data)
+    """Print all body positions. Assumes mj_forward has already been called."""
     print("\nBody positions (world frame):")
     for i in range(1, model.nbody):
         print(f"  {model.body(i).name:30s}  {np.round(data.xpos[i], 3)}")
@@ -52,5 +52,5 @@ if __name__ == "__main__":
     print("(Skip the viewer block if running headless/SSH — the printed output above is the deliverable.)")
     with mujoco.viewer.launch_passive(model, data) as viewer:
         while viewer.is_running():
-            mujoco.mj_step(model, data)
+            mujoco.mj_step(model, data)  # no ctrl set — arm falls under gravity; that's expected
             viewer.sync()
