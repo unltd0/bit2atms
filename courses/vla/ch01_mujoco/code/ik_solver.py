@@ -11,7 +11,8 @@ from robot_descriptions.loaders.pinocchio import load_robot_description
 import os
 import time as time_module
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FRANKA_XML = os.path.join(_SCRIPT_DIR, "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 if __name__ == "__main__":
     if not os.path.exists(FRANKA_XML):
@@ -45,7 +46,8 @@ if __name__ == "__main__":
         while viewer.is_running():
             velocity = pink.solve_ik(configuration, [ee_task], dt, solver="quadprog")
             configuration.integrate_inplace(velocity, dt)
-            # Pinocchio q may include finger joints — take the 7 arm DOFs only.
+            # Pinocchio stores joint angles in .q (array-like, includes all DOFs including fingers)
+            # Take the 7 arm DOFs only.
             mj_data.qpos[:7] = configuration.q[:7]
             # mj_forward (not mj_step): we're solving geometry, not simulating dynamics.
             mujoco.mj_forward(mj_model, mj_data)

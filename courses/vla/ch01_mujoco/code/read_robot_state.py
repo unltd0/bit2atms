@@ -4,7 +4,8 @@ import mujoco
 import mujoco.viewer
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FRANKA_XML = os.path.join(_SCRIPT_DIR, "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 def print_robot_info(model: mujoco.MjModel) -> None:
     print(f"Bodies: {model.nbody}  Joints: {model.njnt}  Actuators: {model.nu}")

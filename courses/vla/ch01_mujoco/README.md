@@ -20,6 +20,14 @@ chapter.
 
 **Install:** (run from the repo root)
 ```bash
+# mujoco       — physics simulator engine
+# numpy        — array math
+# matplotlib   — plotting trajectories and images
+# scipy        — scientific computing (Rotation, etc.)
+# pin-pink     — inverse kinematics solver (NOT 'pink' which is a code formatter)
+# pinocchio    — kinematics library that Pink builds on top of
+# robot_descriptions — fetches robot URDF/XML models from GitHub
+# quadprog     — quadratic programming backend for IK optimization
 pip install mujoco numpy matplotlib scipy pin-pink pinocchio robot_descriptions quadprog
 git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
 ```
@@ -58,6 +66,10 @@ MuJoCo splits everything into two objects:
 - **`MjModel`** — the static description: geometry, masses, joint limits, actuator types. Load it once from an XML file; it never changes.
 - **`MjData`** — the live state: joint positions, velocities, body poses, contact forces. Updated every call to `mj_step()`.
 
+> **Quick note on two key functions:**
+> - `mj_forward(model, data)` — recomputes derived quantities (body positions, rotation matrices) from current joint angles **without advancing time**. Use this when you just want to query poses.
+> - `mj_step(model, data)` — advances physics by one timestep (integrates dynamics, applies gravity, handles collisions). Use this for simulation loops.
+
 `mj_step(model, data)` advances physics by one timestep (default 2 ms): reads `data.ctrl`, computes forces, writes results back to `data`.
 
 You can verify this yourself:
@@ -81,6 +93,10 @@ Run from the repo root.
 A **frame** is a coordinate system attached to a body — an origin `[x, y, z]` plus three
 axes (X, Y, Z). Every link in a robot has one. It answers: *where is this body?* and
 *which way is it facing?*
+
+> **Franka Panda** — a 7-DOF collaborative arm by Franka Engineering, widely used in
+> robotics research. The Menagerie model (`franka_emika_panda`) is the official simulation
+> description from Google DeepMind.
 
 MuJoCo gives you `data.xpos[body_id]` (the origin) and `data.xmat[body_id]` (a 3×3
 rotation matrix stored flat as 9 numbers — reshape to use it). These are computed by
@@ -138,9 +154,9 @@ T = [[R00, R01, R02, tx],   ← rotation (3×3)  |  tx = x position
      [0,   0,   0,   1 ]]   ← always this row (math convention for chaining)
 ```
 
-To convert a point from one frame to another: `p_world = T @ [px, py, pz, 1]`
-
-The appended `1` is a math convention that makes the matrix multiply handle both rotation
+To convert a point from one frame to another: `p_world = T @ [px, py, pz, 1]`.
+Think of it as "apply the arm's rotation then shift by its position" — the matrix bundles
+both operations into one multiplication. The appended `1` is a math convention that makes the matrix multiply handle both rotation
 and translation in one step. The result's last element is always 1 — discard it to get back
 to `[x, y, z]`. That's what `transform_point()` does with `[:3]`.
 
@@ -152,7 +168,8 @@ MuJoCo also stores orientation as a **quaternion** in `data.xquat`: `[w, x, y, z
 A quaternion is a compact 4-number rotation representation. `[x, y, z]` is the rotation
 axis; `w` encodes magnitude. Identity (no rotation) = `[1, 0, 0, 0]`. Use
 `scipy.spatial.transform.Rotation` to convert — but watch the convention: MuJoCo is
-`[w, x, y, z]`, scipy and ROS 2 are `[x, y, z, w]`.
+`[w, x, y, z]`, scipy and ROS 2 are `[x, y, z, w]`. You won't need this conversion until
+Chapter 6 (ROS 2), but keep it in mind — mixing conventions causes silent bugs.
 
 ### The code
 
@@ -177,8 +194,9 @@ the output should exactly match the hand's world position printed above it.
 **Problem:** You need the robot to hold a target joint configuration using `motor`
 actuators — which means you write the control loop yourself.
 
-**Approach:** Build a minimal 2-DOF arm with motor actuators, implement a PD controller,
-run it with four gain combinations, and plot the trajectories.
+**Approach:** Build a minimal 2-DOF (degrees of freedom = independently controllable joints)
+arm with motor actuators, implement a PD controller, run it with four gain combinations,
+and plot the trajectories.
 
 We use a custom 2-DOF arm here, not the Franka. The Franka Menagerie model uses
 `position` actuators (built-in PD servo — MuJoCo does the control for you). To write and
@@ -228,6 +246,12 @@ that put the hand there — this is **inverse kinematics (IK)**.
 **Approach:** Use Pink, a differential IK library. At each timestep Pink solves for the
 joint velocity that moves the end-effector toward the target, then integrates it.
 
+### Why two separate loads?
+
+MuJoCo handles physics simulation (gravity, collisions, dynamics). Pink/Pinocchio handle
+inverse kinematics optimization (finding joint angles for a target pose). They're separate
+libraries with different APIs and data structures, so we load the robot into both.
+
 Pink uses **Pinocchio** — a separate kinematics library — internally. So you load the
 robot twice: once into MuJoCo for physics and visualization, once into Pinocchio for IK.
 Pink computes new joint angles; you copy them into MuJoCo's `qpos` each step to keep the
@@ -239,8 +263,8 @@ Menagerie Franka match on the 7 arm joints used here.
 FK is just matrix multiplication along the chain. IK is harder:
 - Many joint configs can reach the same position (redundancy)
 - Some positions are unreachable
-- Near **singularities** (configurations where the arm loses a degree of freedom), naive
-  approaches explode
+- Near **singularities** — configurations where the arm loses a degree of freedom
+  (like fully extending a straight arm) — naive approaches explode into infinite joint velocities
 
 Pink uses the **Jacobian** — a matrix mapping joint velocities to end-effector velocity —
 to solve a constrained optimization problem at each step. It handles joint limits,
@@ -254,6 +278,9 @@ singularities, and multiple simultaneous tasks. [Read more: Pink docs](https://s
 **Note:** The loop uses `mj_forward()` not `mj_step()` — physics don't advance. The arm
 teleports joint-by-joint to each IK solution. This is intentional: we're solving geometry,
 not simulating dynamics. You'd add `mj_step()` when you need contact forces or inertia.
+
+> **Debugging tip:** The viewer runs in the foreground and blocks the terminal. To add
+> debug prints, comment out the viewer block and use manual `mj_forward()` + print calls.
 
 **Experiment:** Change `target.translation` to different positions. Try `[0.8, 0.0, 0.3]`
 (near workspace edge) and watch how the arm reaches — or stops when it can't.
