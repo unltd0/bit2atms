@@ -15,7 +15,7 @@ def print_robot_info(model: mujoco.MjModel) -> None:
         print(f"  [{i}] {name:30s}  [{np.degrees(lo):.0f}°, {np.degrees(hi):.0f}°]")
 
 def read_body_poses(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    mujoco.mj_forward(model, data)
+    """Print body positions. Caller must have called mj_forward first."""
     print("\nBody positions (world frame):")
     for i in range(1, model.nbody):
         print(f"  {model.body(i).name:30s}  {np.round(data.xpos[i], 3)}")

@@ -57,7 +57,8 @@ MuJoCo splits everything into two objects:
 
 - **`MjModel`** — the static description: geometry, masses, joint limits, actuator types. Load it once from an XML file; it never changes.
 - **`MjData`** — the live state: joint positions, velocities, body poses, contact forces. Updated every call to `mj_step()`.
-- **`mj_step()`** — advances physics by one timestep (default 2 ms): reads `data.ctrl`, computes forces, writes back to `data`.
+
+`mj_step(model, data)` advances physics by one timestep (default 2 ms): reads `data.ctrl`, computes forces, writes results back to `data`.
 
 You can verify this yourself:
 
@@ -100,6 +101,10 @@ R   = data.xmat[body_id].reshape(3, 3)
 **What to observe:** The EE position changes between the two joint configurations —
 that's **forward kinematics (FK)**. Open the viewer, drag joints, watch the printed
 positions update.
+
+**What to expect in the viewer:** The arm launches in the rotated pose with no control
+signal, so it falls under gravity immediately — that's correct. Drag joints with Ctrl+click
+to explore poses; watch the terminal for printed EE positions.
 
 **Headless / no display?** Comment out the `with mujoco.viewer...` block. The two
 `print(f"... pose — EE: ...")` lines above it are the actual deliverable.
@@ -251,9 +256,10 @@ not simulating dynamics. You'd add `mj_step()` when you need contact forces or i
    current `qpos` without advancing time or physics. `mj_step()` also integrates dynamics
    by one timestep. Use `mj_forward()` for pose queries; `mj_step()` for simulation.
 
-2. You set `data.qpos[:7]` then immediately read `data.xpos`. Why might values be stale?
-   **Answer:** `data.xpos` only updates after `mj_forward()` or `mj_step()`. Setting
-   `qpos` directly skips recomputation — always follow with `mj_forward()`.
+2. You run `mj_step()` with `data.ctrl` all zeros. What happens to the arm?
+   **Answer:** With no control torques, gravity pulls every joint toward its lowest-energy
+   position. The arm falls. This is why a viewer loop without control looks like a collapse —
+   you need either a control signal or `position` actuators to hold a pose.
 
 3. Your PD controller settles slowly without oscillation. What do you change first?
    **Answer:** Increase `kp`. If it then oscillates, increase `kd`. Tune in that order —
