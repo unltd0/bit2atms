@@ -55,9 +55,9 @@ joint configurations, and print the resulting body poses.
 
 MuJoCo splits everything into two objects:
 
-- **`mjModel`** — the static description: geometry, masses, joint limits, actuator types.
+- **`MjModel`** — the static description: geometry, masses, joint limits, actuator types.
   Loaded once from an XML file. Never changes during simulation.
-- **`mjData`** — the live state: joint positions, velocities, contact forces, body poses.
+- **`MjData`** — the live state: joint positions, velocities, contact forces, body poses.
   Updated every call to `mj_step()`.
 
 Three things to know:
@@ -69,15 +69,16 @@ Three things to know:
 You can verify this yourself:
 
 ```python
-import mujoco, os
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
-model = mujoco.MjModel.from_xml_path(FRANKA_XML)
+import mujoco
+model = mujoco.MjModel.from_xml_path("workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 data  = mujoco.MjData(model)
 print(f"Time before step: {data.time:.4f}s")
 mujoco.mj_step(model, data)
 print(f"Time after step:  {data.time:.4f}s  (Δ = {model.opt.timestep*1000:.1f} ms)")
 print(f"Joint 0 position: {data.qpos[0]:.4f} rad  (unchanged — no control signal yet)")
 ```
+
+Run this from the repo root after cloning Menagerie.
 
 ### Coordinate frames
 
@@ -156,6 +157,10 @@ axis; `w` encodes magnitude. Identity (no rotation) = `[1, 0, 0, 0]`. Use
 ```python courses/vla/ch01_mujoco/code/camera_to_world.py
 ```
 
+**What to observe:** The same cup (same camera-frame coordinates) maps to different world
+positions depending on where the arm is pointing. Set `cup_in_camera = [0, 0, 0]` — you
+get back exactly the hand's world position. That's the sanity check for any transform.
+
 ---
 
 ## Project C — PD Controller: Tune the Gains
@@ -200,8 +205,9 @@ torque = kp × (target_angle − current_angle) − kd × current_velocity
 ```python courses/vla/ch01_mujoco/code/pd_controller.py
 ```
 
-**What to observe:** Underdamped configs oscillate; well-tuned ones converge smoothly.
-Scale gains up ~4× for a heavier arm like the Franka Panda.
+**What to observe:** The script saves `pd_gains.png` in your working directory. Open it
+to see the four trajectories side by side — underdamped configs oscillate, well-tuned ones
+converge smoothly. Scale gains up ~4× for a heavier arm like the Franka Panda.
 
 ---
 
@@ -235,6 +241,10 @@ singularities, and multiple simultaneous tasks. [Read more: Pink docs](https://j
 
 ```python courses/vla/ch01_mujoco/code/ik_solver.py
 ```
+
+**Note:** The loop uses `mj_forward()` not `mj_step()` — physics don't advance. The arm
+teleports joint-by-joint to each IK solution. This is intentional: we're solving geometry,
+not simulating dynamics. You'd add `mj_step()` when you need contact forces or inertia.
 
 **Experiment:** Change `target.translation` to different positions. Try `[0.8, 0.0, 0.3]`
 (near workspace edge) and watch how the arm reaches — or stops when it can't.

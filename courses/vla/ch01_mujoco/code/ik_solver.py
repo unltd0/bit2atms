@@ -8,7 +8,8 @@ import pink
 from pink.tasks import FrameTask
 import pinocchio as pin
 from robot_descriptions.loaders.pinocchio import load_robot_description
-import os, time as time_module
+import os
+import time as time_module
 
 FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
@@ -27,7 +28,8 @@ if __name__ == "__main__":
     robot = load_robot_description("panda_description")
     configuration = pink.Configuration(robot.model, robot.data, robot.q0)
 
-    # IK task: reach target position
+    # IK task: reach target position.
+    # "hand" is the Pinocchio frame name from panda_description — matches MuJoCo body name here.
     ee_task = FrameTask("hand", position_cost=1.0, orientation_cost=0.0)
     target = pin.SE3.Identity()
     target.translation = np.array([0.5, 0.1, 0.4])   # ← change this
@@ -39,7 +41,9 @@ if __name__ == "__main__":
         while viewer.is_running():
             velocity = pink.solve_ik(configuration, [ee_task], dt, solver="quadprog")
             configuration.integrate_inplace(velocity, dt)
-            mj_data.qpos[:7] = configuration.q[:7]   # Pinocchio q may include finger joints; take arm DOFs only
+            # Pinocchio q may include finger joints — take the 7 arm DOFs only.
+            mj_data.qpos[:7] = configuration.q[:7]
+            # mj_forward (not mj_step): we're solving geometry, not simulating dynamics.
             mujoco.mj_forward(mj_model, mj_data)
             viewer.sync()
             time_module.sleep(dt)

@@ -5,9 +5,6 @@ Shows how gain tuning changes stability.
 import numpy as np
 import matplotlib.pyplot as plt
 import mujoco
-from pathlib import Path
-
-SCRIPT_DIR = Path(__file__).parent.absolute()
 
 # Create the arm XML inline
 ARM_XML = """<?xml version="1.0"?>
@@ -62,5 +59,5 @@ if __name__ == "__main__":
         ax.set_title(label); ax.set_xlabel("time (s)"); ax.set_ylabel("angle (deg)")
         ax.legend()
     plt.tight_layout()
-    fig.savefig(str(SCRIPT_DIR / "pd_gains.png"))
-    print(f"Saved {SCRIPT_DIR / 'pd_gains.png'}")
+    fig.savefig("pd_gains.png")
+    print("Saved pd_gains.png")
