@@ -706,7 +706,7 @@ body {
 }
 #content pre code {
   display: block;
-  padding: 16px;
+  padding: 14px 16px 14px 20px;
   font-family: var(--font-code);
   font-size: 13px;
   line-height: 1.6;
@@ -1164,44 +1164,46 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
 .ap-size-btn:hover { background: var(--bg4); color: var(--text); }
 
 /* ─── Code block header ──────────────────────────────────────────── */
-.code-block-wrap { position: relative; margin: 20px 0; }
-.code-block-wrap pre { margin: 0; }
+.code-block-wrap { position: relative; margin: 20px 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border2); }
+.code-block-wrap pre { margin: 0 !important; border: none !important; border-radius: 0 !important; background: var(--code-bg, var(--bg2)) !important; }
 .code-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: var(--bg4);
-  border: 1px solid var(--border2);
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
-  padding: 4px 10px;
+  border-bottom: 1px solid var(--border2);
+  padding: 0 6px 0 12px;
+  height: 32px;
+  cursor: pointer;
+  user-select: none;
 }
-.code-header + pre { border-radius: 0 0 8px 8px; border-top: none; border: 1px solid var(--border2); }
-.code-lang-wrap { display: flex; align-items: center; gap: 6px; }
+.code-header:hover { background: var(--bg5); }
+.code-lang-wrap { display: flex; align-items: center; gap: 7px; }
 .code-lang-dot {
-  width: 7px; height: 7px;
+  width: 6px; height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--text3);
 }
 /* Language colors */
-.lang-python  { background: #4b8bbe; }   /* Python blue */
-.lang-bash    { background: #89e051; }   /* shell green */
-.lang-js      { background: #f7df1e; }   /* JS yellow */
-.lang-ts      { background: #3178c6; }   /* TS blue */
-.lang-json    { background: #fbbf24; }   /* amber */
-.lang-yaml    { background: #f472b6; }   /* pink */
-.lang-xml     { background: #fb923c; }   /* orange */
-.lang-html    { background: #e34c26; }   /* HTML red */
-.lang-css     { background: #264de4; }   /* CSS blue */
-.lang-cpp     { background: #9333ea; }   /* purple */
-.lang-rust    { background: #ce412b; }   /* rust red */
-.lang-go      { background: #00acd7; }   /* Go cyan */
-.lang-docker  { background: #2496ed; }   /* Docker blue */
+.lang-python  { background: #4b8bbe; }
+.lang-bash    { background: #89e051; }
+.lang-js      { background: #f7df1e; }
+.lang-ts      { background: #3178c6; }
+.lang-json    { background: #fbbf24; }
+.lang-yaml    { background: #f472b6; }
+.lang-xml     { background: #fb923c; }
+.lang-html    { background: #e34c26; }
+.lang-css     { background: #264de4; }
+.lang-cpp     { background: #9333ea; }
+.lang-rust    { background: #ce412b; }
+.lang-go      { background: #00acd7; }
+.lang-docker  { background: #2496ed; }
 .lang-default { background: var(--text3); }
 .lang-text    { background: var(--bg5); }
 
-.code-lang { font-size: 9.5px; font-weight: 700; color: var(--text2); letter-spacing: 0.4px; font-family: var(--font-ui); }
+.code-lang { font-size: 10px; font-weight: 600; color: var(--text2); letter-spacing: 0.3px; font-family: var(--font-ui); }
+.code-header-right { display: flex; align-items: center; gap: 2px; }
 .code-copy {
   font-size: 11px;
   color: var(--text3);
@@ -1214,6 +1216,24 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
   font-family: var(--font-ui);
 }
 .code-copy:hover { color: var(--text); border-color: var(--border2); background: var(--bg3); }
+.code-toggle {
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text3);
+  border-radius: 4px;
+  transition: color 0.12s, transform 0.2s;
+  flex-shrink: 0;
+}
+.code-toggle svg { width: 11px; height: 11px; transition: transform 0.2s; }
+.code-block-wrap.collapsed .code-toggle svg { transform: rotate(-90deg); }
+.code-body {
+  overflow: hidden;
+  transition: max-height 0.22s cubic-bezier(.4,0,.2,1);
+  max-height: 2000px;
+}
+.code-block-wrap.collapsed .code-body { max-height: 0; }
+.code-block-wrap.collapsed .code-header { border-bottom-color: transparent; }
+.code-block-wrap.collapsed { border-color: var(--border); }
 </style>
 </head>
 <body>
@@ -1544,14 +1564,17 @@ renderer.code = function(code, lang){
   }
 
   return `<div class="code-block-wrap">
-    <div class="code-header">
+    <div class="code-header" onclick="toggleCode(this)">
       <div class="code-lang-wrap">
         <span class="code-lang-dot ${langClass}"></span>
         <span class="code-lang">${displayLabel}</span>
       </div>
-      <button class="code-copy" onclick="copyCode(this)">Copy</button>
+      <div class="code-header-right">
+        <button class="code-copy" onclick="event.stopPropagation();copyCode(this)">Copy</button>
+        <div class="code-toggle"><svg viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 1l4 4 4-4"/></svg></div>
+      </div>
     </div>
-    <pre><code class="hljs${detectedLang ? ' language-'+detectedLang : ''}">${highlighted}</code></pre>
+    <div class="code-body"><pre><code class="hljs${detectedLang ? ' language-'+detectedLang : ''}">${highlighted}</code></pre></div>
   </div>`;
 };
 
@@ -1563,6 +1586,10 @@ function copyCode(btn){
     btn.textContent='Copied!';
     setTimeout(()=>btn.textContent='Copy',1800);
   });
+}
+
+function toggleCode(header){
+  header.closest('.code-block-wrap').classList.toggle('collapsed');
 }
 
 // ── Fetch ──────────────────────────────────────────────────────────────
@@ -1747,9 +1774,18 @@ async function loadChapter(id){
           or serve locally via HTTP for fully offline use:
         </p>
         <div class="code-block-wrap">
-          <div class="code-header"><span class="code-lang">bash</span></div>
-          <pre><code>python3 -m http.server 8080
-# then open http://localhost:8080/reader.html</code></pre>
+          <div class="code-header" onclick="toggleCode(this)">
+            <div class="code-lang-wrap">
+              <span class="code-lang-dot lang-bash"></span>
+              <span class="code-lang">Bash</span>
+            </div>
+            <div class="code-header-right">
+              <button class="code-copy" onclick="event.stopPropagation();copyCode(this)">Copy</button>
+              <div class="code-toggle"><svg viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 1l4 4 4-4"/></svg></div>
+            </div>
+          </div>
+          <div class="code-body"><pre><code>python3 -m http.server 8080
+# then open http://localhost:8080/reader.html</code></pre></div>
         </div>
         <p style="color:var(--text3);font-size:12px;margin-top:12px">Error: ${err.message}</p>
       </div>`;
