@@ -204,7 +204,9 @@ randomization range where you get robustness without sacrificing too much nomina
 success rate and OOD (out-of-distribution) success rate.
 
 ```python workspace/vla/ch05/robustness_sweep.py
-"""Sweep DR range width and measure nominal vs. OOD success rate."""
+"""Sweep DR range width and measure nominal vs. OOD success rate.
+Run from workspace/vla/ch05/ so the physics_dr import resolves.
+"""
 import numpy as np
 from physics_dr import DRReachEnv, evaluate
 from stable_baselines3 import SAC
@@ -243,15 +245,23 @@ robustness improves. Medium DR is usually the best practical choice.
 **Problem:** Visual policies trained on clean sim images fail when lighting, background,
 or camera position changes — the visual reality gap.
 
-**Approach:** Add random textures, lighting, and image augmentation during training.
-Measure how much visual DR narrows the sim-to-real gap.
+**Approach:** Add image augmentation to your training observations as a visual DR proxy.
+Full texture/lighting randomization requires modifying the MuJoCo scene XML at each reset
+(randomize `<light>` and `<material>` attributes). Image augmentation is the practical
+starting point — it covers ~80% of the visual gap for most tasks.
 
 ### Visual DR strategies
 
-- **Random background textures:** Replace the floor/walls with random patterns
-- **Random lighting:** Vary light position, intensity, and color
-- **Image augmentation:** Color jitter, random crops, Gaussian blur applied to observations
-- **Random camera pose:** Small perturbations to camera position and orientation
+- **Image augmentation:** Color jitter, random crops, Gaussian blur — applied to observations
+  during training. This is what the code below implements.
+- **Random background textures:** Replace floor/walls with random patterns at each episode
+  reset — modify `model.mat_texid` and reload textures in `_randomize()`.
+- **Random lighting:** Vary `model.light_pos` and `model.light_dir` at reset.
+- **Random camera pose:** Small perturbations to `model.cam_pos` at reset.
+
+To plug augmentation into your ACT training from Ch03: in LeRobot's training loop, images
+are loaded via the dataset's `__getitem__`. Wrap the dataset with a transform that calls
+`augment_obs()` on each `observation.image` tensor before it's fed to the policy.
 
 ```python workspace/vla/ch05/visual_dr.py
 """Apply image augmentation as a visual DR proxy. Measure robustness to visual shifts."""
@@ -304,9 +314,16 @@ def test_robustness(env_id: str, policy, n_trials: int = 50,
     return successes / n_trials
 
 if __name__ == "__main__":
-    print("Training with visual augmentation reduces sensitivity to visual domain shift.")
-    print("Run this after training an ACT/Diffusion policy with TRAIN_AUGMENTATION applied.")
-    print("Compare: eval without aug vs. eval with simulated visual shift (apply_aug=True).")
+    # Verify augmentation pipeline works on a dummy image
+    dummy = np.random.randint(0, 255, (96, 96, 3), dtype=np.uint8)
+    aug   = augment_obs(dummy, augment=True)
+    clean = augment_obs(dummy, augment=False)
+    print(f"Input:  shape={dummy.shape}  dtype={dummy.dtype}")
+    print(f"Augmented:  shape={aug.shape}  range=[{aug.min():.2f}, {aug.max():.2f}]")
+    print(f"Clean:      shape={clean.shape}  range=[{clean.min():.2f}, {clean.max():.2f}]")
+    print()
+    print("Usage: wrap your ACT/Diffusion training loop with augment_obs(obs['pixels'], augment=True)")
+    print("At eval time use augment=False (or apply_aug=True to test robustness to visual shift).")
 ```
 
 ---
@@ -320,7 +337,10 @@ your policy can tolerate and which will cause it to fail.
 showing success rate vs. (mass_scale, damping_scale).
 
 ```python workspace/vla/ch05/robustness_report.py
-"""Sweep physics parameter grid and produce a robustness heatmap."""
+"""Sweep physics parameter grid and produce a robustness heatmap.
+Run from workspace/vla/ch05/ so the physics_dr import resolves.
+"""
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from physics_dr import DRReachEnv, evaluate
@@ -352,8 +372,9 @@ if __name__ == "__main__":
     plt.yticks(range(len(DAMP_SCALES)), [f"{d:.1f}×" for d in DAMP_SCALES])
     plt.xlabel("Mass scale"); plt.ylabel("Damping scale")
     plt.title("Robustness heatmap — success rate across physics parameters")
-    plt.savefig("robustness_heatmap.png")
-    print("Saved robustness_heatmap.png")
+    out = os.path.join(os.path.dirname(__file__), "robustness_heatmap.png")
+    plt.savefig(out)
+    print(f"Saved {out}")
     print(f"\nNominal (1.0, 1.0): {grid[DAMP_SCALES.index(1.0), MASS_SCALES.index(1.0)]:.0%}")
 ```
 

@@ -103,11 +103,14 @@ def collect(n_demos: int, save_dir: str) -> None:
         fps=10,
         root=save_dir,
         features={
-            "observation.image": {"shape": (96, 96, 3), "dtype": "image"},
+            # Image shape is [C, H, W] — channels first
+            "observation.image": {"shape": (3, 96, 96), "dtype": "image"},
             "observation.state": {"shape": (2,), "dtype": "float32"},
             "action": {"shape": (2,), "dtype": "float32"},
         },
     )
+
+    TASK = "push the T block into the target area"
 
     for ep in range(n_demos):
         obs, _ = env.reset()
@@ -120,16 +123,18 @@ def collect(n_demos: int, save_dir: str) -> None:
             done = terminated or truncated
 
         for obs, action in frames:
+            # "task" key is required by LeRobot — the language instruction for this episode
             dataset.add_frame({
-                "observation.image": obs["pixels"],
+                "observation.image": obs["pixels"].transpose(2, 0, 1),  # HWC → CHW
                 "observation.state": obs["agent_pos"],
                 "action": action,
+                "task": TASK,
             })
-        dataset.save_episode()
+        dataset.save_episode(task=TASK)
         if (ep + 1) % 10 == 0:
             print(f"Collected {ep+1}/{n_demos} demos")
 
-    dataset.consolidate()
+    dataset.finalize()
     print(f"\nDataset saved to {save_dir}")
     print(f"Total episodes: {dataset.num_episodes}")
     print(f"Total frames:   {dataset.num_frames}")
@@ -226,7 +231,7 @@ window before re-predicting. This reduces the number of policy queries, reducing
 compounding errors. [Read more: ACT paper](https://arxiv.org/abs/2304.13705)
 
 ```bash workspace/vla/ch03/train_act.sh
-# Train ACT on pusht demos
+# Train ACT on pusht demos (~30 min on GPU, several hours on CPU)
 cd ~/lerobot
 python lerobot/scripts/train.py \
   --policy.type=act \
@@ -234,7 +239,7 @@ python lerobot/scripts/train.py \
   --dataset.root=./data/pusht_demos \
   --training.num_workers=4 \
   --training.batch_size=64 \
-  --training.num_epochs=100 \
+  --training.steps=80000 \
   --output_dir=./outputs/act_pusht
 ```
 
@@ -276,7 +281,7 @@ if __name__ == "__main__":
     evaluate("./outputs/act_pusht")
 ```
 
-**What to observe:** After 100 epochs on 50 demos, expect 50–80% success. Lower means
+**What to observe:** After 80k steps on 50 demos, expect 50–80% success. Lower means
 the policy overfit or the demos are insufficient.
 
 ---
@@ -297,13 +302,14 @@ handles **multi-modal** behavior naturally — situations where multiple actions
 captures them. [Read more: Diffusion Policy paper](https://arxiv.org/abs/2303.04137)
 
 ```bash workspace/vla/ch03/train_diffusion.sh
+# Diffusion Policy trains slower than ACT — ~1–2 hrs on GPU for 80k steps
 cd ~/lerobot
 python lerobot/scripts/train.py \
   --policy.type=diffusion \
   --dataset.repo_id=local/pusht_demos \
   --dataset.root=./data/pusht_demos \
   --training.batch_size=64 \
-  --training.num_epochs=100 \
+  --training.steps=80000 \
   --output_dir=./outputs/diffusion_pusht
 ```
 
@@ -321,46 +327,67 @@ to collect for a real-robot task.
 **Approach:** Train ACT on 10, 25, 50, 100, 200 demos from the same dataset. Plot success
 rate vs. data size.
 
-```python workspace/vla/ch03/data_scaling.py
-"""Train ACT on varying demo counts and plot success rate vs. data size."""
-import subprocess
+This project is a manual experiment loop — run training five times, record each result,
+then plot. The script below handles the training calls and plotting; you fill in results
+as they come in.
+
+**Step 1 — create subsets of your dataset.** LeRobot's `--dataset.episodes` flag lets
+you limit which episodes are used. Run this five times:
+
+```bash workspace/vla/ch03/data_scaling.sh
+cd ~/lerobot
+for N in 10 25 50 100 200; do
+  python lerobot/scripts/train.py \
+    --policy.type=act \
+    --dataset.repo_id=local/pusht_demos \
+    --dataset.root=./data/pusht_demos \
+    --dataset.episodes="[$(seq -s, 0 $((N-1)))]" \
+    --training.batch_size=64 \
+    --training.steps=80000 \
+    --output_dir=./outputs/act_scale_${N}
+  echo "Done: $N demos → ./outputs/act_scale_${N}"
+done
+```
+
+**Step 2 — evaluate each checkpoint** with `eval_policy.py` from Project C and record
+the success rates.
+
+**Step 3 — plot:**
+
+```python workspace/vla/ch03/data_scaling_plot.py
+"""Plot ACT data scaling curve. Fill in results after running the training loop above."""
+import os
 import json
 import matplotlib.pyplot as plt
 
-DEMO_COUNTS = [10, 25, 50, 100, 200]
-RESULTS_FILE = "scaling_results.json"
+# Fill in after running eval_policy.py on each checkpoint:
+results = {
+    10:  0.0,   # replace with eval result for act_scale_10
+    25:  0.0,   # replace with eval result for act_scale_25
+    50:  0.0,   # replace with eval result for act_scale_50
+    100: 0.0,   # replace with eval result for act_scale_100
+    200: 0.0,   # replace with eval result for act_scale_200
+}
 
-def train_and_eval(n_demos: int) -> float:
-    """Train ACT on n_demos and return success rate. Implement training call here."""
-    # In practice: subset the dataset to n_demos episodes, train, eval
-    # This is a scaffold — fill in with your LeRobot training + eval calls
-    print(f"Training on {n_demos} demos...")
-    # success_rate = run_training_and_eval(n_demos)
-    success_rate = 0.0  # placeholder
-    return success_rate
+counts = sorted(results.keys())
+rates  = [results[n] for n in counts]
 
-if __name__ == "__main__":
-    results = {}
-    for n in DEMO_COUNTS:
-        results[n] = train_and_eval(n)
-
-    with open(RESULTS_FILE, "w") as f:
-        json.dump(results, f)
-
-    counts = list(results.keys())
-    rates  = list(results.values())
-    plt.plot(counts, rates, "o-")
-    plt.xlabel("Number of demonstrations")
-    plt.ylabel("Success rate")
-    plt.title("ACT: data scaling on PushT")
-    plt.xscale("log")
-    plt.grid(True)
-    plt.savefig("scaling_curve.png")
-    print("Saved scaling_curve.png")
+plt.figure(figsize=(8, 5))
+plt.plot(counts, rates, "o-")
+plt.xlabel("Number of demonstrations")
+plt.ylabel("Success rate")
+plt.title("ACT: data scaling on PushT")
+plt.xscale("log")
+plt.grid(True)
+out = os.path.join(os.path.dirname(__file__), "scaling_curve.png")
+plt.savefig(out)
+print(f"Saved {out}")
+for n, r in zip(counts, rates):
+    print(f"  {n:4d} demos → {r:.0%}")
 ```
 
 **What to observe:** Typically success rate rises steeply from 10→50 demos, then
-flattens. The knee of the curve tells you the minimum viable dataset size.
+flattens. The knee of the curve tells you the minimum viable dataset size for this task.
 
 ---
 

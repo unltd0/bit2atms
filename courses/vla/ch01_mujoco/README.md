@@ -2,7 +2,7 @@
 
 **Time:** 2–3 days
 **Hardware:** Laptop only
-**Prerequisites:** Python, basic physics intuition (what is a joint, what is a frame)
+**Prerequisites:** Python, NumPy basics
 
 ---
 
@@ -119,6 +119,7 @@ def demo_two_configurations(model: mujoco.MjModel, data: mujoco.MjData) -> None:
     ee_id = model.body("panda_hand").id
 
     mujoco.mj_resetData(model, data)
+    # qpos[:7] = the 7 joint angles in radians, one per DOF (shoulder → wrist)
     data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
     mujoco.mj_forward(model, data)
     print(f"\nNeutral pose  — EE: {np.round(data.xpos[ee_id], 3)}")
@@ -141,6 +142,7 @@ if __name__ == "__main__":
     demo_two_configurations(model, data)
 
     print("\nLaunching viewer — Ctrl+drag to move joints. Close to exit.")
+    print("(Skip the viewer block if running headless/SSH — the printed output above is the deliverable.)")
     with mujoco.viewer.launch_passive(model, data) as viewer:
         while viewer.is_running():
             mujoco.mj_step(model, data)
@@ -151,6 +153,9 @@ if __name__ == "__main__":
 that's **forward kinematics (FK)**. Open the viewer, drag joints, watch the printed
 positions update.
 
+**Headless / no display?** Comment out the `with mujoco.viewer...` block. The two
+`print(f"... pose — EE: ...")` lines above it are the actual deliverable.
+
 ---
 
 ## Project B — Camera-to-World Transform
@@ -160,6 +165,10 @@ The controller needs the cup's position in *world* space to plan a grasp.
 
 **Approach:** Read the wrist body's transform from MuJoCo (`xpos` + `xmat`) and apply
 it to the cup's camera-frame position. MuJoCo has already done the FK — you just use it.
+
+In a real pipeline the cup position in camera space would come from a depth camera or
+object detector. Here we hardcode it (`cup_in_camera = [0.05, -0.12, 0.31]`) to focus on
+the transform math without needing real hardware. The math is identical either way.
 
 ### The 4×4 transform matrix
 
@@ -173,6 +182,10 @@ T = [[R00, R01, R02, tx],   ← rotation (3×3)  |  tx = x position
 ```
 
 To convert a point from one frame to another: `p_world = T @ [px, py, pz, 1]`
+
+The appended `1` is a math convention that makes the matrix multiply handle both rotation
+and translation in one step. The result's last element is always 1 — discard it to get back
+to `[x, y, z]`. That's what `transform_point()` does with `[:3]`.
 
 To chain two transforms (A→B→C): `T_AC = T_AB @ T_BC`
 
@@ -243,6 +256,11 @@ actuators — which means you write the control loop yourself.
 **Approach:** Build a minimal 2-DOF arm with motor actuators, implement a PD controller,
 run it with four gain combinations, and plot the trajectories.
 
+We use a custom 2-DOF arm here, not the Franka. The Franka Menagerie model uses
+`position` actuators (built-in PD servo — MuJoCo does the control for you). To write and
+tune a PD controller yourself you need `motor` actuators, so we define a simple arm in XML.
+The principle transfers directly to any motor-actuated hardware.
+
 ### Actuators
 
 An **actuator** is what makes a joint move — the motor attached to it. In MuJoCo you
@@ -274,6 +292,7 @@ torque = kp × (target_angle − current_angle) − kd × current_velocity
 PD controller on a 2-DOF arm. Run 4 kp/kd combinations and plot trajectories.
 Shows how gain tuning changes stability.
 """
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import mujoco
@@ -330,8 +349,9 @@ if __name__ == "__main__":
         ax.set_title(label); ax.set_xlabel("time (s)"); ax.set_ylabel("angle (deg)")
         ax.legend()
     plt.tight_layout()
-    plt.savefig("pd_gains.png")
-    print("Saved pd_gains.png")
+    out = os.path.join(os.path.dirname(__file__), "pd_gains.png")
+    plt.savefig(out)
+    print(f"Saved {out}")
 ```
 
 **What to observe:** Underdamped configs oscillate; well-tuned ones converge smoothly.
@@ -346,6 +366,12 @@ that put the hand there — this is **inverse kinematics (IK)**.
 
 **Approach:** Use Pink, a differential IK library. At each timestep Pink solves for the
 joint velocity that moves the end-effector toward the target, then integrates it.
+
+Pink uses **Pinocchio** — a separate kinematics library — internally. So you load the
+robot twice: once into MuJoCo for physics and visualization, once into Pinocchio for IK.
+Pink computes new joint angles; you copy them into MuJoCo's `qpos` each step to keep the
+viewer in sync. Both models must describe the same robot — `panda_description` and the
+Menagerie Franka match on the 7 arm joints used here.
 
 ### Why IK needs a library
 
@@ -403,7 +429,7 @@ if __name__ == "__main__":
         while viewer.is_running():
             velocity = pink.solve_ik(configuration, [ee_task], dt, solver="quadprog")
             configuration.integrate_inplace(velocity, dt)
-            mj_data.qpos[:7] = configuration.q[:7]
+            mj_data.qpos[:7] = configuration.q[:7]   # Pinocchio q may include finger joints; take arm DOFs only
             mujoco.mj_forward(mj_model, mj_data)
             viewer.sync()
             time_module.sleep(dt)
@@ -455,6 +481,11 @@ if __name__ == "__main__":
 
 - **IK diverging near singularities:** Add a `PostureTask` to keep the arm near a neutral
   configuration — this regularizes the IK and prevents runaway joint velocities.
+
+- **MuJoCo and Pinocchio models out of sync (Project D):** `panda_description` and
+  the Menagerie MJCF describe the same 7-DOF arm but may differ in finger joints or base
+  frames. If the viewer shows wrong poses, print `configuration.q` length vs `mj_model.nq`
+  and check the slice — you may need `[:7]` or a different offset.
 
 ---
 

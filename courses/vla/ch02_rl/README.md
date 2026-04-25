@@ -188,10 +188,13 @@ def train(use_her: bool, save_path: str) -> list[float]:
     model.save(f"{save_path}/final_model")
     env.close(); eval_env.close()
 
-    # Return success rates from eval callback
-    return eval_cb.evaluations_successes if hasattr(eval_cb, "evaluations_successes") else []
+    # evaluations_results shape: (n_evals, n_eval_episodes) — mean across episodes per eval
+    if hasattr(eval_cb, "evaluations_results"):
+        return [float(np.mean(r)) for r in eval_cb.evaluations_results]
+    return []
 
 if __name__ == "__main__":
+    # Each run is 200k steps — expect ~5 min on GPU, ~20–40 min on CPU
     print("Training SAC + HER...")
     train(use_her=True,  save_path="./models/sac_her")
     print("Training SAC (no HER)...")

@@ -30,8 +30,20 @@ source ~/.bashrc
 **Install (macOS — Docker):**
 ```bash
 docker pull osrf/ros:jazzy-desktop
-docker run -it --rm osrf/ros:jazzy-desktop bash
+
+# Mount your workspace so files persist; -e DISPLAY is needed for RViz2 via XQuartz
+docker run -it --rm \
+  -v ~/code/unltd/bit2atms/workspace:/workspace \
+  -e DISPLAY=host.docker.internal:0 \
+  osrf/ros:jazzy-desktop bash
+
+# Inside the container:
+source /opt/ros/jazzy/setup.bash
+cd /workspace/vla/ch06
 ```
+
+For RViz2 on macOS you'll also need [XQuartz](https://www.xquartz.org/) installed and running,
+with "Allow connections from network clients" enabled in XQuartz preferences.
 
 **Skip if you can answer:**
 1. What is a ROS 2 topic, and how does it differ from a service?
@@ -173,6 +185,12 @@ this target pose, what are the joint angles?" and gets a response.
 and returns joint angles.
 
 ### Custom service definition
+
+> **Note:** Using a custom `.srv` requires creating a ROS 2 package and running `colcon build`
+> to generate the Python bindings. The service creation line is commented out below —
+> this project is a working template that needs a package scaffold to fully run.
+> See the [ROS 2 custom interfaces tutorial](https://docs.ros.org/en/jazzy/Tutorials/Beginner-Client-Libraries/Custom-ROS2-Interfaces.html)
+> for the setup steps. Projects A, C, and D do not require this.
 
 First define the service interface:
 

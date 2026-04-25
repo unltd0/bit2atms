@@ -18,11 +18,18 @@ Do this once before starting.
 python3 -m venv bit2atms-env
 source bit2atms-env/bin/activate   # macOS / Linux
 
-# Base packages (Ch.1 onward)
-pip install mujoco numpy matplotlib scipy
+# Ch.1 — MuJoCo & Robot Fundamentals
+pip install mujoco numpy matplotlib scipy pink pin robot_descriptions quadprog
+git clone https://github.com/google-deepmind/mujoco_menagerie ~/mujoco_menagerie
+
+# Ch.2 — Reinforcement Learning (add when you reach Ch.2)
+pip install stable-baselines3[extra] gymnasium gymnasium-robotics
+
+# Ch.3 — Imitation Learning (add when you reach Ch.3)
+# git clone https://github.com/huggingface/lerobot ~/lerobot && cd ~/lerobot && pip install -e ".[simulation]"
 ```
 
-Additional installs are listed in each chapter.
+Each chapter's README also lists its installs at the top.
 
 ---
 
@@ -123,13 +130,15 @@ Four options: open-vocabulary pick-and-place (VLA + perception), sim-to-real stu
 
 ## Schedule
 
-| Week | Chapters |
-|------|---------|
-| 1 | Ch.1–2 (sim, RL) |
-| 2 | Ch.3 (imitation learning) |
-| 3 | Ch.4–5 (VLA, sim-to-real) |
-| 4 | Ch.6–7 (ROS 2, hardware setup) |
-| 5–8 | Ch.8 capstone |
+Time estimates per chapter are in the Chapters table above. This schedule assumes 2–4 hours/day.
+
+| Week | Chapters | Approx. time |
+|------|---------|-------------|
+| 1 | Ch.1–2 (sim, RL) | 5–8 days |
+| 2 | Ch.3 (imitation learning) | 5–7 days |
+| 3 | Ch.4–5 (VLA, sim-to-real) | 8–10 days |
+| 4 | Ch.6–7 (ROS 2, hardware setup) | 4–6 days |
+| 5–8 | Ch.8 capstone | 2–4 weeks |
 
 ---
 
@@ -153,7 +162,7 @@ Four options: open-vocabulary pick-and-place (VLA + perception), sim-to-real stu
 
 | Item | Where to buy | Cost |
 |------|-------------|------|
-| SO-101 arm kit | [The Robot Studio](https://www.robotstudio.com/) | ~$250 |
+| SO-101 arm kit | [The Robot Studio](https://www.therobotstudio.com/) | ~$250 |
 | USB camera (Logitech C920) | Amazon | ~$80 |
 | LED lighting panel | Amazon | ~$40 |
 | RealSense D435 (Capstone A only) | Intel / Amazon | ~$200 |

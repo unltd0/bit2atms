@@ -101,6 +101,7 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
+    # Check the SmolVLA blog post for the current Hub model ID — it may differ from below
     policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base").to(device)
     policy.eval()
 
@@ -210,13 +211,14 @@ basic *how* — the pretraining already handles that.
 
 ```bash workspace/vla/ch04/finetune_smolvla.sh
 cd ~/lerobot
+# Fine-tuning 50 epochs on an A100 takes ~30–60 min depending on dataset size
 python lerobot/scripts/train.py \
   --policy.type=smolvla \
   --policy.pretrained_model_name_or_path=lerobot/smolvla_base \
   --dataset.repo_id=local/pusht_demos \
   --dataset.root=./data/pusht_demos \
   --training.batch_size=32 \
-  --training.num_epochs=50 \
+  --training.steps=50000 \
   --output_dir=./outputs/smolvla_finetuned
 ```
 
@@ -244,10 +246,12 @@ import matplotlib.pyplot as plt
 
 DEMO_COUNTS = [10, 25, 50]
 
-# Fill these in after running your training experiments
-# Format: {n_demos: success_rate}
-act_results    = {10: 0.0, 25: 0.0, 50: 0.0}   # from Chapter 3 Project E
-smolvla_results = {10: 0.0, 25: 0.0, 50: 0.0}  # from Project C runs at each scale
+# Fill these in from your experiments before running this script:
+# act_results    — from Ch03 Project E: run train_and_eval(10), train_and_eval(25), train_and_eval(50)
+# smolvla_results — from Project C: re-run finetune_smolvla.sh with --dataset.num_episodes=10/25/50
+#                   then eval each checkpoint with run_episode()
+act_results    = {10: 0.0, 25: 0.0, 50: 0.0}
+smolvla_results = {10: 0.0, 25: 0.0, 50: 0.0}
 
 def plot(act: dict, smolvla: dict) -> None:
     counts = sorted(act.keys())

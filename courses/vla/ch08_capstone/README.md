@@ -108,7 +108,13 @@ def run_realsense_pipeline():
     return pipeline, align, profile
 
 if __name__ == "__main__":
-    pipeline, align, profile = run_realsense_pipeline()
+    try:
+        pipeline, align, profile = run_realsense_pipeline()
+    except RuntimeError as e:
+        print(f"Could not open RealSense device: {e}")
+        print("Check that the D435 is plugged in and the librealsense driver is installed:")
+        print("  pip install pyrealsense2")
+        raise SystemExit(1)
     print("RealSense pipeline running. Press Ctrl+C to stop.")
     try:
         while True:
@@ -259,7 +265,10 @@ LeRobot supports bimanual configs natively.
 ```python workspace/vla/ch08/bimanual_env.py
 """
 Two SO-101 arms in a shared MuJoCo workspace for bimanual tasks.
-Placeholder — fill in actual arm MJCF paths from Menagerie.
+This is a structural scaffold — the arm bodies are empty placeholders.
+To make it functional: replace each comment with an <include> tag pointing
+to the SO-101 MJCF from Menagerie (mujoco_menagerie/therobotio_so_arm100/).
+The script below runs as-is but simulates no arm geometry.
 """
 import numpy as np
 import mujoco

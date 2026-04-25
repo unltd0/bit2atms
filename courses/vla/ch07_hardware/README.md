@@ -1,7 +1,7 @@
 # Chapter 7 — Physical Hardware
 
 **Time:** 1–2 weeks
-**Hardware:** Physical robot (SO-101 recommended, ~$250–$330)
+**Hardware:** 2× SO-101 arm kits (~$500 total) + USB camera + lighting
 **Prerequisites:** Chapter 3 (trained a policy), Chapter 1 (MuJoCo basics)
 
 ---
@@ -12,19 +12,24 @@ Everything in sim is perfect: no calibration drift, no cable drag, no lighting v
 The real world is none of those things. This chapter takes everything you've built and
 deploys it on a physical robot arm.
 
-You'll use the **SO-101** — a low-cost, open-source 6-DOF follower arm by The Robot
-Studio. It's the arm used in LeRobot's official hardware tutorials and the most practical
-entry point in the $250–$500 range. You'll assemble it, calibrate it, collect real
-demonstrations, train a policy, and deploy it.
+You'll use the **SO-101** — a low-cost, open-source 6-DOF arm by The Robot Studio. It's
+the arm used in LeRobot's official hardware tutorials and the most practical entry point
+in the $250–$500 range. You'll assemble it, calibrate it, collect real demonstrations,
+train a policy, and deploy it.
+
+**You need two arm kits.** LeRobot uses a leader/follower teleoperation setup: you hold
+the leader arm and move it by hand; the follower arm mirrors your movements and records
+the demonstration. One kit is not enough to collect data. Order two before starting.
 
 **Hardware shopping list:**
 
-| Item | Cost |
-|------|------|
-| SO-101 arm kit | ~$250 |
-| USB camera (e.g. Logitech C920) | ~$80 |
-| LED lighting panel | ~$40 |
-| **Total** | ~$370 |
+| Item | Cost | Notes |
+|------|------|-------|
+| SO-101 arm kit (follower) | ~$250 | The robot arm that executes |
+| SO-101 arm kit (leader) | ~$250 | The arm you hold to teleoperate — required for data collection |
+| USB camera (e.g. Logitech C920) | ~$80 | |
+| LED lighting panel | ~$40 | |
+| **Total** | ~$620 | Leader arm is reusable across projects |
 
 **Install:**
 ```bash
@@ -66,12 +71,20 @@ is mis-configured or a cable is loose, you'll catch it here rather than after 50
 demos.
 
 ```bash workspace/vla/ch07/teleoperate.sh
+# Find the serial port first:
+#   Linux:  ls /dev/ttyUSB*   (typically /dev/ttyUSB0)
+#   macOS:  ls /dev/tty.usbserial-*  (e.g. /dev/tty.usbserial-FT1234)
+# Replace PORT below with your actual port.
+PORT=/dev/ttyUSB0   # or /dev/tty.usbserial-XXXX on macOS
+
 # Verify all motors are detected
 python -c "from lerobot.common.robot_devices.motors.feetech import FeetechMotorsBus; \
-           b = FeetechMotorsBus(port='/dev/ttyUSB0', motors={'joint_1': (1, 'sts3215')}); \
+           b = FeetechMotorsBus(port='$PORT', motors={'joint_1': (1, 'sts3215')}); \
            b.connect(); print('Connected')"
 
 # Run teleoperation (leader/follower)
+# Note: teleop requires two arms — a leader arm (you hold) and a follower arm (the robot).
+# The SO-101 kit ships as a follower; you need a second arm kit configured as the leader.
 python lerobot/scripts/control_robot.py teleoperate \
   --robot-path lerobot/configs/robot/so101.yaml
 ```
@@ -109,7 +122,11 @@ python lerobot/scripts/control_robot.py teleoperate \
 ```
 
 ```python workspace/vla/ch07/check_workspace.py
-"""Move to a grid of joint angles and record which are reachable without collision."""
+"""Move to a grid of joint angles and record which are reachable without collision.
+The SO-101 has 6 DOF (joint_1 through joint_6) — unlike the 7-DOF Franka from Ch01.
+Note: verify the send_action API against your installed LeRobot version —
+the dict-keyed form below may differ. Check lerobot/common/robot_devices/robots/so101.py.
+"""
 import numpy as np
 from lerobot.common.robot_devices.robots.factory import make_robot
 
@@ -198,7 +215,7 @@ python lerobot/scripts/train.py \
   --dataset.repo_id=local/real_pickplace \
   --dataset.root=./data/real_pickplace \
   --training.batch_size=32 \
-  --training.num_epochs=200 \
+  --training.steps=100000 \
   --output_dir=./outputs/act_real
 ```
 
