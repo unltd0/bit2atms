@@ -147,7 +147,6 @@ class DRReachEnv(gym.Env):
     def _obs(self) -> np.ndarray:
         ee_id     = self.model.site("ee").id
         tgt_id    = self.model.site("target").id
-        mujoco.mj_forward(self.model, self.data)
         ee_pos    = self.data.site_xpos[ee_id]
         tgt_pos   = self.data.site_xpos[tgt_id]
         return np.concatenate([ee_pos, tgt_pos]).astype(np.float32)

@@ -90,7 +90,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class JointStatePublisher(Node):
     def __init__(self):
@@ -135,7 +135,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class FKSubscriber(Node):
     def __init__(self):
@@ -144,7 +144,7 @@ class FKSubscriber(Node):
                                              self.cb, 10)
         self.model = mujoco.MjModel.from_xml_path(FRANKA_XML)
         self.data  = mujoco.MjData(self.model)
-        self.ee_id = self.model.body("panda_hand").id
+        self.ee_id = self.model.body("hand").id
 
     def cb(self, msg: JointState) -> None:
         n = min(len(msg.position), self.model.njnt)
@@ -219,7 +219,7 @@ import os
 # Import auto-generated service (after colcon build)
 # from vla_msgs.srv import IKSolve
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class IKServiceNode(Node):
     def __init__(self):
@@ -228,7 +228,7 @@ class IKServiceNode(Node):
 
         robot = load_robot_description("panda_description")
         self.configuration = pink.Configuration(robot.model, robot.data, robot.q0)
-        self.ee_task = FrameTask("panda_hand", position_cost=1.0, orientation_cost=0.0)
+        self.ee_task = FrameTask("hand", position_cost=1.0, orientation_cost=0.0)
         self.get_logger().info("IK service ready at /ik_solve")
 
     def handle_ik(self, request, response):
@@ -284,7 +284,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 SIM_HZ     = 500   # simulation steps per second
 PUB_HZ     = 100   # joint state publish rate
 
@@ -352,7 +352,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class TFPublisher(Node):
     def __init__(self):
