@@ -204,8 +204,8 @@ don't have a clear "you're done when you see X" signal. Low priority.
 | F6 ch03 oracle_action KeyError | Verified: pixels_agent_pos has no block_pos. Fixed via env.unwrapped body attributes | DONE |
 | F7 ch03 gym_pusht install | Fixed: `[simulation]` → `[pusht]` | DONE |
 | F8 ch04 workspace note + pusht extra | Added | DONE |
-| W1 ch02 curriculum callback env wrapping | Wait — need SB3 VecEnv behavior test | DEFERRED |
-| W2 ch03 select_action API | Wait — need LeRobot check | DEFERRED |
-| W3 ch03 features/episode_data_index API | Wait — need LeRobot check | DEFERRED |
+| W1 ch02 curriculum callback env wrapping | Resolved: SB3 wraps same object, no fix needed | RESOLVED |
+| W2 ch03 select_action API / image normalization | Resolved: Common Mistakes entry added (loop 4) | RESOLVED |
+| W3 ch03 features/episode_data_index API | Fixed in loop 2 commit | FIXED |
 | S1 ch02–ch08 workspace setup prose | ch02/ch03/ch04 done, ch05–ch08 next iteration | PARTIAL |
 | S2 ch03 no "done" signal for B/D | Low priority | BACKLOG |

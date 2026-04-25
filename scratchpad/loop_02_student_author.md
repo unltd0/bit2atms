@@ -129,14 +129,16 @@ the README should be `../../ext/` (for where students actually run them).
 
 **F16 — ch08: add workspace note**
 
-### Deferred:
+### Resolved:
 
-**W5 — ch07 control_robot.py path / so101.yaml path**
-Need to verify current LeRobot script locations. Check next iteration.
+**W5-a — ch07 SO101FollowerConfig dataclass name**
+Added caveat in ch07 install block noting version-dependence.
+
+**W5-b — ch07 lerobot-train exact arg names**
+Added inline comment + general CLI note in install block.
 
 **W6 — ch03 eval_policy.py image normalization correctness**
-Low-priority. The div-255 may be wrong but won't crash. Capture in Common Mistakes.
-Check next iteration.
+Resolved: added Common Mistakes entry (loop 4).
 
-**W7 — ch06 Project B: add clearer "this needs colcon build" guidance**
-The note exists but could be stronger. Improve next iteration.
+**W7 — ch06 Project B colcon guidance**
+Resolved: strengthened "read the code and skip the build" note.

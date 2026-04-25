@@ -34,10 +34,17 @@ the demonstration. One kit is not enough to collect data. Order two before start
 **Install:**
 ```bash
 cd workspace/ext/lerobot
-pip install -e ".[feetech]"
+pip install -e ".[hardware]"   # includes feetech, cameras, and hardware scripts
 ```
 
 **Working directory:** Create `workspace/vla/ch07/` for your scripts and data.
+
+> **Note on LeRobot CLI commands below:** The entry points (`lerobot-teleoperate`,
+> `lerobot-calibrate`, `lerobot-record`, `lerobot-train`) replace the old Python script
+> paths. If any command fails with "command not found" or unexpected args, check your
+> installed LeRobot version — the CLI interface may have shifted between releases.
+> The dataclass name for SO-101 config (`SO101FollowerConfig`) is also subject to change
+> in future versions; verify against `workspace/ext/lerobot` if it doesn't import.
 
 **Skip if you can answer:**
 1. What is backlash in a servo, and how does it affect policy performance?
@@ -73,22 +80,24 @@ is mis-configured or a cable is loose, you'll catch it here rather than after 50
 demos.
 
 ```bash workspace/vla/ch07/teleoperate.sh
-# Find the serial port first:
-#   Linux:  ls /dev/ttyUSB*   (typically /dev/ttyUSB0)
-#   macOS:  ls /dev/tty.usbserial-*  (e.g. /dev/tty.usbserial-FT1234)
-# Replace PORT below with your actual port.
-PORT=/dev/ttyUSB0   # or /dev/tty.usbserial-XXXX on macOS
-
-# Verify all motors are detected
-python -c "from lerobot.motors.feetech import FeetechMotorsBus; \
-           b = FeetechMotorsBus(port='$PORT', motors={'joint_1': (1, 'sts3215')}); \
-           b.connect(); print('Connected')"
+# Find serial ports:
+#   Linux:  ls /dev/ttyUSB*
+#   macOS:  ls /dev/tty.usbmodem*
+# Replace FOLLOWER_PORT and LEADER_PORT with your actual ports.
+FOLLOWER_PORT=/dev/ttyUSB0
+LEADER_PORT=/dev/ttyUSB1
 
 # Run teleoperation (leader/follower)
 # Note: teleop requires two arms — a leader arm (you hold) and a follower arm (the robot).
 # The SO-101 kit ships as a follower; you need a second arm kit configured as the leader.
-python lerobot/scripts/control_robot.py teleoperate \
-  --robot-path lerobot/configs/robot/so101.yaml
+lerobot-teleoperate \
+  --robot.type=so101_follower \
+  --robot.port=$FOLLOWER_PORT \
+  --robot.id=my_follower \
+  --teleop.type=so101_leader \
+  --teleop.port=$LEADER_PORT \
+  --teleop.id=my_leader \
+  --display_data=true
 ```
 
 **What to observe:** All 6 joints respond to leader arm movement without jerking or
@@ -112,29 +121,40 @@ doesn't match the physical zero. Without calibration, commanded positions are of
 — positions where the arm hits itself or the table.
 
 ```bash workspace/vla/ch07/calibrate.sh
-# Run LeRobot calibration wizard
-python lerobot/scripts/control_robot.py calibrate \
-  --robot-path lerobot/configs/robot/so101.yaml \
-  --calibration-path ./calibration/so101_calibration.pkl
+FOLLOWER_PORT=/dev/ttyUSB0
+LEADER_PORT=/dev/ttyUSB1
 
-# Verify calibration
-python lerobot/scripts/control_robot.py teleoperate \
-  --robot-path lerobot/configs/robot/so101.yaml \
-  --calibration-path ./calibration/so101_calibration.pkl
+# Calibrate follower arm
+lerobot-calibrate \
+  --robot.type=so101_follower \
+  --robot.port=$FOLLOWER_PORT \
+  --robot.id=my_follower
+
+# Calibrate leader arm
+lerobot-calibrate \
+  --teleop.type=so101_leader \
+  --teleop.port=$LEADER_PORT \
+  --teleop.id=my_leader
+
+# Calibration is saved automatically to ~/.cache/lerobot/calibration/
+# Verify calibration — run teleop again; motion should be smooth and accurate:
+lerobot-teleoperate \
+  --robot.type=so101_follower --robot.port=$FOLLOWER_PORT --robot.id=my_follower \
+  --teleop.type=so101_leader  --teleop.port=$LEADER_PORT  --teleop.id=my_leader \
+  --display_data=true
 ```
 
 ```python workspace/vla/ch07/check_workspace.py
 """Move to a grid of joint angles and record which are reachable without collision.
-The SO-101 has 6 DOF (joint_1 through joint_6) — unlike the 7-DOF Franka from Ch01.
-Note: LeRobot's robot API changed in v0.3+ — lerobot.common.robot_devices was removed.
-Check lerobot/robots/ in your installed version for the current import and class name.
-The structure below is illustrative; adapt to your installed version.
+The SO-101 has 6 DOF (joint_1 through joint_6).
+Run after calibration to map the safe task space.
 """
 import numpy as np
-from lerobot.robots.so_follower import SOFollower as make_robot  # adapt to your version
+from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
 
-def check_workspace(robot_config: str, calibration_path: str) -> None:
-    robot = make_robot(robot_config)
+def check_workspace(port: str, robot_id: str) -> None:
+    config = SO101FollowerConfig(port=port, id=robot_id)
+    robot  = SO101Follower(config)
     robot.connect()
 
     test_positions = np.linspace(-1.5, 1.5, 7)
@@ -157,7 +177,7 @@ def check_workspace(robot_config: str, calibration_path: str) -> None:
     print("Record workspace limits — they define the valid task space for demonstrations.")
 
 if __name__ == "__main__":
-    check_workspace("lerobot/configs/robot/so101.yaml", "./calibration/so101_calibration.pkl")
+    check_workspace(port="/dev/ttyUSB0", robot_id="my_follower")
 ```
 
 **What to observe:** The workspace limits tell you where to place objects for the task.
@@ -184,21 +204,22 @@ Variation in the demonstrations is good; variation in the setup (accidental) is 
 saving — delete failed attempts immediately.
 
 ```bash workspace/vla/ch07/collect_demos.sh
+FOLLOWER_PORT=/dev/ttyUSB0
+LEADER_PORT=/dev/ttyUSB1
+HF_USER=local   # or your HuggingFace username to push to hub
+
 # Record 100 demonstrations
-python lerobot/scripts/control_robot.py record \
-  --robot-path lerobot/configs/robot/so101.yaml \
-  --calibration-path ./calibration/so101_calibration.pkl \
-  --fps 30 \
-  --repo-id local/real_pickplace \
-  --root ./data/real_pickplace \
-  --num-episodes 100 \
-  --warmup-time-s 3 \
-  --episode-time-s 30 \
-  --reset-time-s 10
+lerobot-record \
+  --robot.type=so101_follower --robot.port=$FOLLOWER_PORT --robot.id=my_follower \
+  --teleop.type=so101_leader  --teleop.port=$LEADER_PORT  --teleop.id=my_leader \
+  --dataset.repo_id=$HF_USER/real_pickplace \
+  --dataset.num_episodes=100 \
+  --dataset.single_task="Pick and place the cube" \
+  --display_data=true
 ```
 
 **After each session:**
-- Review demos: `python lerobot/scripts/visualize_dataset.py --root ./data/real_pickplace`
+- Review demos: `lerobot-dataset-viz --repo-id local/real_pickplace`
 - Delete any episodes where the arm missed or the object was out of position
 - Log lighting and object setup photos — you'll need to replicate this for eval
 
@@ -213,23 +234,28 @@ count successes over 20 trials.
 
 ```bash workspace/vla/ch07/train_real.sh
 cd workspace/ext/lerobot
-python lerobot/scripts/train.py \
+# Note: exact arg names (e.g. --policy.type, --training.steps) may vary by LeRobot version.
+# If these fail, check `lerobot train --help` in your installed version.
+lerobot-train \
   --policy.type=act \
   --dataset.repo_id=local/real_pickplace \
-  --dataset.root=./data/real_pickplace \
   --training.batch_size=32 \
   --training.steps=100000 \
-  --output_dir=./outputs/act_real
+  --output_dir=outputs/act_real
 ```
 
 ```bash workspace/vla/ch07/deploy.sh
+FOLLOWER_PORT=/dev/ttyUSB0
+
 # Run policy on hardware — 20 evaluation trials
-python lerobot/scripts/control_robot.py eval \
-  --robot-path lerobot/configs/robot/so101.yaml \
-  --calibration-path ./calibration/so101_calibration.pkl \
-  --policy-path ./outputs/act_real \
-  --num-episodes 20 \
-  --fps 30
+# Record with policy driving the robot (no teleop needed for eval)
+lerobot-record \
+  --robot.type=so101_follower --robot.port=$FOLLOWER_PORT --robot.id=my_follower \
+  --policy.path=outputs/act_real \
+  --dataset.repo_id=local/eval_real \
+  --dataset.num_episodes=20 \
+  --dataset.single_task="Pick and place the cube" \
+  --display_data=true
 ```
 
 **What to observe:** Expect 40–70% success rate on first deployment. Lower than 40%

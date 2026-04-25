@@ -190,11 +190,13 @@ and returns joint angles.
 
 ### Custom service definition
 
-> **Note:** Using a custom `.srv` requires creating a ROS 2 package and running `colcon build`
-> to generate the Python bindings. The service creation line is commented out below —
+> **Note:** Using a custom `.srv` requires creating a full ROS 2 package (with `package.xml`
+> and `CMakeLists.txt`), running `colcon build`, and sourcing the install space before
+> Python can import the generated bindings. The service creation line is commented out below —
 > this project is a working template that needs a package scaffold to fully run.
 > See the [ROS 2 custom interfaces tutorial](https://docs.ros.org/en/jazzy/Tutorials/Beginner-Client-Libraries/Custom-ROS2-Interfaces.html)
-> for the setup steps. Projects A, C, and D do not require this.
+> for the setup steps. **If you just want to read the code and understand the pattern, skip
+> the colcon build — Projects A, C, and D do not require this.**
 
 First define the service interface:
 

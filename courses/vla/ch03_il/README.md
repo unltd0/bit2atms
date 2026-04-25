@@ -506,6 +506,11 @@ for those categories typically improves success rate more than doubling the rand
 - **Treating all failures as equal:** 30% failure rate with 3 distinct failure modes is
   three separate problems. Fix the biggest one first.
 
+- **Image normalization in eval_policy.py:** The script divides images by 255.0 before
+  passing to `policy.select_action()`. This works at the Python level, but some LeRobot
+  policies expect pre-normalized images via a dataset transform — check your installed
+  version's policy inference docs if success rates look wrong.
+
 ---
 
 ## Resources
