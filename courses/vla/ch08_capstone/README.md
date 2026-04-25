@@ -1,671 +1,345 @@
-# Chapter 8 — ROS 2 & System Integration
+# Chapter 8 — Capstone Projects
 
-**Time:** 3–4 days
-**Hardware:** Ubuntu 24.04 recommended; macOS users use Docker (fully supported)
-**Prerequisites:** Chapters 1–3 (transforms, MuJoCo, kinematics). Chapters 4–7 helpful but not required.
-
----
-
-## Why This Chapter Exists
-
-Everything you've built so far is self-contained Python scripts. The moment you work with real hardware, that changes: the camera runs in one process, the controller in another, the perception stack in a third, and they need to communicate reliably in real time. ROS 2 is the industry-standard way to do this — and virtually all robot hardware (arms, grippers, cameras, force sensors) ships with ROS 2 drivers.
-
-The gap this fills: you could skip ROS 2 entirely for simulation-only work, but the moment you touch physical hardware or read any recent robotics paper, ROS 2 vocabulary (topics, services, actions, TF2) appears constantly. This chapter gives you enough fluency to not be lost — and a working MuJoCo bridge so you can test ROS 2 code without a physical robot.
-
-**If you're doing simulation-only work with no hardware plans**, you can skip this chapter and return when needed.
+**Time:** 2–4 weeks depending on capstone choice
+**Hardware:** Varies by capstone (see each option)
+**Prerequisites:** Chapters 1–7 (or at least the chapters relevant to your chosen capstone)
 
 ---
 
-## Part 1 — ROS 2 Concepts
+## What are we here for
 
-### Why ROS 2 Exists
+You've built up every component: sim, control, IK, RL, IL, VLA, sim-to-real, ROS 2,
+and hardware. The capstone is where you integrate them into a complete system that solves
+a real manipulation problem end-to-end.
 
-In a real robot system, you have:
-- A camera node publishing images at 30 Hz
-- A joint state publisher at 500 Hz
-- A perception node consuming images and publishing detected objects
-- A motion planner subscribing to object positions and planning trajectories
-- A controller subscribing to trajectories and commanding joints
+Pick one capstone based on your hardware access and interests. Each is designed to take
+2–4 weeks and produce something you can demo and put in a portfolio.
 
-Each of these runs as a separate process. They need to communicate reliably, at real-time frequencies, with type-safe messages. ROS 2 provides this infrastructure.
+**How to choose:**
 
-### ROS 2 vs. ROS 1
-
-| Feature | ROS 1 | ROS 2 |
-|---------|-------|-------|
-| Status | EOL May 2025 | Active |
-| Transport | Custom rosmaster | DDS (industry standard) |
-| Real-time | No | Yes (with real-time OS) |
-| Language support | Python, C++ | Python, C++, others |
-| Security | None | DDS Security |
-| Multi-robot | Difficult | Native |
-
-Always use ROS 2. ROS 1 is dead.
-
-### Core Concepts
-
-**Node:** A single executable process. Each node does one thing (publishes sensor data, runs a controller, processes images).
-
-**Topic:** A named channel. Nodes publish messages to topics; other nodes subscribe to receive them. Asynchronous, one-to-many.
-
-**Service:** A request-response interface. One node calls a service; the service node responds. Synchronous, one-to-one. Use for IK queries, parameter lookups.
-
-**Action:** Like a service but with ongoing feedback. Use for motion planning (long-running, need progress updates).
-
-**Message type:** Typed data structures (e.g., `sensor_msgs/JointState`, `geometry_msgs/PoseStamped`). Ensures type safety.
-
-**QoS (Quality of Service):** Controls reliability (best-effort vs. reliable), history, and deadline. Sensor data: best-effort. Commands: reliable.
-
-### DDS Communication Model
-
-ROS 2 uses DDS (Data Distribution Service) as the transport layer. The key property: nodes discover each other automatically on the network — no central master needed. This makes ROS 2 suitable for distributed and multi-machine systems.
+| Capstone | Hardware | Core skills exercised |
+|----------|----------|----------------------|
+| A — Open-Vocab Pick-and-Place | SO-101 + camera + GPU | VLA + perception + IK |
+| B — Sim-to-Real Study | No real robot, GPU | DR + policy evaluation |
+| C — VLA Fine-tuning at Scale | SO-101 + GPU 16 GB+ | Data collection + fine-tuning |
+| D — Bimanual Manipulation | 2× SO-101 | Coordination + IL |
 
 ---
 
-## Part 2 — Install ROS 2 Jazzy
+## Capstone A — Open-Vocabulary Pick-and-Place
 
-### Ubuntu 24.04 (Recommended)
+**Problem:** A robot arm picks up objects specified by natural language ("pick up the red
+cube", "move the blue bottle") from an unstructured scene.
 
-```bash
-# Set up sources
-sudo apt install software-properties-common
-sudo add-apt-repository universe
-sudo apt update && sudo apt install curl -y
-sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
-  -o /usr/share/keyrings/ros-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
-  http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | \
-  sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+**Hardware:** SO-101 + RealSense D435 depth camera + GPU 8 GB+
 
-# Install
-sudo apt update
-sudo apt install ros-jazzy-desktop ros-jazzy-ros-dev-tools
+### Architecture
 
-# Source (add to ~/.bashrc)
-source /opt/ros/jazzy/setup.bash
+```text
+language instruction
+      ↓
+ Grounded SAM 2 ── RGB image ──→ segmentation mask
+      ↓
+  depth image ──────────────────→ 3D object position
+      ↓
+   IK (Pink) ──────────────────→ joint angles
+      ↓
+  LeRobot policy ─────────────→ grasp + place execution
 ```
 
-### macOS (Docker)
+### Milestones
 
-```bash
-docker pull osrf/ros:jazzy-desktop
-# Run with display forwarding (XQuartz required on Mac):
-docker run -it --rm \
-  -e DISPLAY=host.docker.internal:0 \
-  -v $(pwd):/workspace \
-  osrf/ros:jazzy-desktop \
-  bash
-```
+**Week 1 — Perception pipeline**
+- Set up RealSense D435; verify depth-RGB alignment
+- Run Grounded SAM 2 on live RGB stream; verify segmentation for your object set
+- Implement depth-to-3D conversion using camera intrinsics
 
-### Verify
+**Week 2 — Grasp planning**
+- Integrate perception output with Pink IK
+- Build a MuJoCo sim version of the pipeline (use virtual camera)
+- Test in sim: "pick up the red cube" → correct 3D position → IK → motion
 
-```bash
-# Open two terminals
-# Terminal 1:
-ros2 run demo_nodes_py talker
-# Terminal 2:
-ros2 run demo_nodes_py listener
-```
+**Week 3 — Real robot integration**
+- Deploy on SO-101 hardware; run perception → IK → execute loop
+- Hand-eye calibration: compute camera-to-robot-base transform
+- Test 10 pick attempts for 3 different objects
 
-You should see "Hello World" messages flowing between them.
+**Week 4 — Evaluation**
+- Run 50 trials across 5 objects and 3 positions each
+- Measure success rate, identify failure modes, iterate
 
----
+### Key code — perception pipeline
 
-## Part 3 — Key Standard Message Types
-
-These are the message types you'll use constantly:
-
-```
-sensor_msgs/JointState
-  - name: ["joint1", "joint2", ...]    # joint names
-  - position: [q1, q2, ...]            # radians
-  - velocity: [dq1, dq2, ...]          # rad/s
-  - effort: [tau1, tau2, ...]          # Nm
-
-geometry_msgs/PoseStamped
-  - header.stamp                        # timestamp
-  - pose.position.{x, y, z}           # meters
-  - pose.orientation.{x, y, z, w}     # quaternion
-
-sensor_msgs/Image
-  - height, width
-  - encoding: "rgb8" or "bgr8"
-  - data: flat byte array
-
-trajectory_msgs/JointTrajectory
-  - joint_names: [...]
-  - points[i].positions: [...]
-  - points[i].time_from_start: Duration
-```
-
----
-
-## External Resources
-
-1. **ROS 2 Jazzy Official Tutorials**
-   Do ALL beginner CLI tutorials before writing any code. ~2 hours.
-   → https://docs.ros.org/en/jazzy/Tutorials/Beginner-CLI-Tools.html
-
-2. **ROS 2 Jazzy Client Library Tutorials (Python)**
-   Publisher, subscriber, service, parameter server — all in Python.
-   → https://docs.ros.org/en/jazzy/Tutorials/Beginner-Client-Libraries.html
-
-3. **ROS 2 Concepts Reference**
-   DDS, QoS, nodes, topics, services — the definitive explanations.
-   → https://docs.ros.org/en/jazzy/Concepts.html
-
-4. **MoveIt 2 Documentation**
-   Motion planning for robot arms. Works with any URDF-described robot.
-   → https://moveit.picknik.ai/main/index.html
-
-5. **RViz2 User Guide**
-   Visualization tool for robot state, sensor data, planned trajectories.
-   → https://github.com/ros2/rviz/tree/ros2/rviz2
-
-6. **ros2_control Documentation**
-   The standard way to interface hardware controllers with ROS 2.
-   → https://control.ros.org/jazzy/index.html
-
----
-
-## Project 8A — Publisher and Subscriber Nodes
-
-First, create a ROS 2 package:
-
-```bash
-cd learning/ch08_ros2
-mkdir -p robot_basics/robot_basics
-touch robot_basics/robot_basics/__init__.py
-```
-
-Create `learning/ch08_ros2/robot_basics/setup.py`:
-
-```python
-from setuptools import find_packages, setup
-
-package_name = 'robot_basics'
-
-setup(
-    name=package_name,
-    version='0.0.1',
-    packages=find_packages(exclude=['test']),
-    install_requires=['setuptools'],
-    entry_points={
-        'console_scripts': [
-            'joint_publisher = robot_basics.joint_publisher:main',
-            'joint_subscriber = robot_basics.joint_subscriber:main',
-            'ik_service = robot_basics.ik_service:main',
-            'ik_client = robot_basics.ik_client:main',
-        ],
-    },
-)
-```
-
-Create `learning/ch08_ros2/robot_basics/robot_basics/joint_publisher.py`:
-
-```python
+```python workspace/vla/ch08/perception.py
 """
-Node that publishes simulated joint states at 100 Hz.
-In a real system, this would read from actual encoders.
+Grounded SAM 2 + RealSense depth → 3D object position.
+Used in Capstone A perception pipeline.
 """
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import JointState
 import numpy as np
-import math
-
-
-class JointPublisher(Node):
-    def __init__(self):
-        super().__init__('joint_publisher')
-
-        self.publisher_ = self.create_publisher(JointState, 'joint_states', 10)
-        self.timer = self.create_timer(0.01, self.publish_joint_states)  # 100 Hz
-
-        self.joint_names = [f'joint_{i+1}' for i in range(7)]
-        self.t = 0.0
-
-        self.get_logger().info('Joint publisher started — publishing at 100 Hz')
-
-    def publish_joint_states(self):
-        msg = JointState()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.name = self.joint_names
-
-        # Simulate oscillating joint motion (sinusoidal)
-        positions = [
-            0.5 * math.sin(self.t * 0.3 + i * 0.5)
-            for i in range(7)
-        ]
-        velocities = [
-            0.5 * 0.3 * math.cos(self.t * 0.3 + i * 0.5)
-            for i in range(7)
-        ]
-        efforts = [0.0] * 7  # simulated zero torque
-
-        msg.position = positions
-        msg.velocity = velocities
-        msg.effort = efforts
-
-        self.publisher_.publish(msg)
-        self.t += 0.01
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = JointPublisher()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-```
-
-Create `learning/ch08_ros2/robot_basics/robot_basics/joint_subscriber.py`:
-
-```python
-"""
-Node that subscribes to joint states and computes forward kinematics.
-Prints end-effector position at 10 Hz.
-"""
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import JointState
-import numpy as np
-import math
-
-
-def simple_fk(joint_positions):
-    """
-    Simple FK for a planar arm approximation.
-    Replace with Pinocchio-based FK for real robot.
-    """
-    L = [0.4, 0.35, 0.25, 0.18, 0.12, 0.08, 0.04]  # approximate Franka link lengths
-    x, y, z = 0.0, 0.0, 0.33  # base height
-
-    cumulative_angle = 0.0
-    for i, (q, l) in enumerate(zip(joint_positions[:3], L[:3])):
-        cumulative_angle += q
-        x += l * math.cos(cumulative_angle)
-        z += l * math.sin(cumulative_angle) * 0.5
-
-    return x, y, z
-
-
-class JointSubscriber(Node):
-    def __init__(self):
-        super().__init__('joint_subscriber')
-
-        self.subscription = self.create_subscription(
-            JointState, 'joint_states', self.joint_callback, 10)
-
-        self.last_print = 0.0
-        self.msg_count = 0
-
-        self.get_logger().info('Joint subscriber started')
-
-    def joint_callback(self, msg):
-        self.msg_count += 1
-
-        # Compute FK (simplified)
-        if len(msg.position) >= 3:
-            x, y, z = simple_fk(list(msg.position))
-
-        # Print at 10 Hz
-        now = self.get_clock().now().nanoseconds / 1e9
-        if now - self.last_print > 0.1:
-            self.get_logger().info(
-                f"[msg #{self.msg_count}] "
-                f"q={[f'{p:.3f}' for p in msg.position[:3]]}  "
-                f"EE_approx=({x:.3f}, {y:.3f}, {z:.3f})"
-            )
-            self.last_print = now
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = JointSubscriber()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-```
-
-Build and run:
-```bash
-cd learning/ch08_ros2
-colcon build --packages-select robot_basics
-source install/setup.bash
-
-# Terminal 1:
-ros2 run robot_basics joint_publisher
-
-# Terminal 2:
-ros2 run robot_basics joint_subscriber
-
-# Terminal 3 — verify topic:
-ros2 topic echo /joint_states
-ros2 topic hz /joint_states    # should show ~100 Hz
-```
-
----
-
-## Project 8B — IK Service
-
-Create `learning/ch08_ros2/robot_basics/robot_basics/ik_service.py`:
-
-```python
-"""
-ROS 2 service that solves IK on request.
-Client sends target position → server returns joint angles.
-
-Uses a custom service type. For simplicity, we use a standard
-service with position in the request and joint angles in the response.
-"""
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import Point
-from sensor_msgs.msg import JointState
-import numpy as np
-
-# We'll use a simple IK (Jacobian iteration) without external deps
-# Replace with Pink for full quality
-
-
-class IKServiceNode(Node):
-    def __init__(self):
-        super().__init__('ik_service')
-
-        from rclpy.qos import QoSProfile
-        # Use SetParameters service or a custom action
-        # Here: use a topic-based request-response for simplicity
-        # (A real service would use a custom .srv file)
-        self.target_sub = self.create_subscription(
-            Point, '/ik_target', self.ik_callback, 10)
-        self.solution_pub = self.create_publisher(JointState, '/ik_solution', 10)
-
-        self.get_logger().info('IK service node ready. Send targets to /ik_target')
-
-    def ik_callback(self, target_msg):
-        target = np.array([target_msg.x, target_msg.y, target_msg.z])
-
-        # Simple analytical IK for a 2D projection (placeholder)
-        # In practice: use Pink + Pinocchio
-        q_solution = self._solve_ik_simple(target)
-
-        response = JointState()
-        response.header.stamp = self.get_clock().now().to_msg()
-        response.name = [f'joint_{i+1}' for i in range(7)]
-        response.position = q_solution.tolist()
-
-        self.solution_pub.publish(response)
-        self.get_logger().info(
-            f"IK for target {target.round(3)} → q={q_solution.round(3)}")
-
-    def _solve_ik_simple(self, target):
-        """Simplified IK — replace with Pink for real use."""
-        # Just return angles that roughly point toward target
-        horizontal_dist = np.sqrt(target[0]**2 + target[1]**2)
-        q1 = np.arctan2(target[1], target[0])
-        q2 = -0.5  # reasonable elbow angle
-        q3 = 0.0
-        q4 = np.arctan2(target[2] - 0.33, horizontal_dist) - 0.5
-        q5, q6, q7 = 0.0, 1.57, 0.78
-        return np.array([q1, q2, q3, q4, q5, q6, q7])
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = IKServiceNode()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
-
-if __name__ == '__main__':
-    main()
-```
-
----
-
-## Project 8C — MuJoCo ↔ ROS 2 Bridge
-
-This is the most important project in this chapter. It makes your MuJoCo simulation look like real hardware from ROS 2's perspective.
-
-Create `learning/ch08_ros2/robot_basics/robot_basics/mujoco_ros2_bridge.py`:
-
-```python
-"""
-Bidirectional bridge between MuJoCo simulation and ROS 2.
-
-MuJoCo → ROS 2:
-  - Publishes joint states (position, velocity, effort) at 500 Hz
-  - Publishes camera image at 30 Hz
-
-ROS 2 → MuJoCo:
-  - Subscribes to /cmd_joint_position for joint position targets
-  - Implements a PD controller to track commanded positions
-
-This makes MuJoCo behave exactly like real hardware from ROS 2's perspective.
-The same nodes that command this simulated robot will command the real robot.
-"""
-import os
-import numpy as np
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import JointState, Image
-from std_msgs.msg import Float64MultiArray
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.callback_groups import ReentrantCallbackGroup
-import mujoco
-import threading
-import time
-
-
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
-
-JOINT_NAMES = [f'panda_joint{i}' for i in range(1, 8)]
-
-
-class MuJoCoROSBridge(Node):
-    def __init__(self):
-        super().__init__('mujoco_ros2_bridge')
-
-        self.callback_group = ReentrantCallbackGroup()
-
-        # Load MuJoCo model
-        if not os.path.exists(FRANKA_XML):
-            self.get_logger().error(f"MuJoCo model not found: {FRANKA_XML}")
-            self.get_logger().error("Clone mujoco_menagerie and update FRANKA_XML path")
-            raise FileNotFoundError(FRANKA_XML)
-
-        self.mj_model = mujoco.MjModel.from_xml_path(FRANKA_XML)
-        self.mj_data = mujoco.MjData(self.mj_model)
-        self.mj_lock = threading.Lock()
-
-        # Default neutral pose
-        self.q_target = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785])
-        self.kp = np.array([400, 400, 400, 400, 250, 150, 50])
-        self.kd = np.array([40,  40,  40,  40,  25,  15,  5 ])
-
-        # Publishers
-        self.joint_state_pub = self.create_publisher(
-            JointState, '/joint_states', 10)
-        self.image_pub = self.create_publisher(
-            Image, '/camera/image_raw', 10)
-
-        # Subscribers
-        self.cmd_sub = self.create_subscription(
-            Float64MultiArray, '/cmd_joint_position',
-            self.cmd_callback, 10,
-            callback_group=self.callback_group)
-
-        # Timers
-        self.physics_timer = self.create_timer(
-            0.002, self.physics_step,  # 500 Hz physics
-            callback_group=self.callback_group)
-        self.js_pub_timer = self.create_timer(
-            0.002, self.publish_joint_states,  # 500 Hz
-            callback_group=self.callback_group)
-        self.img_timer = self.create_timer(
-            1.0/30.0, self.publish_camera,  # 30 Hz
-            callback_group=self.callback_group)
-
-        # MuJoCo renderer for camera images
-        self.renderer = mujoco.Renderer(self.mj_model, height=480, width=640)
-
-        self.get_logger().info('MuJoCo-ROS2 bridge started')
-        self.get_logger().info(f'  Physics: 500 Hz | Joint states: 500 Hz | Camera: 30 Hz')
-        self.get_logger().info(f'  Subscribe: /cmd_joint_position')
-        self.get_logger().info(f'  Publish: /joint_states, /camera/image_raw')
-
-    def cmd_callback(self, msg):
-        """Receive joint position command from ROS 2 and update target."""
-        if len(msg.data) >= 7:
-            with self.mj_lock:
-                self.q_target = np.array(msg.data[:7])
-
-    def physics_step(self):
-        """Run one physics step with PD control."""
-        with self.mj_lock:
-            q = self.mj_data.qpos[:7]
-            dq = self.mj_data.qvel[:7]
-            torques = self.kp * (self.q_target - q) - self.kd * dq
-            self.mj_data.ctrl[:7] = np.clip(torques, -87, 87)
-            mujoco.mj_step(self.mj_model, self.mj_data)
-
-    def publish_joint_states(self):
-        """Publish current joint states."""
-        with self.mj_lock:
-            q = self.mj_data.qpos[:7].copy()
-            dq = self.mj_data.qvel[:7].copy()
-            tau = self.mj_data.actuator_force[:7].copy()
-
-        msg = JointState()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.name = JOINT_NAMES
-        msg.position = q.tolist()
-        msg.velocity = dq.tolist()
-        msg.effort = tau.tolist()
-        self.joint_state_pub.publish(msg)
-
-    def publish_camera(self):
-        """Render and publish camera image from MuJoCo."""
-        with self.mj_lock:
-            self.renderer.update_scene(self.mj_data, camera=0)
-            pixels = self.renderer.render()  # HxWx3 uint8
-
-        msg = Image()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.height = pixels.shape[0]
-        msg.width = pixels.shape[1]
-        msg.encoding = 'rgb8'
-        msg.step = pixels.shape[1] * 3
-        msg.data = pixels.tobytes()
-        self.image_pub.publish(msg)
-
-    def destroy_node(self):
-        self.renderer.close()
-        super().destroy_node()
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    bridge = MuJoCoROSBridge()
-    executor = MultiThreadedExecutor(num_threads=4)
-    executor.add_node(bridge)
+import pyrealsense2 as rs
+
+def get_3d_position(mask: np.ndarray, depth_frame, intrinsics) -> np.ndarray:
+    """Convert a 2D segmentation mask to a 3D centroid using depth."""
+    ys, xs = np.where(mask)
+    if len(xs) == 0:
+        return None
+
+    cx, cy = int(xs.mean()), int(ys.mean())
+    depth   = depth_frame.get_distance(cx, cy)
+
+    if depth == 0:
+        # Fallback: median of non-zero depth in mask region
+        depths = [depth_frame.get_distance(x, y) for x, y in zip(xs, ys)
+                  if depth_frame.get_distance(x, y) > 0]
+        depth = np.median(depths) if depths else 0.5
+
+    point_3d = rs.rs2_deproject_pixel_to_point(intrinsics, [cx, cy], depth)
+    return np.array(point_3d)
+
+def run_realsense_pipeline():
+    """Start RealSense pipeline. Returns pipeline and aligned streams."""
+    pipeline = rs.pipeline()
+    config   = rs.config()
+    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16,  30)
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+
+    profile  = pipeline.start(config)
+    align    = rs.align(rs.stream.color)
+    return pipeline, align, profile
+
+if __name__ == "__main__":
+    pipeline, align, profile = run_realsense_pipeline()
+    print("RealSense pipeline running. Press Ctrl+C to stop.")
     try:
-        executor.spin()
+        while True:
+            frames        = pipeline.wait_for_frames()
+            aligned       = align.process(frames)
+            color_frame   = aligned.get_color_frame()
+            depth_frame   = aligned.get_depth_frame()
+            if not color_frame or not depth_frame:
+                continue
+            intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
+            print(f"Frame: {np.array(color_frame.get_data()).shape}  "
+                  f"depth at center: {depth_frame.get_distance(320, 240):.3f}m")
     except KeyboardInterrupt:
-        pass
-    bridge.destroy_node()
-    rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
+        pipeline.stop()
 ```
 
-Run the bridge:
-```bash
-ros2 run robot_basics mujoco_ros2_bridge
+### Hand-eye calibration
 
-# In another terminal — command the robot:
-ros2 topic pub /cmd_joint_position std_msgs/Float64MultiArray \
-  "data: [0.0, -1.0, 0.0, -2.0, 0.0, 1.5, 0.785]"
+The camera is mounted on or near the robot. To convert object positions from camera frame
+to robot base frame you need the camera-to-base transform. Procedure:
 
-# Verify:
-ros2 topic hz /joint_states          # should show ~500 Hz
-ros2 topic hz /camera/image_raw      # should show ~30 Hz
+1. Move the end-effector to 10 known positions (use IK to command them)
+2. At each position, detect a calibration target (checkerboard) in the camera image
+3. Use `cv2.calibrateHandEye()` to solve for the camera-to-base transform
+4. Save the transform; apply it in `get_3d_position()` before passing to IK
+
+---
+
+## Capstone B — Sim-to-Real Transfer Study
+
+**Problem:** Quantify the sim-to-real gap for a manipulation policy and measure what
+techniques close it.
+
+**Hardware:** GPU (no real robot required)
+
+### Experimental design
+
+Train the same base policy (ACT on gym_pusht or a custom MuJoCo task) under five
+conditions:
+
+| Condition | Description |
+|-----------|-------------|
+| Baseline | Trained in nominal sim, evaluated in nominal sim |
+| Sim DR | Trained with physics DR, evaluated in nominal sim |
+| Visual DR | Trained with image augmentation, evaluated in nominal sim |
+| Sim+Visual DR | Both DR types |
+| Simulated reality gap | Evaluate baseline in a modified sim (different mass, different textures) |
+
+### Milestones
+
+**Week 1:** Choose task (gym_pusht or custom MuJoCo reach/push task). Train baseline.
+Establish eval protocol: 100 trials, fixed seed range.
+
+**Week 2:** Train DR variants. Document training time and nominal performance for each.
+
+**Week 3:** Evaluate all conditions on the "simulated real" environment.
+Build comparison table.
+
+**Week 4:** Write a concise study report: what DR buys, what it costs, recommendations for
+real deployment. Include learning curves and robustness heatmaps.
+
+### Deliverable
+
+A 2-page report + figures:
+- Learning curves for all 5 conditions
+- Robustness heatmap (mass × damping) for baseline and best DR condition
+- Success rate table: nominal vs. simulated reality gap
+- Recommendation: which DR strategy to use and why
+
+---
+
+## Capstone C — VLA Fine-tuning at Scale
+
+**Problem:** Fine-tune SmolVLA on a real-robot task with enough data and task variation
+to get robust generalization.
+
+**Hardware:** SO-101 + GPU 16 GB+ (Colab A100 works)
+
+### Task design
+
+Pick a task with 5 variations (different object colors, positions, or target locations).
+Collect 100 demos per variation = 500 total.
+
+| Variation | Description | Demos |
+|-----------|-------------|-------|
+| V1 | Red cube, left of center | 100 |
+| V2 | Red cube, right of center | 100 |
+| V3 | Blue cube, center | 100 |
+| V4 | Mixed colors, left | 100 |
+| V5 | Mixed colors, right | 100 |
+
+### Eval protocol
+
+| Metric | How |
+|--------|-----|
+| In-distribution success | 20 trials per variation = 100 total |
+| OOD generalization | 5 novel object colors × 20 trials |
+| Language robustness | 3 paraphrases per instruction × 20 trials |
+
+### Milestones
+
+**Week 1–2:** Collect 500 demonstrations across 5 variations.
+Review dataset: verify balance, quality, and language instruction consistency.
+
+**Week 2–3:** Fine-tune SmolVLA. Experiment with checkpoint frequency.
+Compare 50-demo vs. 500-demo fine-tuning.
+
+**Week 3–4:** Evaluate against protocol. Compare with ACT trained on same data.
+
+---
+
+## Capstone D — Bimanual Manipulation
+
+**Problem:** Some tasks require two arms — folding, assembly, handing off objects.
+Build a bimanual system from sim through real deployment.
+
+**Hardware:** 2× SO-101 + GPU 8 GB+
+
+### What bimanual adds
+
+Bimanual coordination introduces new challenges: the two arms must be synchronized, the
+action space doubles, and demonstrations require two simultaneous teleoperation inputs.
+LeRobot supports bimanual configs natively.
+
+### Milestones
+
+**Week 1 — Sim setup:**
+- Build a bimanual MuJoCo environment (two arms, shared workspace)
+- Implement a scripted oracle for a simple handoff task
+- Collect 50 sim demos; verify the dataset has both arm observations
+
+**Week 2 — Policy training:**
+- Train ACT-bimanual on sim demos
+- Verify both arms execute coordinated actions
+- Identify failure modes specific to bimanual (timing, collision)
+
+**Week 3 — Real hardware:**
+- Set up dual SO-101 with leader/follower teleoperation for both arms
+- Collect 100 real bimanual demos
+- Train and deploy
+
+**Week 4 — Evaluation:**
+- 20 real trials; measure success rate and failure breakdown
+- Ablation: what happens with single-arm policy on bimanual task?
+
+### Bimanual MuJoCo template
+
+```python workspace/vla/ch08/bimanual_env.py
+"""
+Two SO-101 arms in a shared MuJoCo workspace for bimanual tasks.
+Placeholder — fill in actual arm MJCF paths from Menagerie.
+"""
+import numpy as np
+import mujoco
+
+BIMANUAL_XML = """
+<mujoco>
+  <option timestep="0.002"/>
+  <worldbody>
+    <body name="left_base"  pos="-0.3 0 0">
+      <!-- left arm: include SO-101 MJCF here -->
+    </body>
+    <body name="right_base" pos=" 0.3 0 0">
+      <!-- right arm: include SO-101 MJCF here -->
+    </body>
+    <body name="object" pos="0 0.3 0.05">
+      <freejoint/>
+      <geom type="box" size="0.03 0.03 0.03"/>
+    </body>
+  </worldbody>
+</mujoco>
+"""
+
+if __name__ == "__main__":
+    model = mujoco.MjModel.from_xml_string(BIMANUAL_XML)
+    data  = mujoco.MjData(model)
+    print(f"Bodies: {model.nbody}  Joints: {model.njnt}  Actuators: {model.nu}")
 ```
 
 ---
 
-## Project 8D — Visualize in RViz2
+## Self-Check (all capstones)
 
-Create `learning/ch08_ros2/launch/visualize.launch.py`:
+1. You reach 70% success rate on your capstone task. What's your next step?
+   **Answer:** Run failure analysis — record 30 failures, categorize them, identify the
+   dominant failure mode, collect targeted data for it. Random data collection has
+   diminishing returns at this success rate.
 
-```python
-from launch import LaunchDescription
-from launch_ros.actions import Node
+2. Your capstone involves a novel object the policy hasn't seen. What technique helps most?
+   **Answer:** For ACT/Diffusion: collect demos with that object. For SmolVLA fine-tuning:
+   add the object to your training variation set. There's no substitute for demonstration
+   coverage of the test distribution.
 
-def generate_launch_description():
-    return LaunchDescription([
-        # Robot state publisher (broadcasts TF transforms from URDF)
-        Node(
-            package='robot_state_publisher',
-            executable='robot_state_publisher',
-            parameters=[{'robot_description': open(
-                '/path/to/panda.urdf').read()}],  # update path
-        ),
+3. Your system works in controlled conditions but fails in a demo when someone walks by.
+   Why, and how do you fix it?
+   **Answer:** Visual distraction — the policy attends to motion or appearance changes in
+   the background. Fix: crop observations to the relevant region, or add background
+   randomization during training.
 
-        # Our MuJoCo bridge
-        Node(
-            package='robot_basics',
-            executable='mujoco_ros2_bridge',
-        ),
+4. You want to add a second camera for better depth estimation. What changes in your pipeline?
+   **Answer:** You need a new observation key in the dataset, retrain the policy with
+   the additional input, and re-collect demos with both cameras active. Policy architecture
+   may also need updating to handle multi-camera input.
 
-        # RViz2 for visualization
-        Node(
-            package='rviz2',
-            executable='rviz2',
-        ),
-    ])
-```
-
-In RViz2:
-1. Add display: `RobotModel` → subscribe to `/robot_description`
-2. Add display: `JointState` → topic `/joint_states`
-3. Add display: `Image` → topic `/camera/image_raw`
-4. Fixed frame: `panda_link0`
-
-You should see the Franka arm moving in RViz2 with the MuJoCo physics running in the background.
+5. Describe the full data flow from camera image to joint torque in your system.
+   **Answer:** Camera → image preprocessing (resize, normalize) → policy network
+   (vision encoder + action decoder) → predicted joint positions/velocities → position
+   actuator or motor PD controller → joint torques → motors.
 
 ---
 
-## Self-Check Questions
+## Common Mistakes
 
-Before moving to Chapter 9:
+- **Skipping the sim version of a capstone:** Always build and validate in sim first,
+  even for hardware capstones. Sim is free; real-robot debugging time is not.
 
-1. What is the difference between using a ROS 2 topic vs. a service for joint commands?
-2. Your bridge publishes joint states at 500 Hz but your policy node can only run at 30 Hz. How does ROS 2 handle this mismatch?
-3. Why use `MultiThreadedExecutor` in the bridge node?
-4. What is the purpose of the QoS (Quality of Service) setting `BEST_EFFORT` vs. `RELIABLE`?
-5. The `mj_lock` mutex in the bridge — what would happen if you removed it?
+- **Collecting all demos before testing the pipeline:** Collect 10 demos, train, deploy.
+  Verify the pipeline end-to-end before investing in full data collection.
 
-**Answers:**
-1. Topic: asynchronous, broadcast, no response confirmation. Service: synchronous, one-to-one, caller waits for response. Use topics for streaming data (joint states, commands). Use services for queries with results (IK request, parameter lookup).
-2. ROS 2 subscribers have a queue. The policy node simply reads the latest message in its queue and ignores older ones (use `qos_profile.depth=1` and `BEST_EFFORT` to always get the freshest data).
-3. Multiple callbacks need to run concurrently: physics step timer, joint state publisher, camera publisher, command subscriber. Without `MultiThreadedExecutor`, they'd be serialized and some would miss their timing.
-4. `BEST_EFFORT` drops messages if the network is congested — fine for sensor data where stale data is useless anyway. `RELIABLE` retransmits — necessary for commands where missing one could leave the robot in a wrong state.
-5. The physics thread and ROS callbacks would race on `mj_data` — undefined behavior. The lock ensures only one thread accesses MuJoCo at a time. This is the most common bug in ROS 2 node implementations.
+- **Inconsistent eval protocol:** Same object setup, same lighting, same number of trials
+  — every time. If conditions drift, your success rate numbers are meaningless.
+
+- **Ignoring latency:** Real deployment has latency — camera → processing → action. If
+  your policy was trained at 30 fps but inference takes 50 ms, you're effectively running
+  at 20 fps. Measure and match.
 
 ---
 
-## What's Next
+## Resources
 
-Chapter 9 replaces the MuJoCo bridge with a real robot. The same ROS 2 infrastructure you built here (publisher/subscriber pattern, command topics, camera topics) will work on physical hardware — that's the whole point of this chapter.
+1. [LeRobot hardware examples](https://huggingface.co/docs/lerobot) — complete real-robot pipelines
+2. [Grounded SAM 2](https://github.com/IDEA-Research/Grounded-SAM-2) — open-vocabulary segmentation
+3. [Intel RealSense SDK](https://github.com/IntelRealSense/librealsense) — depth camera Python API
+4. [ACT paper](https://arxiv.org/abs/2304.13705) — bimanual experiments in Section 5

@@ -1,623 +1,481 @@
-# Chapter 3 — Robot Kinematics & Motion Planning
+# Chapter 3 — Imitation Learning
 
-**Time:** 3–4 days
-**Hardware:** Any laptop, no GPU
-**Prerequisites:** Chapters 1–2 (MuJoCo basics, PD control)
-
----
-
-## Why This Chapter Exists
-
-In Chapter 2 you wrote a PD controller that holds a target joint angle. That's useful, but the moment you want to do anything practical — move the hand to a target position, follow a trajectory, execute a pick — you need to work in Cartesian space (X, Y, Z) and convert automatically to joint angles. That conversion is IK.
-
-The deeper gap this fills: learned policies (Chapter 5 onward) output actions in Cartesian space. To execute them on a real or simulated robot, something has to turn those Cartesian targets into joint commands. That something is what you build here.
-
-### If you can answer these, you can skip this chapter
-
-1. A robot arm has 6 joints. Its end-effector is at position `p` in world space. You want to move it 2 cm in the +X direction. How do you compute the required change in joint angles without solving the full geometric IK?
-2. What is a kinematic singularity, and what actually goes wrong when you're near one?
+**Time:** 5–7 days
+**Hardware:** GPU 8 GB+ strongly recommended (CPU is very slow for ACT/Diffusion training)
+**Prerequisites:** Chapter 1 (MuJoCo), Chapter 2 (RL basics optional but helpful)
 
 ---
 
-## Part 1 — Forward Kinematics (Quick Recap)
+## What are we here for
 
-You already used FK in Chapter 1: `mj_forward()` takes joint angles and gives you body
-positions in world space via `data.xpos`. That's FK — nothing more.
+RL requires millions of environment steps and carefully shaped rewards. For manipulation —
+pick-and-place, folding, insertion — it's often faster and more reliable to just show the
+robot what to do. That's **imitation learning (IL)**: learn a policy from human demonstrations.
 
-For IK we need the inverse: given a desired end-effector position, find the joint angles.
-Pink handles this. But to use it well, you need to understand the Jacobian — the bridge
-between joint space and Cartesian space.
+This chapter focuses on two IL algorithms that currently dominate robot manipulation:
 
----
+- **ACT** (Action Chunking with Transformers) — predicts a chunk of future actions at once,
+  which reduces compounding errors from behavioral cloning
+- **Diffusion Policy** — models the action distribution as a denoising process, which
+  handles multi-modal behavior (multiple valid ways to do a task)
 
-## Part 2 — Inverse Kinematics
+You'll collect demonstrations, train both algorithms, compare them, and study how data
+quantity affects performance. These skills directly transfer to Chapter 7 (real hardware).
 
-### Why IK Is Hard
-
-You want the end-effector at position `p*`. What joint angles produce that?
-
-Problems:
-1. **Multiple solutions:** A 6-DOF arm can often reach a point in multiple configurations (elbow up vs. elbow down, shoulder front vs. shoulder back). There are infinitely many for redundant 7-DOF arms.
-2. **No solution:** The target might be outside the reachable workspace.
-3. **Singularities:** At certain configurations, small end-effector motions require infinite joint velocities.
-4. **Nonlinearity:** The FK equations are nonlinear trig functions → no closed-form inverse in general.
-
-### Two Approaches to IK
-
-**Analytical IK:** Closed-form solution for specific robot geometries (Puma 560, Franka with special structure). Fast, finds all solutions. Not general.
-
-**Numerical (Differential) IK:** Iterative gradient-based approach. Works for any robot. This is what Pink uses.
-
-The iterative approach:
-1. Start from current joint angles `q`
-2. Compute FK to get current EE pose
-3. Compute the error between current and target
-4. Compute the Jacobian `J`
-5. Update: `Δq = J⁺ · Δx` where `J⁺` is the pseudoinverse of J
-6. Repeat until error < threshold
-
----
-
-## Part 3 — The Jacobian (The Most Important Tool in Robot Control)
-
-### What the Jacobian Is
-
-The Jacobian `J` is a 6×n matrix (for a 6-DOF task space and n joints) that maps joint velocities to end-effector velocity:
-
-```
-ẋ = J(q) · q̇
-```
-
-Where:
-- `ẋ = [vx, vy, vz, ωx, ωy, ωz]` — 6D end-effector velocity (linear + angular)
-- `q̇ = [q̇1, ..., q̇n]` — joint velocities
-
-### Why the Jacobian Matters
-
-1. **Cartesian velocity control:** If you want the EE to move at velocity `ẋ`, compute `q̇ = J⁺ · ẋ`
-2. **IK updates:** `Δq = J⁺ · Δx` (linearized FK inverse)
-3. **Singularity detection:** When `det(J·Jᵀ)` → 0, the robot is near a singularity
-4. **Force control:** Transpose Jacobian maps task-space forces to joint torques: `τ = Jᵀ · F`
-
-### The Pseudoinverse
-
-For a non-square matrix J (6×7 for a 7-DOF arm), the Moore-Penrose pseudoinverse is:
-```
-J⁺ = Jᵀ(JJᵀ)⁻¹
-```
-
-This gives the minimum-norm joint velocity solution. For redundant arms (more joints than DOF), there are extra DOFs you can use for secondary tasks (joint limit avoidance, singularity avoidance).
-
-### Damped Pseudoinverse (Near Singularities)
-
-Near singularities, `J⁺` blows up. The damped pseudoinverse:
-```
-J⁺_damped = Jᵀ(JJᵀ + λ²I)⁻¹
-```
-
-Where λ (damping factor) prevents division by near-zero values. Typically `λ = 0.01` to `0.1`.
-
----
-
-## Part 4 — Pink: The IK Library
-
-Pink is a differential IK library built on Pinocchio (a rigid body dynamics library). It formulates IK as a Quadratic Program (QP) — an optimization problem that you can add constraints to.
-
-### Why Pink Over Writing Your Own?
-
-Pink handles:
-- Joint limits (hard constraints)
-- Multiple simultaneous tasks (position + orientation + joint posture)
-- Velocity limits
-- Singularity handling (damped QP automatically)
-- Works with any robot (reads URDF or MJCF via Pinocchio)
-
-### Core Pink Concepts
-
-```python
-import pink
-from pink import solve_ik
-from pink.tasks import FrameTask, PostureTask
-
-# Build a configuration from a robot model
-configuration = pink.Configuration(robot.model, robot.data, q0)
-
-# Define tasks
-end_effector_task = FrameTask(
-    "panda_hand",           # frame name in the model
-    position_cost=1.0,      # weight for position error
-    orientation_cost=0.1,   # weight for orientation error
-)
-
-posture_task = PostureTask(
-    cost=1e-3               # small weight: prefer staying near default pose
-)
-
-# Set targets
-end_effector_task.set_target(target_SE3)  # pin.SE3 object
-posture_task.set_target(q_default)
-
-# Solve: returns joint velocity
-velocity = solve_ik(
-    configuration,
-    [end_effector_task, posture_task],
-    dt=0.01,
-    solver="quadprog"
-)
-
-# Integrate to get new q
-q_new = configuration.integrate(velocity, dt=0.01)
-```
-
-### Install
-
+**Install:**
 ```bash
-pip install pin pink quadprog
+git clone https://github.com/huggingface/lerobot ~/lerobot
+cd ~/lerobot
+pip install -e ".[simulation]"
 ```
 
-Verify:
-```bash
-python -c "import pink; print('pink OK')"
-```
+**Skip if you can answer:**
+1. What is distributional shift, and why does behavioral cloning fail because of it?
+2. What problem does ACT's action chunking solve?
+3. You trained on 50 demos and got 60% success. You collect 50 more. What do you expect?
+4. Your policy succeeds in training conditions but fails when you move the camera 5 cm. Why?
 
 ---
 
-## Part 5 — Kinematic Singularities
+## Projects
 
-### What Is a Singularity?
-
-A configuration where the Jacobian loses rank — the robot loses one or more degrees of freedom. You can no longer move the end-effector in certain directions no matter how you move the joints.
-
-**Common singularities:**
-- **Wrist singularity:** All wrist joints aligned (common in Franka, UR5)
-- **Shoulder singularity:** Arm fully extended
-- **Elbow singularity:** Elbow joint at 0° (arm coplanar)
-
-### Detecting Singularities
-
-The **manipulability measure** (Yoshikawa, 1985):
-```
-w = sqrt(det(J·Jᵀ))
-```
-
-- `w` > 0.1: well-conditioned, robot is nimble
-- `w` → 0: near singularity, control becomes unreliable
-
-In practice, monitor this and warn the operator or avoid the configuration during planning.
+| # | Project | What you build |
+|---|---------|---------------|
+| A | Collect Demonstrations | 50 scripted oracle demos in gym_pusht using LeRobot |
+| B | Inspect Your Dataset | Visualize trajectories, action distributions, and coverage |
+| C | Train ACT | Train and evaluate ACT; measure success rate over 50 trials |
+| D | Train Diffusion Policy | Train Diffusion Policy; compare head-to-head with ACT |
+| E | Data Scaling | Train on 10/25/50/100/200 demos; plot success vs. data size |
+| F | Failure Analysis | Cluster failures by type; fix the dominant failure mode |
 
 ---
 
-## External Resources
+## Project A — Collect Demonstrations
 
-1. **Modern Robotics Textbook — Chapters 4, 5, 6 (free online)**
-   Covers FK (Ch.4), velocity kinematics and Jacobians (Ch.5), and IK (Ch.6).
-   Dense but definitive. Read Ch.5 on Jacobians carefully.
-   → https://hades.mech.northwestern.edu/index.php/Modern_Robotics
+**Problem:** IL needs demonstrations. Before you can train, you need a dataset of
+(observation, action) pairs showing the task being solved.
 
-2. **Pink documentation and examples**
-   → https://github.com/stephane-caron/pink
-   Especially: look at the `examples/` folder for real robot usage.
+**Approach:** Use LeRobot's `gym_pusht` environment with a scripted oracle policy to
+generate 50 demonstrations automatically, saved in LeRobot's dataset format.
 
-3. **Pinocchio documentation**
-   Pink is built on Pinocchio. If you need lower-level FK/Jacobian computation:
-   → https://gepettoweb.laas.fr/doc/stack-of-tasks/pinocchio/master/doxygen-html/
+### What is gym_pusht?
 
-4. **MuJoCo Menagerie — Franka Panda model**
-   The robot you'll use for projects:
-   → https://github.com/google-deepmind/mujoco_menagerie/tree/main/franka_emika_panda
+`gym_pusht` is a 2D push-T task: a disk (end-effector) must push a T-shaped block into
+a target region. It's fast to simulate, visually clear, and widely used for IL benchmarks.
 
-5. **Introduction to Robotics (Craig) — Chapter 3**
-   Classic textbook treatment of FK/DH parameters. Good second reference.
-   Available as PDF through most university libraries.
+### LeRobot's dataset format
 
----
+LeRobot stores demonstrations as a `LeRobotDataset` — a structured collection of episodes,
+each containing observations (images + state) and actions at each timestep. This format
+is what ACT and Diffusion Policy expect as input.
 
-## Project 3A — IK Solver: Reach Any Target
-
-This project uses Pink with the Franka Panda MJCF model. We'll solve IK to reach targets in 3D space.
-
-Create `learning/ch03_kinematics/01_ik_solver.py`:
-
-```python
+```python workspace/vla/ch03/collect_demos.py
+"""Collect demonstrations in gym_pusht using a scripted oracle. Saves a LeRobotDataset."""
 import numpy as np
-import mujoco
-import mujoco.viewer
-import pinocchio as pin
-import pink
-from pink.tasks import FrameTask, PostureTask
-import time
-import os
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+import gymnasium as gym
+import gym_pusht
 
-# -- Setup Pinocchio model from MJCF --
-# Pink needs a URDF or Pinocchio model. For Franka, use the standard URDF.
-# Download: https://github.com/frankaemika/franka_ros/tree/develop/franka_description
-# Or install: pip install robot_descriptions
-from robot_descriptions.loaders.pinocchio import load_robot_description
+N_DEMOS    = 50
+REPO_ID    = "local/pusht_demos"
+SAVE_DIR   = "./data/pusht_demos"
 
-def load_panda():
-    """Load Franka Panda via robot_descriptions (auto-downloads URDF)."""
-    robot = load_robot_description("panda_description")
-    return robot
+def oracle_action(obs: dict) -> np.ndarray:
+    """Scripted policy: move toward block, then push toward goal."""
+    agent_pos  = obs["agent_pos"]
+    block_pos  = obs["block_pos"][:2]
+    target_pos = obs["goal_pos"][:2] if "goal_pos" in obs else np.array([256, 256])
 
-def solve_ik_to_target(robot, q0, target_pos, target_quat=None, dt=0.01, max_iter=200):
-    """
-    Solve IK to move end-effector to target_pos.
-    Returns final joint angles q.
-    """
-    configuration = pink.Configuration(robot.model, robot.data, q0)
+    # Phase 1: approach block
+    to_block = block_pos - agent_pos
+    if np.linalg.norm(to_block) > 15:
+        return np.clip(to_block * 0.05, -1, 1)
 
-    ee_task = FrameTask(
-        "panda_hand",
-        position_cost=50.0,
-        orientation_cost=1.0,
+    # Phase 2: push block toward goal
+    to_goal = target_pos - block_pos
+    return np.clip(to_goal * 0.03, -1, 1)
+
+def collect(n_demos: int, save_dir: str) -> None:
+    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
+
+    dataset = LeRobotDataset.create(
+        repo_id=REPO_ID,
+        fps=10,
+        root=save_dir,
+        features={
+            "observation.image": {"shape": (96, 96, 3), "dtype": "image"},
+            "observation.state": {"shape": (2,), "dtype": "float32"},
+            "action": {"shape": (2,), "dtype": "float32"},
+        },
     )
-    posture_task = PostureTask(cost=1e-3)
 
-    # Set position target (keep current orientation if none given)
-    if target_quat is None:
-        # Keep current orientation
-        current_SE3 = configuration.get_transform_frame_to_world("panda_hand")
-        target_SE3 = pin.SE3(current_SE3.rotation, target_pos)
-    else:
-        R = pin.Quaternion(target_quat).toRotationMatrix()
-        target_SE3 = pin.SE3(R, target_pos)
+    for ep in range(n_demos):
+        obs, _ = env.reset()
+        done   = False
+        frames = []
+        while not done:
+            action = oracle_action(obs)
+            frames.append((obs, action))
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
 
-    ee_task.set_target(target_SE3)
-    posture_task.set_target(q0)
+        for obs, action in frames:
+            dataset.add_frame({
+                "observation.image": obs["pixels"],
+                "observation.state": obs["agent_pos"],
+                "action": action,
+            })
+        dataset.save_episode()
+        if (ep + 1) % 10 == 0:
+            print(f"Collected {ep+1}/{n_demos} demos")
 
-    q = q0.copy()
-    for i in range(max_iter):
-        configuration = pink.Configuration(robot.model, robot.data, q)
-        vel = pink.solve_ik(
-            configuration,
-            [ee_task, posture_task],
-            dt=dt,
-            solver="quadprog"
-        )
-        q = configuration.integrate(vel, dt)
-
-        # Check convergence
-        current_pos = configuration.get_transform_frame_to_world("panda_hand").translation
-        error = np.linalg.norm(current_pos - target_pos)
-        if error < 0.005:
-            print(f"Converged in {i+1} iterations, error={error*1000:.1f}mm")
-            return q, True
-
-    print(f"Did not converge after {max_iter} iters, final error={error*1000:.1f}mm")
-    return q, False
-
-
-def demo_ik():
-    """Install robot_descriptions first: pip install robot_descriptions"""
-    try:
-        robot = load_panda()
-    except Exception:
-        print("Install robot_descriptions: pip install robot_descriptions")
-        print("Then re-run this script.")
-        return
-
-    # Default neutral pose (joints in radians)
-    q0 = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785, 0.04, 0.04])
-
-    # Test targets
-    targets = [
-        np.array([0.4, 0.0, 0.4]),
-        np.array([0.3, 0.3, 0.3]),
-        np.array([0.5, -0.2, 0.5]),
-        np.array([0.4, 0.0, 0.6]),
-    ]
-
-    q = q0.copy()
-    for i, target in enumerate(targets):
-        print(f"\nTarget {i+1}: {target}")
-        q, success = solve_ik_to_target(robot, q, target)
-        if success:
-            print(f"Joint angles: {np.round(q[:7], 3)}")
-        else:
-            print("IK failed for this target")
+    dataset.consolidate()
+    print(f"\nDataset saved to {save_dir}")
+    print(f"Total episodes: {dataset.num_episodes}")
+    print(f"Total frames:   {dataset.num_frames}")
+    env.close()
 
 if __name__ == "__main__":
-    demo_ik()
+    collect(N_DEMOS, SAVE_DIR)
 ```
 
-Install dependency:
-```bash
-pip install robot_descriptions
-```
+**What to observe:** Watch the oracle push the T-block into place. Verify the dataset
+has ~50 episodes. If success rate is low, the oracle needs tuning for your env version.
 
 ---
 
-## Project 3B — Real-Time Target Tracking
+## Project B — Inspect Your Dataset
 
-Create `learning/ch03_kinematics/02_realtime_tracking.py`:
+**Problem:** Training on bad data gives bad policies. Before training, understand what's
+in your dataset: action distributions, trajectory diversity, and failure cases.
 
-```python
+**Approach:** Load the dataset, plot action distributions and a sample of trajectories.
+
+```python workspace/vla/ch03/inspect_dataset.py
+"""Visualize a LeRobotDataset: action distributions, trajectory samples, coverage."""
 import numpy as np
-import mujoco
-import mujoco.viewer
-import pinocchio as pin
-import pink
-from pink.tasks import FrameTask, PostureTask
-from robot_descriptions.loaders.pinocchio import load_robot_description
-import time
-import os
+import matplotlib.pyplot as plt
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
-MENAGERIE_PATH = os.path.expanduser("~/mujoco_menagerie")
-FRANKA_XML = os.path.join(MENAGERIE_PATH, "franka_emika_panda/scene.xml")
+SAVE_DIR = "./data/pusht_demos"
 
-def make_circle_target(t, radius=0.15, height=0.4, center=np.array([0.4, 0.0, 0.5])):
-    """Target moves in a circle over time."""
-    return center + np.array([
-        radius * np.cos(t * 0.5),
-        radius * np.sin(t * 0.5),
-        0.05 * np.sin(t * 2.0)
-    ])
+def inspect(root: str) -> None:
+    dataset = LeRobotDataset(repo_id="local/pusht_demos", root=root)
+    print(f"Episodes: {dataset.num_episodes}  Frames: {dataset.num_frames}")
+    print(f"Features: {list(dataset.features.keys())}")
 
-def run_tracking():
-    robot = load_robot_description("panda_description")
-    mj_model = mujoco.MjModel.from_xml_path(FRANKA_XML)
-    mj_data = mujoco.MjData(mj_model)
+    # Collect all actions
+    actions = np.array([dataset[i]["action"].numpy() for i in range(len(dataset))])
+    states  = np.array([dataset[i]["observation.state"].numpy() for i in range(len(dataset))])
 
-    q = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785, 0.04, 0.04])
-    q_pin = q.copy()
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-    kp, kd = 300.0, 30.0
+    # Action distribution
+    axes[0].hist2d(actions[:, 0], actions[:, 1], bins=40)
+    axes[0].set_title("Action distribution (x, y velocity)")
+    axes[0].set_xlabel("action x"); axes[0].set_ylabel("action y")
 
-    print("Running real-time circle tracking. Close the viewer to stop.")
-    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
-        t_start = time.time()
-        prev_q_target = q[:7].copy()
+    # State coverage
+    axes[1].scatter(states[:, 0], states[:, 1], s=1, alpha=0.3)
+    axes[1].set_title("Agent position coverage")
+    axes[1].set_xlabel("x"); axes[1].set_ylabel("y")
 
-        while viewer.is_running():
-            t = time.time() - t_start
-            target_pos = make_circle_target(t)
+    # Episode lengths
+    ep_lengths = []
+    for ep_idx in range(dataset.num_episodes):
+        ep_data = dataset.episode_data_index
+        start = ep_data["from"][ep_idx].item()
+        end   = ep_data["to"][ep_idx].item()
+        ep_lengths.append(end - start)
+    axes[2].hist(ep_lengths, bins=20)
+    axes[2].set_title("Episode length distribution")
+    axes[2].set_xlabel("steps")
 
-            # Solve IK (1 iteration per control step for real-time)
-            configuration = pink.Configuration(robot.model, robot.data, q_pin)
-            ee_task = FrameTask("panda_hand", position_cost=50.0, orientation_cost=1.0)
-            posture_task = PostureTask(cost=1e-3)
+    plt.tight_layout()
+    plt.savefig("dataset_inspection.png")
+    print("Saved dataset_inspection.png")
 
-            current_SE3 = configuration.get_transform_frame_to_world("panda_hand")
-            ee_task.set_target(pin.SE3(current_SE3.rotation, target_pos))
-            posture_task.set_target(q_pin)
-
-            dt = 0.02
-            vel = pink.solve_ik(configuration, [ee_task, posture_task],
-                                dt=dt, solver="quadprog")
-            q_pin = configuration.integrate(vel, dt)
-
-            # Track IK solution with PD controller in MuJoCo
-            q_mj = mj_data.qpos[:7]
-            dq_mj = mj_data.qvel[:7]
-            torques = kp * (q_pin[:7] - q_mj) - kd * dq_mj
-            mj_data.ctrl[:7] = np.clip(torques, -87, 87)
-
-            # Move visual target marker (mocap)
-            if mj_model.nmocap > 0:
-                mj_data.mocap_pos[0] = target_pos
-
-            for _ in range(10):
-                mujoco.mj_step(mj_model, mj_data)
-
-            viewer.sync()
-
-            # Print tracking error every second
-            if int(t) > int(t - dt):
-                ee_pos = configuration.get_transform_frame_to_world("panda_hand").translation
-                err = np.linalg.norm(ee_pos - target_pos)
-                print(f"t={t:.1f}s  tracking error={err*1000:.1f}mm  target={target_pos}")
+    print(f"\nAction range:  x=[{actions[:,0].min():.2f}, {actions[:,0].max():.2f}]  "
+          f"y=[{actions[:,1].min():.2f}, {actions[:,1].max():.2f}]")
+    print(f"Median episode length: {np.median(ep_lengths):.0f} steps")
 
 if __name__ == "__main__":
-    run_tracking()
+    inspect(SAVE_DIR)
 ```
+
+**What to observe:** If actions cluster in a small region, your oracle isn't diverse.
+If episode lengths vary wildly, some demos may have gotten stuck. Both hurt training.
 
 ---
 
-## Project 3C — Cartesian Control and Pick Trajectory
+## Project C — Train ACT
 
-Create `learning/ch03_kinematics/03_pick_trajectory.py`:
+**Problem:** Train ACT on your demonstrations and measure how well it generalizes.
 
-```python
+**Approach:** Use LeRobot's training script with the ACT config. Evaluate over 50 trials.
+
+### What ACT does
+
+**Behavioral cloning (BC)** trains a policy by supervised learning: given an observation,
+predict the next action. The problem is **distributional shift** — at test time, small
+errors accumulate and drive the robot into states it never saw during training.
+
+**ACT** (Action Chunking with Transformers) addresses this by predicting a *chunk* of
+future actions (e.g., 100 steps) at once, then executing them open-loop for a short
+window before re-predicting. This reduces the number of policy queries, reducing
+compounding errors. [Read more: ACT paper](https://arxiv.org/abs/2304.13705)
+
+```bash workspace/vla/ch03/train_act.sh
+# Train ACT on pusht demos
+cd ~/lerobot
+python lerobot/scripts/train.py \
+  --policy.type=act \
+  --dataset.repo_id=local/pusht_demos \
+  --dataset.root=./data/pusht_demos \
+  --training.num_workers=4 \
+  --training.batch_size=64 \
+  --training.num_epochs=100 \
+  --output_dir=./outputs/act_pusht
+```
+
+```python workspace/vla/ch03/eval_policy.py
+"""Evaluate a trained LeRobot policy over N trials. Reports success rate."""
 import numpy as np
-import mujoco
-import mujoco.viewer
-import pinocchio as pin
-import pink
-from pink.tasks import FrameTask, PostureTask
-from robot_descriptions.loaders.pinocchio import load_robot_description
-import time
-import os
+from lerobot.common.policies.act.modeling_act import ACTPolicy
+import gymnasium as gym
+import gym_pusht
+import torch
 
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+def evaluate(policy_path: str, n_trials: int = 50) -> float:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    policy = ACTPolicy.from_pretrained(policy_path).to(device)
+    policy.eval()
 
-def interpolate_waypoints(waypoints, n_steps_each=100):
-    """
-    Linearly interpolate between a list of 3D waypoints.
-    Returns array of shape (N, 3).
-    """
-    all_points = []
-    for i in range(len(waypoints) - 1):
-        start = np.array(waypoints[i])
-        end = np.array(waypoints[i+1])
-        pts = np.linspace(start, end, n_steps_each)
-        all_points.append(pts)
-    return np.vstack(all_points)
+    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode=None)
+    successes = 0
 
-def run_pick_trajectory():
-    robot = load_robot_description("panda_description")
-    mj_model = mujoco.MjModel.from_xml_path(FRANKA_XML)
-    mj_data = mujoco.MjData(mj_model)
+    for trial in range(n_trials):
+        obs, _ = env.reset()
+        done   = False
+        while not done:
+            with torch.no_grad():
+                action = policy.select_action({
+                    "observation.image": torch.tensor(obs["pixels"]).permute(2,0,1).unsqueeze(0).to(device) / 255.0,
+                    "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).to(device),
+                })
+            obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
+            done = term or trunc
+        successes += int(info.get("is_success", False))
 
-    q_pin = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785, 0.04, 0.04])
-    kp, kd = 400.0, 40.0
-
-    # Pick trajectory waypoints:
-    # 1. Start (above object)
-    # 2. Pre-grasp (approach from above)
-    # 3. Grasp (at object height)
-    # 4. Lift (straight up)
-    # 5. Place pre (above destination)
-    # 6. Place (at destination)
-    # 7. Retract
-
-    object_pos = np.array([0.45, 0.0, 0.05])
-    place_pos  = np.array([0.45, 0.3, 0.05])
-    hover_h    = 0.25
-
-    waypoints = [
-        [0.4,  0.0,  0.4 ],   # home
-        object_pos + [0, 0, hover_h],  # above object
-        object_pos + [0, 0, 0.02],     # at object (grasp)
-        object_pos + [0, 0, hover_h],  # lift
-        place_pos  + [0, 0, hover_h],  # above place
-        place_pos  + [0, 0, 0.02],     # place
-        place_pos  + [0, 0, hover_h],  # retract
-    ]
-
-    trajectory = interpolate_waypoints(waypoints, n_steps_each=80)
-    print(f"Trajectory: {len(trajectory)} waypoints across {len(waypoints)-1} segments")
-
-    phase_names = ["HOME→ABOVE", "ABOVE→GRASP", "GRASP→LIFT",
-                   "LIFT→ABOVE_PLACE", "ABOVE_PLACE→PLACE", "PLACE→RETRACT"]
-
-    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
-        for step_idx, target_pos in enumerate(trajectory):
-            phase = min(step_idx // 80, len(phase_names)-1)
-            if step_idx % 80 == 0:
-                print(f"\nPhase: {phase_names[phase]}")
-
-            configuration = pink.Configuration(robot.model, robot.data, q_pin)
-            ee_task = FrameTask("panda_hand", position_cost=50.0, orientation_cost=1.0)
-            posture_task = PostureTask(cost=1e-3)
-
-            current_SE3 = configuration.get_transform_frame_to_world("panda_hand")
-            ee_task.set_target(pin.SE3(current_SE3.rotation, target_pos))
-            posture_task.set_target(q_pin)
-
-            dt = 0.02
-            vel = pink.solve_ik(configuration, [ee_task, posture_task],
-                                dt=dt, solver="quadprog")
-            q_pin = configuration.integrate(vel, dt)
-
-            q_mj = mj_data.qpos[:7]
-            dq_mj = mj_data.qvel[:7]
-            torques = kp * (q_pin[:7] - q_mj) - kd * dq_mj
-            mj_data.ctrl[:7] = np.clip(torques, -87, 87)
-
-            for _ in range(10):
-                mujoco.mj_step(mj_model, mj_data)
-            viewer.sync()
-
-        print("\nTrajectory complete.")
-        time.sleep(2.0)
+    env.close()
+    sr = successes / n_trials
+    print(f"Success rate: {sr:.0%} ({successes}/{n_trials})")
+    return sr
 
 if __name__ == "__main__":
-    run_pick_trajectory()
+    evaluate("./outputs/act_pusht")
 ```
+
+**What to observe:** After 100 epochs on 50 demos, expect 50–80% success. Lower means
+the policy overfit or the demos are insufficient.
 
 ---
 
-## Project 3D — Singularity Detection
+## Project D — Train Diffusion Policy and Compare
 
-Create `learning/ch03_kinematics/04_singularity.py`:
+**Problem:** How does Diffusion Policy compare to ACT on the same data?
 
-```python
-import numpy as np
-import pinocchio as pin
-from robot_descriptions.loaders.pinocchio import load_robot_description
+**Approach:** Train Diffusion Policy with the same dataset and eval protocol, then plot
+both learning curves.
+
+### What Diffusion Policy does
+
+Diffusion Policy models the action distribution as a **denoising diffusion process**: it
+learns to denoise random noise into valid actions, conditioned on the observation. This
+handles **multi-modal** behavior naturally — situations where multiple actions are correct
+(e.g., approach from left or right). BC and ACT collapse these modes; Diffusion Policy
+captures them. [Read more: Diffusion Policy paper](https://arxiv.org/abs/2303.04137)
+
+```bash workspace/vla/ch03/train_diffusion.sh
+cd ~/lerobot
+python lerobot/scripts/train.py \
+  --policy.type=diffusion \
+  --dataset.repo_id=local/pusht_demos \
+  --dataset.root=./data/pusht_demos \
+  --training.batch_size=64 \
+  --training.num_epochs=100 \
+  --output_dir=./outputs/diffusion_pusht
+```
+
+Then evaluate with `eval_policy.py` (same script, change policy path and import to
+`DiffusionPolicy`). Compare success rates and training time — Diffusion Policy is slower
+to train and slower to run inference, but often higher quality on multi-modal tasks.
+
+---
+
+## Project E — Data Scaling
+
+**Problem:** How many demonstrations do you actually need? This tells you how much data
+to collect for a real-robot task.
+
+**Approach:** Train ACT on 10, 25, 50, 100, 200 demos from the same dataset. Plot success
+rate vs. data size.
+
+```python workspace/vla/ch03/data_scaling.py
+"""Train ACT on varying demo counts and plot success rate vs. data size."""
+import subprocess
+import json
 import matplotlib.pyplot as plt
 
-def compute_manipulability(robot, q):
-    """Yoshikawa manipulability measure: sqrt(det(J·Jᵀ))."""
-    pin.computeJointJacobians(robot.model, robot.data, q)
-    pin.framesForwardKinematics(robot.model, robot.data, q)
+DEMO_COUNTS = [10, 25, 50, 100, 200]
+RESULTS_FILE = "scaling_results.json"
 
-    frame_id = robot.model.getFrameId("panda_hand")
-    J = pin.getFrameJacobian(robot.model, robot.data, frame_id,
-                              pin.LOCAL_WORLD_ALIGNED)[:3, :]  # position only
-
-    JJT = J @ J.T
-    det_val = np.linalg.det(JJT)
-    return np.sqrt(max(det_val, 0))
-
-def sweep_manipulability():
-    robot = load_robot_description("panda_description")
-    q_neutral = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785, 0.04, 0.04])
-
-    # Sweep joint 2 (elbow) from -pi to pi
-    angles = np.linspace(-np.pi, np.pi, 200)
-    manipulabilities = []
-
-    for angle in angles:
-        q = q_neutral.copy()
-        q[2] = angle  # vary joint 3 (shoulder rotation)
-        w = compute_manipulability(robot, q)
-        manipulabilities.append(w)
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(np.degrees(angles), manipulabilities, color='steelblue', linewidth=2)
-    ax.axhline(0.05, color='red', linestyle='--', label='Singularity threshold (w<0.05)')
-    ax.fill_between(np.degrees(angles), 0, manipulabilities,
-                    where=np.array(manipulabilities) < 0.05,
-                    color='red', alpha=0.3, label='Near-singular region')
-    ax.set_xlabel('Joint 3 angle (degrees)')
-    ax.set_ylabel('Manipulability w = sqrt(det(J·Jᵀ))')
-    ax.set_title('Manipulability vs. Joint Angle\n'
-                 'Red regions: near-singular configurations to avoid')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig('manipulability.png', dpi=150)
-    plt.show()
-    print("Saved manipulability.png")
-
-    # Find singularities
-    sing_angles = [np.degrees(angles[i]) for i, w in enumerate(manipulabilities) if w < 0.05]
-    if sing_angles:
-        print(f"\nNear-singular configurations at joint-3 angles: {sing_angles[:5]} degrees")
+def train_and_eval(n_demos: int) -> float:
+    """Train ACT on n_demos and return success rate. Implement training call here."""
+    # In practice: subset the dataset to n_demos episodes, train, eval
+    # This is a scaffold — fill in with your LeRobot training + eval calls
+    print(f"Training on {n_demos} demos...")
+    # success_rate = run_training_and_eval(n_demos)
+    success_rate = 0.0  # placeholder
+    return success_rate
 
 if __name__ == "__main__":
-    sweep_manipulability()
+    results = {}
+    for n in DEMO_COUNTS:
+        results[n] = train_and_eval(n)
+
+    with open(RESULTS_FILE, "w") as f:
+        json.dump(results, f)
+
+    counts = list(results.keys())
+    rates  = list(results.values())
+    plt.plot(counts, rates, "o-")
+    plt.xlabel("Number of demonstrations")
+    plt.ylabel("Success rate")
+    plt.title("ACT: data scaling on PushT")
+    plt.xscale("log")
+    plt.grid(True)
+    plt.savefig("scaling_curve.png")
+    print("Saved scaling_curve.png")
 ```
 
+**What to observe:** Typically success rate rises steeply from 10→50 demos, then
+flattens. The knee of the curve tells you the minimum viable dataset size.
+
 ---
 
-## Self-Check Questions
+## Project F — Failure Analysis
 
-Before moving to Chapter 4:
+**Problem:** Your policy has a 70% success rate. The 30% failures are not random — they
+cluster into a few failure modes. Fixing the dominant one is more efficient than collecting
+more data indiscriminately.
 
-1. You want the end-effector to move at 5 cm/s in the +X direction. How do you compute the required joint velocities?
-2. What does it mean that a 7-DOF arm is "redundant"? What can you do with the extra DOF?
-3. Your IK solver gives you a solution, but the arm hits itself. What constraint do you add to the QP?
-4. The manipulability measure is 0.001. What does this mean practically? What should your controller do?
-5. Why does the damped pseudoinverse prevent singularity blow-up? What's the tradeoff?
-6. You're doing Cartesian-space velocity control. What happens when you try to move the end-effector perpendicular to a singular direction?
+**Approach:** Run 100 trials, record videos of failures, categorize them manually, then
+collect targeted demos for the dominant failure mode and retrain.
 
-**Answer to Q1:**
-```python
-desired_ee_vel = np.array([0.05, 0, 0, 0, 0, 0])  # [vx, vy, vz, wx, wy, wz]
-J = get_jacobian(robot, q)  # 6×7
-J_pinv = np.linalg.pinv(J)  # pseudoinverse
-q_dot = J_pinv @ desired_ee_vel  # joint velocities
+```python workspace/vla/ch03/failure_analysis.py
+"""Run N trials, save failure videos, print a categorization prompt."""
+import numpy as np
+import gymnasium as gym
+import gym_pusht
+import torch
+from lerobot.common.policies.act.modeling_act import ACTPolicy
+
+FAILURE_CATEGORIES = [
+    "A: never reached block",
+    "B: reached block but couldn't push",
+    "C: pushed block but missed target",
+    "D: timeout — too slow",
+    "E: other",
+]
+
+def collect_failures(policy_path: str, n_trials: int = 100) -> dict:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    policy = ACTPolicy.from_pretrained(policy_path).to(device)
+    policy.eval()
+    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
+
+    failures = []
+    for trial in range(n_trials):
+        obs, _ = env.reset()
+        frames = [env.render()]
+        done   = False
+        while not done:
+            with torch.no_grad():
+                action = policy.select_action({
+                    "observation.image": torch.tensor(obs["pixels"]).permute(2,0,1).unsqueeze(0).to(device) / 255.0,
+                    "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).to(device),
+                })
+            obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
+            frames.append(env.render())
+            done = term or trunc
+        if not info.get("is_success", False):
+            failures.append({"trial": trial, "frames": frames})
+
+    env.close()
+    print(f"\n{len(failures)} failures out of {n_trials} trials.")
+    print("\nWatch the failure videos and categorize each:")
+    for cat in FAILURE_CATEGORIES:
+        print(f"  {cat}")
+    print("\nFix the dominant category first — collect 20-50 targeted demos for it.")
+    return {"n_failures": len(failures), "n_trials": n_trials}
+
+if __name__ == "__main__":
+    collect_failures("./outputs/act_pusht")
 ```
 
----
-
-## What's Not Needed Here
-
-**DH parameter derivation:** The robot XML encodes geometry directly. Pink/Pinocchio read
-it automatically. You never need to derive or read a DH table.
-
-**Gradient-based IK from scratch:** Pink handles joint limits, velocity limits, and
-singularity avoidance correctly. Rolling your own only makes sense if you need custom
-constraints — which you don't at this stage.
-
-**Motion planning with obstacle avoidance (RRT, PRM):** Not needed for imitation learning
-(Chapter 5) because the policy outputs actions directly. If you need it later, MoveIt 2
-(Chapter 8) handles this.
+**What to observe:** Most failures cluster into 1–2 categories. Targeted data collection
+for those categories typically improves success rate more than doubling the random dataset.
 
 ---
 
-## What's Next
+## Self-Check
 
-Chapter 4 uses RL to learn control policies. The motion stack you now have — IK computes target joint angles, PD controller (from Chapter 2) executes them — is exactly what runs at deployment. A learned policy outputs target EE positions; this stack converts them to robot motion.
+1. What is distributional shift, and why does it make behavioral cloning fail?
+   **Answer:** BC trains on states from demonstrations. At test time, small errors move the
+   robot to new states not in the training distribution — the policy was never trained on
+   these, so it makes worse decisions, causing further drift. Compounding errors snowball.
+
+2. What problem does ACT's action chunking solve?
+   **Answer:** Querying the policy at every step compounds errors. Chunking predicts a
+   block of future actions at once and executes them open-loop briefly — fewer policy
+   queries means fewer opportunities for compounding.
+
+3. When would you prefer Diffusion Policy over ACT?
+   **Answer:** When the task has multi-modal behavior — multiple valid ways to solve it
+   (e.g., approach from left or right). BC and ACT average over modes, producing
+   invalid actions. Diffusion Policy captures the full distribution.
+
+4. Your Diffusion Policy trains to low loss but gets 20% success at eval. What do you check?
+   **Answer:** Check that eval conditions match training (obs normalization, image size,
+   action scale). Also verify demo quality — if demonstrations are inconsistent, low loss
+   doesn't mean good policy.
+
+5. You collect 200 demos and success rate is 85%. You want 95%. What's the most efficient next step?
+   **Answer:** Run failure analysis first. Identify the dominant failure mode and collect
+   30–50 targeted demos for it. Random data collection has diminishing returns at this scale.
+
+---
+
+## Common Mistakes
+
+- **Training without checking dataset first:** Always run Project B before training.
+  Bad demo coverage causes policies that fail in easily-detectable ways.
+
+- **Using CPU for ACT/Diffusion training:** Training time goes from hours to days.
+  Use Colab (free A100) if you don't have a local GPU.
+
+- **Evaluating in the same random seed as training:** Always reset with varied seeds.
+  High success rate on a fixed seed can mask overfitting to initial conditions.
+
+- **Treating all failures as equal:** 30% failure rate with 3 distinct failure modes is
+  three separate problems. Fix the biggest one first.
+
+---
+
+## Resources
+
+1. [ACT paper](https://arxiv.org/abs/2304.13705) — read abstract + Section 3 (action chunking)
+2. [Diffusion Policy paper](https://arxiv.org/abs/2303.04137) — read abstract + Section 4
+3. [LeRobot documentation](https://huggingface.co/docs/lerobot) — training scripts and dataset format
+4. [gym_pusht](https://github.com/huggingface/gym_pusht) — the simulation environment used here

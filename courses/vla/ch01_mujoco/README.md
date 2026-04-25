@@ -1,338 +1,195 @@
-# Chapter 1 — MuJoCo Fundamentals
+# Chapter 1 — MuJoCo & Robot Fundamentals
 
-**Time:** 1–2 days
-**Hardware:** Any laptop, no GPU
+**Time:** 2–3 days
+**Hardware:** Laptop only
 **Prerequisites:** Python, basic physics intuition (what is a joint, what is a frame)
 
 ---
 
-## Why This Chapter Exists
+## What are we here for
 
-Every chapter in this curriculum runs inside MuJoCo. Before you can train a policy, run IK,
-or collect robot demonstrations, you need to be fluent with the simulator: how to load a
-robot, step the physics, read joint states and body positions, and write a basic controller.
+Every chapter in this course runs inside MuJoCo — a fast, accurate physics simulator used
+by DeepMind, Google, and most serious robot learning labs. Before you can train a policy,
+collect demonstrations, or run IK, you need to be fluent with it: how to load a robot, step
+the physics, read where things are, make joints move, and plan end-effector paths.
 
-This chapter gets you there. You'll also pick up the coordinate frame and transform concepts
-you need — but grounded in a running simulation, not abstract math.
+This chapter covers all of that in four projects. You'll load a real robot model, localize
+objects using camera transforms, write a controller that holds a pose, and solve for joint
+angles that put the hand wherever you want. These four skills appear in every subsequent
+chapter.
 
-### If you can answer these, you can skip this chapter
+**Install:**
+```bash
+pip install mujoco numpy matplotlib scipy pink pin robot_descriptions quadprog
+git clone https://github.com/google-deepmind/mujoco_menagerie ~/mujoco_menagerie
+```
 
-1. You load a Franka arm in MuJoCo. How do you read the end-effector position in world space?
-2. What is the difference between `model` and `data` in MuJoCo?
-3. You set `data.ctrl[0] = 1.57`. What happens, and what type of actuator does that assume?
+**Skip if you can answer:**
+1. You load a Franka arm. How do you read the end-effector position in world space?
+2. You set `data.ctrl[0] = 1.57` on a `position` actuator. What happens?
+3. Your PD controller oscillates but doesn't settle. Which gain do you increase?
+4. You want the hand at `[0.5, 0.0, 0.4]`. How do you find the joint angles?
 
 ---
 
+## Projects
+
+| # | Project | What you build |
+|---|---------|---------------|
+| A | Load a Robot, Read Its State | Load Franka Panda, print joint states and body poses in two configurations |
+| B | Camera-to-World Transform | Localize a simulated cup from wrist-camera coordinates to world coordinates |
+| C | PD Controller | Hold a target joint pose; plot four kp/kd combinations |
+| D | IK Solver | Move the end-effector to any 3D target using Pink differential IK |
+
 ---
 
-## Part 1 — The MuJoCo Mental Model
+## Project A — Load a Robot, Read Its State
 
-### model and data
+**Problem:** Before you can control a robot, you need to understand what MuJoCo gives you
+and how to read the state of a loaded model.
+
+**Approach:** Load the Franka Panda from Menagerie, open the interactive viewer, set two
+joint configurations, and print the resulting body poses.
+
+### MuJoCo's two core objects
 
 MuJoCo splits everything into two objects:
 
 - **`mjModel`** — the static description: geometry, masses, joint limits, actuator types.
-  Loaded once from XML. Never changes during simulation.
+  Loaded once from an XML file. Never changes during simulation.
 - **`mjData`** — the live state: joint positions, velocities, contact forces, body poses.
   Updated every call to `mj_step()`.
 
 ```python
 import mujoco
 
-model = mujoco.MjModel.from_xml_string(XML)  # load once
-data  = mujoco.MjData(model)                 # mutable state
-
-mujoco.mj_step(model, data)  # advance physics by one timestep
+model = mujoco.MjModel.from_xml_path("scene.xml")  # load once
+data  = mujoco.MjData(model)                        # mutable state
+mujoco.mj_step(model, data)                         # advance physics one timestep
 ```
 
-Default timestep is 2ms. At each step MuJoCo reads `data.ctrl`, computes forces,
+Default timestep is 2 ms. At each step MuJoCo reads `data.ctrl`, computes forces,
 integrates dynamics, and writes new positions/velocities into `data`.
-
-### The MJCF format
-
-Robots are described in XML called MJCF. The key structure:
-
-```xml
-<mujoco>
-  <worldbody>
-    <body name="link1" pos="0 0 0">
-      <joint name="joint1" type="hinge" axis="0 0 1"/>
-      <geom type="capsule" size="0.04 0.2"/>
-      <body name="link2" pos="0 0 0.4">
-        <joint name="joint2" type="hinge" axis="0 1 0"/>
-        <geom type="capsule" size="0.03 0.15"/>
-      </body>
-    </body>
-  </worldbody>
-  <actuator>
-    <motor name="act1" joint="joint1" gear="100"/>
-  </actuator>
-</mujoco>
-```
-
-- **`body`** — a rigid link. Nested bodies are connected by joints to their parent.
-- **`joint`** — how a body moves relative to its parent (`hinge` = revolute, `slide` = prismatic)
-- **`geom`** — collision and visual shape attached to a body
-- **`actuator`** — what generates force (`motor` = raw torque, `position` = servo)
-
----
-
-## Part 2 — Coordinate Frames and Transforms
 
 ### Coordinate frames
 
-A **frame** is a coordinate system attached to a body — an origin point plus three axes (X, Y, Z).
-Every link in a robot has one. It answers two questions: *where is this body?* and *which way is it facing?*
+A **frame** is a coordinate system attached to a body — an origin `[x, y, z]` plus three
+axes (X, Y, Z). Every link in a robot has one. It answers: *where is this body?* and
+*which way is it facing?*
 
-A frame has two parts:
+MuJoCo gives you `data.xpos[body_id]` (the origin) and `data.xmat[body_id]` (a 3×3
+rotation matrix stored flat as 9 numbers — reshape to use it). These are computed by
+**forward kinematics** — chaining all the joint transforms from base to tip.
 
-**Origin** — the position of the body in 3D space, as `[x, y, z]` in meters.
-
-```text Origin e.g.
-[0.4, 0.0, 0.6]
-  x    y    z
-```
-This wrist joint is 0.4 m to the right of the robot base, centered front-to-back, 0.6 m off the ground.
-
-**Orientation** — three unit vectors (rows) that say which way each of the body's local axes points
-in world space. Stored as a 3×3 matrix.
-
-```text Orientation e.g.
-[[1, 0, 0],   ← body's X axis points in world +X (right)
- [0, 0, 1],   ← body's Y axis points in world +Z (up)
- [0,-1, 0]]   ← body's Z axis points in world -Y (forward)
-```
-When the wrist rotates, the origin may stay fixed but these rows change — they always describe
-where the body's axes are pointing right now.
-
-In MuJoCo, `data.xpos[body_id]` gives you the origin and `data.xmat[body_id]` gives you this
-matrix (stored as 9 flat numbers — reshape to 3×3 to read it). Together they fully describe
-where a body is and which way it's facing.
-
-Every body in MuJoCo has a position and orientation in **world space** — the fixed global frame
-anchored at the origin. When the arm moves, each link's frame moves with it.
-
-```
-world → base → shoulder → elbow → wrist → end-effector
-```
-
-Each arrow is a **transform** — a position (x, y, z) plus an orientation. MuJoCo computes
-this chain automatically every time you call `mj_step()` or `mj_forward()`.
-
-### Reading body poses from MuJoCo
+Use `mj_forward()` to recompute poses from the current joint angles without advancing time:
 
 ```python
-body_id = model.body('link2').id
-
-pos = data.xpos[body_id]          # [x, y, z] in world frame
-mat = data.xmat[body_id]          # 9 numbers — a 3×3 rotation matrix, row-major
-R   = mat.reshape(3, 3)           # readable form
+mujoco.mj_forward(model, data)
+body_id = model.body("panda_hand").id
+pos = data.xpos[body_id]          # [x, y, z] world frame
+R   = data.xmat[body_id].reshape(3, 3)
 ```
 
-`data.xpos` and `data.xmat` are the outputs of forward kinematics — MuJoCo has already
-chained all the joint transforms for you.
+### The code
 
-### What a 4×4 transform is
-
-Papers and libraries pass around 4×4 matrices that bundle position + orientation into one object.
-The top-left 3×3 block is the rotation matrix (orientation), the right column is the position,
-and the bottom row is always `[0, 0, 0, 1]` — a convention that makes chaining transforms work
-via matrix multiplication:
-
-```text 4×4 transform
-T = [[R00, R01, R02, tx],   ← rotation (3×3) | tx = x position
-     [R10, R11, R12, ty],                     | ty = y position
-     [R20, R21, R22, tz],                     | tz = z position
-     [0,   0,   0,   1 ]]   ← always this row (math convention)
-```
-
-To convert a point `p` from one frame to another: `p_world = T @ [px, py, pz, 1]`.
-
-To chain two transforms (go from frame A → B → C): `T_AC = T_AB @ T_BC`.
-
-You'll see this in LeRobot, ROS 2, and policy papers. The math is just matrix multiplication.
-
-### Quaternions
-
-A rotation matrix works, but it's 9 numbers. A **quaternion** is a compact 4-number alternative
-that represents the same rotation — think of it as an axis to rotate around `[x, y, z]` plus
-a scalar `w` that encodes how much to rotate. You don't need to understand the math; just know
-that `w=1, x=y=z=0` means "no rotation" (identity).
-
-MuJoCo stores orientation as quaternions in `data.xquat`: `[w, x, y, z]`.
-
-The only thing you need to know now: **convention varies by library**.
-- MuJoCo: `[w, x, y, z]`
-- ROS 2 / scipy: `[x, y, z, w]`
-
-Always check before converting. Use `scipy.spatial.transform.Rotation` to convert between
-quaternions, rotation matrices, and Euler angles:
-
-```python
-from scipy.spatial.transform import Rotation as R
-
-quat_mujoco = data.xquat[body_id]          # [w, x, y, z]
-quat_scipy  = quat_mujoco[[1, 2, 3, 0]]   # reorder to [x, y, z, w] for scipy
-rot = R.from_quat(quat_scipy)
-euler = rot.as_euler('xyz', degrees=True)
-```
-
----
-
-## Part 3 — Forward Kinematics
-
-A robot arm is a chain of rigid links connected by **joints** — the rotatable hinges between
-links. Each joint has an **angle** (how far it's rotated). The **end-effector** is the last
-link in the chain — the hand or gripper that interacts with objects.
-
-**Forward kinematics (FK)** answers: given a set of joint angles, where does the end-effector
-end up in the world?
-
-You've been using it already — `data.xpos` after `mj_step()` or `mj_forward()` *is* the
-result of FK. MuJoCo chains the transforms across every link and gives you the result.
-
-```python
-mujoco.mj_forward(model, data)   # compute FK without stepping physics
-ee_id = model.body('end_effector').id
-ee_pos = data.xpos[ee_id]        # world-frame EE position
-```
-
-Use `mj_forward()` (not `mj_step()`) when you want to query poses without advancing time —
-useful for IK solvers, debugging, and computing observations.
-
----
-
-## External Resources
-
-1. **MuJoCo Documentation — Getting Started**
-   Read "Installation", "Programming Guide", and the "mjModel / mjData" sections.
-   → https://mujoco.readthedocs.io/en/stable/programming/index.html
-
-2. **MuJoCo Tutorial Notebooks (DeepMind Colab)**
-   Interactive notebooks covering the viewer, XML format, and key APIs.
-   Search: "MuJoCo tutorial colab deepmind"
-
-3. **MuJoCo Menagerie — real robot models**
-   Pre-built MJCF models for Franka, UR5, SO-101, and others. You'll use these throughout.
-   → https://github.com/google-deepmind/mujoco_menagerie
-
----
-
-## The Problem
-
-A robot arm has a wrist-mounted camera. It sees a cup. The controller needs to know where
-the cup is in **world space** to plan a grasp — but the camera only knows where the cup is
-relative to itself.
-
-To solve this you need to know the transform from camera to world, which means you need to
-know the pose of every link in the chain between them. MuJoCo gives you all of this via
-`data.xpos` and `data.xmat` after `mj_forward()`.
-
-The two projects below build up to solving this using a real robot model.
-
----
-
-## Project 1A — Load a Robot, Read Its State
-
-**What you're building:** Load the Franka Panda from MuJoCo Menagerie, open the interactive
-viewer, move joints to different configurations, and read the resulting body poses. This is
-the workflow you'll use in every subsequent chapter.
-
-Create `learning/ch01_mujoco/read_robot_state.py`:
-
-```python
-"""
-Load a real robot model and read joint states + body poses.
-This is the first thing you do in any MuJoCo-based project.
-"""
+```python workspace/vla/ch01/read_robot_state.py
+"""Load the Franka Panda, read joint states and body poses in two configurations."""
 import numpy as np
 import mujoco
 import mujoco.viewer
-import time
 import os
 
 FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 def print_robot_info(model: mujoco.MjModel) -> None:
-    print(f"Bodies  : {model.nbody}")
-    print(f"Joints  : {model.njnt}")
-    print(f"Actuators: {model.nu}")
+    print(f"Bodies: {model.nbody}  Joints: {model.njnt}  Actuators: {model.nu}")
     print("\nJoint names and limits:")
     for i in range(model.njnt):
         name = model.joint(i).name
         lo, hi = model.jnt_range[i]
-        print(f"  [{i}] {name:30s}  range: [{np.degrees(lo):.0f}°, {np.degrees(hi):.0f}°]")
+        print(f"  [{i}] {name:30s}  [{np.degrees(lo):.0f}°, {np.degrees(hi):.0f}°]")
 
 def read_body_poses(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    mujoco.mj_forward(model, data)  # compute FK without stepping physics
-    print("\nBody positions in world frame:")
-    for i in range(1, model.nbody):  # skip world body (index 0)
-        name = model.body(i).name
-        pos  = data.xpos[i]
-        print(f"  {name:30s}  pos: {np.round(pos, 3)}")
+    mujoco.mj_forward(model, data)
+    print("\nBody positions (world frame):")
+    for i in range(1, model.nbody):
+        print(f"  {model.body(i).name:30s}  {np.round(data.xpos[i], 3)}")
 
 def demo_two_configurations(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    # Configuration A: neutral pose
+    ee_id = model.body("panda_hand").id
+
     mujoco.mj_resetData(model, data)
     data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
     mujoco.mj_forward(model, data)
-    ee_id = model.body("panda_hand").id
-    print(f"\nNeutral pose — EE position: {np.round(data.xpos[ee_id], 3)}")
+    print(f"\nNeutral pose  — EE: {np.round(data.xpos[ee_id], 3)}")
 
-    # Configuration B: arm extended forward
-    data.qpos[:7] = [0, 0, 0, -1.57, 0, 1.57, 0]
+    data.qpos[:7] = [0.785, -0.785, 0, -2.356, 0, 1.571, 0.785]
     mujoco.mj_forward(model, data)
-    print(f"Extended pose — EE position: {np.round(data.xpos[ee_id], 3)}")
-
-    print("\nNotice: same robot, different joint angles → different EE position.")
-    print("This is forward kinematics. MuJoCo computed it for you.")
+    print(f"Rotated pose  — EE: {np.round(data.xpos[ee_id], 3)}")
+    print("\nSame arm, joint 0 rotated 45° → different EE position. That's FK.")
 
 if __name__ == "__main__":
     if not os.path.exists(FRANKA_XML):
-        print("Clone MuJoCo Menagerie first:")
+        print("Troubleshooting: clone Menagerie first:")
         print("  git clone https://github.com/google-deepmind/mujoco_menagerie ~/mujoco_menagerie")
-        exit(1)
+        raise SystemExit(1)
 
     model = mujoco.MjModel.from_xml_path(FRANKA_XML)
     data  = mujoco.MjData(model)
-
     print_robot_info(model)
     read_body_poses(model, data)
     demo_two_configurations(model, data)
 
-    print("\nLaunching viewer — move the joints with Ctrl+drag. Close to exit.")
+    print("\nLaunching viewer — Ctrl+drag to move joints. Close to exit.")
     with mujoco.viewer.launch_passive(model, data) as viewer:
         while viewer.is_running():
             mujoco.mj_step(model, data)
             viewer.sync()
 ```
 
-Run it:
-```bash
-cd learning/ch01_mujoco
-python read_robot_state.py
-```
-
-**What to observe:** The EE position changes between the two configurations. Open the viewer,
-use Ctrl+drag to move joints, and watch the printed positions update.
+**What to observe:** The EE position changes between the two joint configurations —
+that's **forward kinematics (FK)**. Open the viewer, drag joints, watch the printed
+positions update.
 
 ---
 
-## Project 1B — Camera-to-World Transform
+## Project B — Camera-to-World Transform
 
-**What you're building:** Simulate the cup-localization problem. The wrist camera sees a cup
-at a known position in camera space. Compute where it is in world space by chaining the
-transforms MuJoCo gives you.
+**Problem:** A wrist-mounted camera sees a cup at a known position in camera space.
+The controller needs the cup's position in *world* space to plan a grasp.
 
-This is the exact computation that runs inside any pick-and-place policy.
+**Approach:** Read the wrist body's transform from MuJoCo (`xpos` + `xmat`) and apply
+it to the cup's camera-frame position. MuJoCo has already done the FK — you just use it.
 
-Create `learning/ch01_mujoco/camera_to_world.py`:
+### The 4×4 transform matrix
 
-```python
+Papers and libraries bundle position + orientation into a single 4×4 matrix:
+
+```text 4×4 transform
+T = [[R00, R01, R02, tx],   ← rotation (3×3)  |  tx = x position
+     [R10, R11, R12, ty],                      |  ty = y position
+     [R20, R21, R22, tz],                      |  tz = z position
+     [0,   0,   0,   1 ]]   ← always this row (math convention for chaining)
+```
+
+To convert a point from one frame to another: `p_world = T @ [px, py, pz, 1]`
+
+To chain two transforms (A→B→C): `T_AC = T_AB @ T_BC`
+
+### Quaternions (brief note)
+
+MuJoCo also stores orientation as a **quaternion** in `data.xquat`: `[w, x, y, z]`.
+A quaternion is a compact 4-number rotation representation. `[x, y, z]` is the rotation
+axis; `w` encodes magnitude. Identity (no rotation) = `[1, 0, 0, 0]`. Use
+`scipy.spatial.transform.Rotation` to convert — but watch the convention: MuJoCo is
+`[w, x, y, z]`, scipy and ROS 2 are `[x, y, z, w]`.
+
+### The code
+
+```python workspace/vla/ch01/camera_to_world.py
 """
-Given: cup position in camera frame.
-Goal:  cup position in world frame.
-Method: chain body transforms from MuJoCo (xpos + xmat).
+Given a cup position in camera (wrist) frame, compute its world-frame position.
+The core transform computation used in every pick-and-place pipeline.
 """
 import numpy as np
 import mujoco
@@ -341,7 +198,7 @@ import os
 FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 def make_T(pos: np.ndarray, mat_flat: np.ndarray) -> np.ndarray:
-    """Build a 4x4 transform from MuJoCo xpos and xmat."""
+    """Build a 4×4 homogeneous transform from MuJoCo xpos and xmat."""
     T = np.eye(4)
     T[:3, :3] = mat_flat.reshape(3, 3)
     T[:3, 3]  = pos
@@ -352,104 +209,258 @@ def transform_point(T: np.ndarray, p: np.ndarray) -> np.ndarray:
 
 def localize_cup(model: mujoco.MjModel, data: mujoco.MjData,
                  cup_in_camera: np.ndarray) -> np.ndarray:
-    """
-    The camera is mounted at the wrist (panda_hand).
-    MuJoCo already knows where panda_hand is in world space.
-    We just read that transform and apply it to the cup position.
-    """
     mujoco.mj_forward(model, data)
-
     hand_id = model.body("panda_hand").id
     T_world_camera = make_T(data.xpos[hand_id], data.xmat[hand_id])
-
     return transform_point(T_world_camera, cup_in_camera)
 
 if __name__ == "__main__":
     if not os.path.exists(FRANKA_XML):
-        print("Clone MuJoCo Menagerie first.")
-        exit(1)
+        print("Troubleshooting: clone Menagerie first.")
+        raise SystemExit(1)
 
     model = mujoco.MjModel.from_xml_path(FRANKA_XML)
     data  = mujoco.MjData(model)
-
     cup_in_camera = np.array([0.05, -0.12, 0.31])
 
-    # ── Pose A: neutral arm ──────────────────────────────────────────────────
     data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
-    cup_world_A = localize_cup(model, data, cup_in_camera)
-    print(f"Neutral pose  → cup in world: {np.round(cup_world_A, 3)}")
+    print(f"Neutral pose  → cup in world: {np.round(localize_cup(model, data, cup_in_camera), 3)}")
 
-    # ── Pose B: arm rotated left 45° ─────────────────────────────────────────
     data.qpos[:7] = [0.785, -0.785, 0, -2.356, 0, 1.571, 0.785]
-    cup_world_B = localize_cup(model, data, cup_in_camera)
-    print(f"Arm rotated   → cup in world: {np.round(cup_world_B, 3)}")
+    print(f"Rotated pose  → cup in world: {np.round(localize_cup(model, data, cup_in_camera), 3)}")
 
-    print()
-    print("Same cup in camera space. Different world positions.")
-    print("The camera moved — so the world-frame answer changed.")
-    print("This is the bug you'll hit in Chapter 9 if the transform chain is wrong.")
+    print("\nSame cup in camera space. Different world positions.")
+    print("Try: set cup_in_camera = [0,0,0] → you get panda_hand's exact world position.")
 ```
 
-Run it:
-```bash
-python camera_to_world.py
+---
+
+## Project C — PD Controller: Tune the Gains
+
+**Problem:** You need the robot to hold a target joint configuration using `motor`
+actuators — which means you write the control loop yourself.
+
+**Approach:** Build a minimal 2-DOF arm with motor actuators, implement a PD controller,
+run it with four gain combinations, and plot the trajectories.
+
+### Actuators
+
+An **actuator** is what makes a joint move — the motor attached to it. In MuJoCo you
+declare it in XML and command it via `data.ctrl`. Three types:
+
+- **`motor`** — applies raw torque. You stabilize the joint yourself.
+- **`position`** — built-in PD servo. Set a target angle; MuJoCo drives there.
+- **`velocity`** — set a target joint velocity.
+
+For this project you use `motor` so you implement the full control loop.
+
+### PD control
+
+**P (proportional):** push toward target in proportion to the error.
+**D (derivative):** brake in proportion to current velocity — prevents overshoot.
+
+```text PD formula
+torque = kp × (target_angle − current_angle) − kd × current_velocity
 ```
 
-**Experiment:** Try changing `cup_in_camera` to `[0, 0, 0]` — that's the camera origin itself.
-You'll get back the exact position of `panda_hand` in world space, which you can verify
-against `data.xpos[hand_id]`.
+- Too little `kp` → slow response
+- Too much `kp` → oscillation
+- `kd` damps the oscillation
+
+### The code
+
+```python workspace/vla/ch01/pd_controller.py
+"""
+PD controller on a 2-DOF arm. Run 4 kp/kd combinations and plot trajectories.
+Shows how gain tuning changes stability.
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+import mujoco
+
+ARM_XML = """
+<mujoco>
+  <option timestep="0.002"/>
+  <worldbody>
+    <body name="link1" pos="0 0 0">
+      <joint name="j1" type="hinge" axis="0 0 1" range="-3.14 3.14"/>
+      <geom type="capsule" size="0.04 0.2" pos="0 0 0.2"/>
+      <body name="link2" pos="0 0 0.4">
+        <joint name="j2" type="hinge" axis="0 1 0" range="-3.14 3.14"/>
+        <geom type="capsule" size="0.03 0.15" pos="0 0 0.15"/>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="m1" joint="j1" ctrllimited="true" ctrlrange="-10 10"/>
+    <motor name="m2" joint="j2" ctrllimited="true" ctrlrange="-10 10"/>
+  </actuator>
+</mujoco>
+"""
+
+TARGET       = np.array([0.5, -0.3])
+SIM_DURATION = 3.0
+
+def run_pd(kp: float, kd: float) -> tuple[np.ndarray, np.ndarray]:
+    model = mujoco.MjModel.from_xml_string(ARM_XML)
+    data  = mujoco.MjData(model)
+    steps = int(SIM_DURATION / model.opt.timestep)
+    time  = np.zeros(steps)
+    q     = np.zeros((steps, 2))
+    for i in range(steps):
+        data.ctrl[:2] = kp * (TARGET - data.qpos[:2]) - kd * data.qvel[:2]
+        mujoco.mj_step(model, data)
+        time[i] = data.time
+        q[i]    = data.qpos[:2]
+    return time, q
+
+if __name__ == "__main__":
+    configs = [
+        (50,  1,  "kp=50  kd=1   underdamped"),
+        (50,  10, "kp=50  kd=10  well-tuned"),
+        (200, 1,  "kp=200 kd=1   oscillates"),
+        (200, 30, "kp=200 kd=30  well-tuned high stiffness"),
+    ]
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    fig.suptitle("PD Controller — joint 1 trajectory")
+    for ax, (kp, kd, label) in zip(axes.flat, configs):
+        time, q = run_pd(kp, kd)
+        ax.plot(time, np.degrees(q[:, 0]))
+        ax.axhline(np.degrees(TARGET[0]), color="r", linestyle="--", label="target")
+        ax.set_title(label); ax.set_xlabel("time (s)"); ax.set_ylabel("angle (deg)")
+        ax.legend()
+    plt.tight_layout()
+    plt.savefig("pd_gains.png")
+    print("Saved pd_gains.png")
+```
+
+**What to observe:** Underdamped configs oscillate; well-tuned ones converge smoothly.
+Scale gains up ~4× for a heavier arm like the Franka Panda.
+
+---
+
+## Project D — IK Solver: Reach Any Target
+
+**Problem:** Given a desired end-effector position in world space, find the joint angles
+that put the hand there — this is **inverse kinematics (IK)**.
+
+**Approach:** Use Pink, a differential IK library. At each timestep Pink solves for the
+joint velocity that moves the end-effector toward the target, then integrates it.
+
+### Why IK needs a library
+
+FK is just matrix multiplication along the chain. IK is harder:
+- Many joint configs can reach the same position (redundancy)
+- Some positions are unreachable
+- Near **singularities** (configurations where the arm loses a degree of freedom), naive
+  approaches explode
+
+Pink uses the **Jacobian** — a matrix mapping joint velocities to end-effector velocity —
+to solve a constrained optimization problem at each step. It handles joint limits,
+singularities, and multiple simultaneous tasks. [Read more: Pink docs](https://jmirabel.github.io/pink/)
+
+### The code
+
+```python workspace/vla/ch01/ik_solver.py
+"""
+Pink IK solver on the Franka Panda. Move the end-effector to any 3D target.
+"""
+import numpy as np
+import mujoco
+import mujoco.viewer
+import pink
+from pink.tasks import FrameTask
+import pinocchio as pin
+from robot_descriptions.loaders.pinocchio import load_robot_description
+import os, time as time_module
+
+FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+
+if __name__ == "__main__":
+    if not os.path.exists(FRANKA_XML):
+        print("Troubleshooting: clone Menagerie first.")
+        raise SystemExit(1)
+
+    # Load into MuJoCo
+    mj_model = mujoco.MjModel.from_xml_path(FRANKA_XML)
+    mj_data  = mujoco.MjData(mj_model)
+    mj_data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
+    mujoco.mj_forward(mj_model, mj_data)
+
+    # Load into Pink/Pinocchio for IK
+    robot = load_robot_description("panda_description")
+    configuration = pink.Configuration(robot.model, robot.data, robot.q0)
+
+    # IK task: reach target position
+    ee_task = FrameTask("panda_hand", position_cost=1.0, orientation_cost=0.0)
+    target = pin.SE3.Identity()
+    target.translation = np.array([0.5, 0.1, 0.4])   # ← change this
+    ee_task.set_target(target)
+
+    dt = mj_model.opt.timestep
+
+    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
+        while viewer.is_running():
+            velocity = pink.solve_ik(configuration, [ee_task], dt, solver="quadprog")
+            configuration.integrate_inplace(velocity, dt)
+            mj_data.qpos[:7] = configuration.q[:7]
+            mujoco.mj_forward(mj_model, mj_data)
+            viewer.sync()
+            time_module.sleep(dt)
+```
+
+**Experiment:** Change `target.translation` to different positions. Try `[0.8, 0.0, 0.3]`
+(near workspace edge) and watch how the arm reaches — or stops when it can't.
 
 ---
 
 ## Self-Check
 
 1. You call `mj_forward()` vs `mj_step()`. What's the difference?
+   **Answer:** `mj_forward()` recomputes all derived quantities (xpos, xmat) from the
+   current `qpos` without advancing time or physics. `mj_step()` also integrates dynamics
+   by one timestep. Use `mj_forward()` for pose queries; `mj_step()` for simulation.
 
-   **Answer:** `mj_forward()` computes all derived quantities (xpos, xmat, FK) from the
-   current `qpos` without advancing time. `mj_step()` also advances the physics by one
-   timestep and updates velocities. Use `mj_forward()` when you want to query poses without
-   simulating.
+2. You set `data.qpos[:7]` then immediately read `data.xpos`. Why might values be stale?
+   **Answer:** `data.xpos` only updates after `mj_forward()` or `mj_step()`. Setting
+   `qpos` directly skips recomputation — always follow with `mj_forward()`.
 
-2. `data.xmat[body_id]` returns 9 numbers. What are they?
+3. Your PD controller settles slowly without oscillation. What do you change first?
+   **Answer:** Increase `kp`. If it then oscillates, increase `kd`. Tune in that order —
+   `kp` sets the speed, `kd` damps the response.
 
-   **Answer:** A 3×3 rotation matrix stored row-major as a flat array. Reshape with
-   `.reshape(3, 3)` to use it.
+4. `data.xmat[body_id]` returns 9 numbers. What are they and how do you use them?
+   **Answer:** A 3×3 rotation matrix stored row-major as a flat array. Call `.reshape(3, 3)`.
+   Each row is one of the body's local axes expressed in world coordinates.
 
-3. You move joint 0 from 0° to 45°. Which body poses change?
-
-   **Answer:** All bodies downstream of joint 0 in the kinematic chain. Any link attached
-   to or descended from that joint moves.
-
-4. The cup-localization script gives a wrong world position. You suspect the joint angles
-   are off. How do you debug it?
-
-   **Answer:** Print `data.xpos[hand_id]` and verify visually in the viewer that the hand
-   is where you expect. Then check that `data.qpos` matches what you set before calling
-   `mj_forward()`.
-
-5. A policy outputs a target end-effector position in world frame. The robot needs it in
-   base frame. What do you do?
-
-   **Answer:** Read `T_world_base` from `data.xpos` and `data.xmat` for the base body.
-   Invert it, then apply to the world-frame target:
-   `p_base = transform_point(np.linalg.inv(T_world_base), p_world)`.
+5. In Project D you set `orientation_cost=0.0`. What does that mean for the IK solution?
+   **Answer:** Pink ignores orientation — it only tries to match the position. The arm
+   will reach the target but may arrive at any orientation. Set `orientation_cost > 0`
+   and provide a full `SE3` target to also constrain how the hand faces.
 
 ---
 
 ## Common Mistakes
 
-**Forgetting `mj_forward()` after setting `qpos`.** If you set `data.qpos` directly and
-read `data.xpos` without calling `mj_forward()`, you get stale values from the previous step.
+- **Forgetting `mj_forward()` after setting `qpos`:** `data.xpos` reflects the last
+  computed state. Set `qpos`, then call `mj_forward()`.
 
-**Quaternion convention mismatch.** MuJoCo `data.xquat` is `[w, x, y, z]`. scipy and ROS 2
-use `[x, y, z, w]`. Always reorder before passing to external libraries.
+- **Quaternion convention mismatch:** `data.xquat` is `[w, x, y, z]`. scipy and ROS 2
+  expect `[x, y, z, w]`. Reorder with `q[[1,2,3,0]]` before passing to external libraries.
 
-**Reading `xmat` as a 3×3 directly.** It's stored flat (9 values). Always `.reshape(3, 3)`.
+- **`xmat` used raw:** It's 9 flat values — always `.reshape(3, 3)` before matrix ops.
+
+- **Copying PD gains between robots:** Gains depend on link mass and inertia. Start with
+  `kp=100, kd=10` for a light arm; scale up 4–10× for a full Franka Panda.
+
+- **IK diverging near singularities:** Add a `PostureTask` to keep the arm near a neutral
+  configuration — this regularizes the IK and prevents runaway joint velocities.
 
 ---
 
-## What's Next
+## Resources
 
-Chapter 2 puts the sim to work: you'll write a PD controller to hold a joint at a target
-angle, tune the gains, and wrap everything into a Gymnasium environment — the interface
-every RL and IL library expects.
+1. [MuJoCo Programming Guide](https://mujoco.readthedocs.io/en/stable/programming/index.html) — read the mjModel/mjData and Simulation sections
+2. [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) — all robot models used in this course
+3. [Pink documentation](https://jmirabel.github.io/pink/) — task definitions and solver API
+4. [MuJoCo Tutorial Colab (DeepMind)](https://colab.research.google.com/github/deepmind/mujoco/blob/main/python/tutorial.ipynb) — interactive walkthrough of viewer and core API

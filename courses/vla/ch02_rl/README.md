@@ -1,452 +1,449 @@
-# Chapter 2 — Control & Gymnasium
+# Chapter 2 — Reinforcement Learning
 
-**Time:** 2–3 days
-**Hardware:** Any laptop, no GPU
-**Prerequisites:** Chapter 1 (MuJoCo basics — model/data, viewer, reading body poses)
-
----
-
-## Why This Chapter Exists
-
-You can load a robot and read its state. Now you need to make it move — and do it in a way
-that every training library can talk to.
-
-This chapter covers two things. First: how to actually control a robot in MuJoCo, which
-means understanding actuator types and writing a PD controller. Second: how to wrap a
-simulation into a Gymnasium environment — the standard interface that Stable Baselines 3,
-LeRobot, and every other RL/IL library expects. Everything from Chapter 4 onward builds
-directly on this.
-
-### If you can answer these, you can skip this chapter
-
-1. What is the difference between a `motor` actuator and a `position` actuator in MuJoCo?
-2. Your PD controller oscillates but eventually settles. Which gain do you increase?
-3. What does `env.step(action)` return, and what does each element mean?
+**Time:** 3–5 days
+**Hardware:** GPU helpful (CPU works, training is slower)
+**Prerequisites:** Chapter 1 (MuJoCo, FK, IK)
 
 ---
 
-## Part 1 — Actuator Types
+## What are we here for
 
-An **actuator** is what makes a joint move — the motor attached to it. In a real robot it's
-a servo or motor; in MuJoCo you declare it in the XML and control it by writing to `data.ctrl`.
+You have a robot that can move. Now you want it to *learn* to reach a target without you
+telling it exactly how. That's reinforcement learning: the agent tries things, gets rewards
+when it does well, and gradually learns a **policy** — a function that maps observations
+to actions.
 
-MuJoCo gives you three actuator types. The choice affects how you write your controller.
+RL is not always the right tool (Chapter 3 covers imitation learning, which is often
+better for manipulation), but understanding it is essential. Reward shaping and HER are
+techniques you'll reuse even when the primary algorithm is IL. And RL gives you intuition
+for what "exploration" means, which matters when your IL policy fails.
 
-**`motor`** — applies raw torque. You are responsible for stabilizing the joint.
-```xml
-<actuator>
-  <motor joint="joint1" gear="1"/>
-</actuator>
-```
-```python
-data.ctrl[0] = 5.0  # 5 Nm torque
-```
+This chapter uses Stable Baselines 3 and the `gymnasium-robotics` FetchReach environment —
+a standard robotic reach task with sparse rewards. You'll explore it, train on it, ablate
+reward designs, and implement curriculum learning.
 
-**`position`** — built-in PD servo. Set a target angle; the actuator drives there.
-```xml
-<actuator>
-  <position joint="joint1" kp="100" kv="10"/>
-</actuator>
-```
-```python
-data.ctrl[0] = 1.57  # target angle in radians
-```
-
-**`velocity`** — set a target joint velocity.
-
-For learning, `position` actuators are the easiest starting point — you command where to go
-and the sim handles stability. For research that needs physical accuracy (force control,
-compliance, contact-rich manipulation), `motor` actuators give you more control but require
-your own stabilizing controller.
-
----
-
-## Part 2 — The PD Controller
-
-A **controller** is code that reads the current joint state and outputs a torque to drive the
-joint toward a target. The simplest effective controller is **PD** (Proportional-Derivative):
-
-- **P (proportional):** push toward the target proportional to how far away you are
-- **D (derivative):** push back proportional to how fast you're moving — acts as a brake
-
-```
-torque = kp × (target_angle − current_angle) − kd × current_velocity
-```
-
-- **kp** (proportional gain): how hard to push toward the target. Too low → slow. Too high → oscillates.
-- **kd** (derivative gain): damping. Resists velocity, prevents overshoot.
-
-Good starting values for a robot arm joint: `kp = 100`, `kd = 10`.
-For a heavier arm like the Franka Panda: `kp = 400`, `kd = 40`.
-
-Tuning intuition:
-- Oscillates and doesn't settle → increase `kd`
-- Settles too slowly → increase `kp` (then re-tune `kd` if it starts oscillating)
-- Steady-state error remains → add integral term (rarely needed in sim)
-
----
-
-## Part 3 — Gymnasium Environments
-
-Gymnasium is the standard interface all RL and IL libraries use. Every environment has:
-
-```python
-obs, info        = env.reset()
-obs, rew, term, trunc, info = env.step(action)
-```
-
-- **`obs`** — what the agent observes (joint angles, EE position, etc.)
-- **`rew`** — scalar reward for this step
-- **`term`** — True if the episode ended naturally (task succeeded or catastrophic failure)
-- **`trunc`** — True if the episode hit the time limit
-- **`action`** — what the agent sends (joint torques, target angles, etc.)
-
-Your MuJoCo environment wraps the physics loop inside `step()` and defines the observation
-and action spaces. This is the contract libraries like Stable Baselines 3 depend on.
-
----
-
-## External Resources
-
-1. **Gymnasium Documentation — Creating Environments**
-   Read "Basic Usage" and "Creating Custom Environments".
-   → https://gymnasium.farama.org/
-
-2. **MuJoCo XML Reference — actuator section**
-   Every actuator parameter explained. Bookmark it.
-   → https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator
-
-3. **Stable Baselines 3 — Getting Started**
-   The RL library you'll use in Chapter 4. Shows how it consumes a Gym environment.
-   → https://stable-baselines3.readthedocs.io/en/master/guide/quickstart.html
-
----
-
-## Project 2A — PD Controller: Tune the Gains
-
-**What you're building:** A single-joint pendulum with a `motor` actuator and your own PD
-controller. You'll plot joint angle vs. time for four gain combinations to build intuition
-for what kp/kd actually do.
-
-This matters because in Chapter 3, IK hands you target joint angles — and a PD controller
-is what executes them on the robot.
-
-Create `learning/ch02_control/pd_gains.py`:
-
-```python
-"""
-Visualize how PD gain choices affect joint control on a simple pendulum.
-Run this before tuning gains on any real robot or more complex sim.
-"""
-import numpy as np
-import mujoco
-import matplotlib.pyplot as plt
-
-PENDULUM_XML = """
-<mujoco model="pendulum">
-  <option timestep="0.002"/>
-  <worldbody>
-    <body name="link" pos="0 0 0">
-      <joint name="hinge" type="hinge" axis="0 1 0" range="-3.14 3.14"/>
-      <geom type="capsule" size="0.04" fromto="0 0 0 0 0 -0.5" mass="1"/>
-      <body name="mass" pos="0 0 -0.5">
-        <geom type="sphere" size="0.05" mass="2"/>
-      </body>
-    </body>
-  </worldbody>
-  <actuator>
-    <motor joint="hinge" gear="1" ctrllimited="true" ctrlrange="-20 20"/>
-  </actuator>
-</mujoco>
-"""
-
-def simulate_pd(kp: float, kd: float, target: float = 1.0, duration: float = 5.0):
-    model = mujoco.MjModel.from_xml_string(PENDULUM_XML)
-    data  = mujoco.MjData(model)
-    times, angles = [], []
-    for _ in range(int(duration / model.opt.timestep)):
-        torque = kp * (target - data.qpos[0]) - kd * data.qvel[0]
-        data.ctrl[0] = np.clip(torque, -20, 20)
-        mujoco.mj_step(model, data)
-        times.append(data.time)
-        angles.append(data.qpos[0])
-    return np.array(times), np.array(angles)
-
-if __name__ == "__main__":
-    configs = [
-        (10,  0.5,  "Low kp, low kd — slow, underdamped"),
-        (10,  8.0,  "Low kp, high kd — slow, overdamped"),
-        (200, 1.0,  "High kp, low kd — fast but oscillates"),
-        (200, 30.0, "High kp, high kd — fast and settled (good)"),
-    ]
-
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    for ax, (kp, kd, title) in zip(axes.flatten(), configs):
-        t, q = simulate_pd(kp, kd)
-        ax.plot(t, q, color='steelblue', linewidth=2)
-        ax.axhline(1.0, color='red', linestyle='--', label='target')
-        ax.set_title(f"{title}\nkp={kp}, kd={kd}")
-        ax.set_xlabel("Time (s)")
-        ax.set_ylabel("Joint angle (rad)")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig("pd_gains.png", dpi=150, bbox_inches="tight")
-    plt.show()
-    print("Saved pd_gains.png")
-    print("\nTakeaway: high kp + high kd = fast settling without oscillation.")
-    print("The bottom-right plot is your target behavior.")
-```
-
-Run it:
+**Install:**
 ```bash
-cd learning/ch02_control
-python pd_gains.py
+pip install stable-baselines3[extra] gymnasium gymnasium-robotics
 ```
+
+**Skip if you can answer:**
+1. What does `env.step(action)` return? What does each element mean?
+2. What is the difference between sparse and dense rewards? When does each work?
+3. What problem does HER solve, and how does it solve it?
+4. Your SAC policy doesn't improve after 100k steps. What do you check first?
 
 ---
 
-## Project 2B — Control a Real Robot Arm
+## Projects
 
-**What you're building:** Load the Franka Panda, hold a target pose with a PD controller,
-and watch the arm stabilize in the viewer. This is the same controller pattern used in
-Chapter 3 to execute IK solutions.
-
-```bash
-git clone https://github.com/google-deepmind/mujoco_menagerie.git ~/mujoco_menagerie
-```
-
-Create `learning/ch02_control/hold_pose.py`:
-
-```python
-"""
-Hold a target joint configuration with a PD controller on the Franka Panda.
-The same pattern is used in Chapter 3 to track IK-computed target angles.
-"""
-import numpy as np
-import mujoco
-import mujoco.viewer
-import time
-import os
-
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
-
-# Franka neutral pose (radians)
-NEUTRAL = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785])
-
-# PD gains tuned for Franka's inertia — kp higher for shoulder joints
-KP = np.array([400, 400, 400, 400, 250, 150, 50], dtype=float)
-KD = np.array([ 40,  40,  40,  40,  25,  15,  5], dtype=float)
-
-# Franka joint torque limits (Nm)
-TORQUE_LIMITS = np.array([87, 87, 87, 87, 12, 12, 12], dtype=float)
-
-def run(target: np.ndarray, duration: float = 10.0) -> None:
-    model = mujoco.MjModel.from_xml_path(FRANKA_XML)
-    data  = mujoco.MjData(model)
-    mujoco.mj_resetDataKeyframe(model, data, 0)
-
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-        t_start = time.time()
-        while viewer.is_running() and time.time() - t_start < duration:
-            q  = data.qpos[:7]
-            dq = data.qvel[:7]
-            torques = KP * (target - q) - KD * dq
-            data.ctrl[:7] = np.clip(torques, -TORQUE_LIMITS, TORQUE_LIMITS)
-            mujoco.mj_step(model, data)
-            viewer.sync()
-
-            if data.time % 2.0 < model.opt.timestep:
-                err = np.max(np.abs(target - data.qpos[:7]))
-                print(f"t={data.time:.1f}s  max joint error: {np.degrees(err):.2f}°")
-
-if __name__ == "__main__":
-    if not os.path.exists(FRANKA_XML):
-        print("Clone MuJoCo Menagerie first.")
-        exit(1)
-    print("Holding neutral pose. Watch the arm stabilize in the viewer.")
-    run(NEUTRAL)
-```
-
-Run it, then try changing `NEUTRAL` to a different configuration and re-run.
+| # | Project | What you build |
+|---|---------|---------------|
+| A | Explore the Environment | Understand obs/action spaces, visualize random rollouts before training |
+| B | Train SAC with HER | Train a reaching policy; compare with and without HER |
+| C | Reward Design Ablation | Measure how sparse vs. dense vs. HER rewards affect learning speed |
+| D | Curriculum Learning | Stage training by distance; gate stages on success rate |
 
 ---
 
-## Project 2C — Build a Gymnasium Environment
+## Project A — Explore the Environment
 
-**What you're building:** Wrap a 2-DOF planar reach task into a proper Gymnasium
-environment. This is the interface Chapter 4 (RL) plugs straight into.
+**Problem:** Before training, you need to understand what the environment gives you —
+observation shape, action range, reward structure. Blind training without this wastes time.
 
-Create `learning/ch02_control/reach_env.py`:
+**Approach:** Load `FetchReach-v4`, run random rollouts, and print everything.
+
+### RL concepts you need
+
+An RL environment has a simple contract (the **Gymnasium interface**):
 
 ```python
-"""
-2-DOF planar reach task as a Gymnasium environment.
-Stable Baselines 3 and LeRobot both consume environments in this format.
-"""
+obs, info  = env.reset()             # start a new episode, get first observation
+obs, reward, terminated, truncated, info = env.step(action)  # take an action
+```
+
+- **observation:** what the agent sees (joint positions, goal position, etc.)
+- **action:** what the agent does (joint velocities or torques)
+- **reward:** scalar feedback — positive when doing well, zero or negative otherwise
+- **terminated:** episode ended (goal reached or robot fell)
+- **truncated:** episode hit the time limit
+
+A **policy** is a function: `action = policy(observation)`. RL learns this function by
+maximizing cumulative reward over an episode.
+
+### The code
+
+```python workspace/vla/ch02/explore_env.py
+"""Explore FetchReach-v4 before training: spaces, rewards, and random rollouts."""
 import numpy as np
-import mujoco
 import gymnasium as gym
-from gymnasium import spaces
+import gymnasium_robotics
 
-REACH_XML = """
-<mujoco model="reach">
-  <option timestep="0.002"/>
-  <worldbody>
-    <geom name="floor" type="plane" size="1 1 0.1" rgba="0.9 0.9 0.9 1"/>
-    <body name="base" pos="0 0 0.1">
-      <geom type="cylinder" size="0.05 0.05" rgba="0.5 0.5 0.5 1"/>
-      <body name="link1" pos="0 0 0.05">
-        <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14 3.14"/>
-        <geom type="capsule" size="0.03" fromto="0 0 0 0.3 0 0" rgba="0.2 0.5 0.8 1" mass="0.5"/>
-        <body name="link2" pos="0.3 0 0">
-          <joint name="joint2" type="hinge" axis="0 0 1" range="-2.5 2.5"/>
-          <geom type="capsule" size="0.025" fromto="0 0 0 0.25 0 0" rgba="0.2 0.7 0.5 1" mass="0.3"/>
-          <site name="ee" pos="0.25 0 0" size="0.02"/>
-        </body>
-      </body>
-    </body>
-    <body name="target" pos="0.4 0.1 0.1" mocap="true">
-      <geom type="sphere" size="0.03" rgba="1 0.2 0.2 0.7"/>
-    </body>
-  </worldbody>
-  <actuator>
-    <motor name="act1" joint="joint1" gear="10" ctrllimited="true" ctrlrange="-5 5"/>
-    <motor name="act2" joint="joint2" gear="10" ctrllimited="true" ctrlrange="-5 5"/>
-  </actuator>
-</mujoco>
-"""
+gym.register_envs(gymnasium_robotics)
 
-class ReachEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
+def explore(env_id: str = "FetchReach-v4", n_episodes: int = 5) -> None:
+    env = gym.make(env_id, render_mode=None)
 
-    def __init__(self, render_mode=None):
-        self.render_mode = render_mode
-        self.model = mujoco.MjModel.from_xml_string(REACH_XML)
-        self.data  = mujoco.MjData(self.model)
+    print(f"Observation space: {env.observation_space}")
+    print(f"Action space:      {env.action_space}")
+    print(f"  action low:  {env.action_space.low}")
+    print(f"  action high: {env.action_space.high}")
 
-        self._ee_site_id     = self.model.site("ee").id
-        self._target_body_id = self.model.body("target").id
-        self._target_pos     = np.array([0.4, 0.1])
-        self._step_count     = 0
+    rewards_per_ep = []
+    for ep in range(n_episodes):
+        obs, _ = env.reset()
+        ep_reward = 0.0
+        for step in range(50):
+            action = env.action_space.sample()
+            obs, reward, terminated, truncated, info = env.step(action)
+            ep_reward += reward
+            if terminated or truncated:
+                break
+        rewards_per_ep.append(ep_reward)
+        print(f"Episode {ep+1}: total reward = {ep_reward:.1f}  "
+              f"(success={info.get('is_success', False)})")
 
-        # obs: [q1, q2, dq1, dq2, ee_x, ee_y, target_x, target_y]
-        self.observation_space = spaces.Box(
-            low  = np.array([-np.pi, -2.5, -10, -10, -1, -1, -1, -1], dtype=np.float32),
-            high = np.array([ np.pi,  2.5,  10,  10,  1,  1,  1,  1], dtype=np.float32),
-        )
-        self.action_space = spaces.Box(
-            low=-np.array([5.0, 5.0], dtype=np.float32),
-            high=np.array([5.0, 5.0], dtype=np.float32),
-        )
+    print(f"\nMean reward over {n_episodes} random episodes: {np.mean(rewards_per_ep):.2f}")
+    print("With random actions, success rate is ~0%. That's why we need RL.")
 
-        if render_mode == "human":
-            import mujoco.viewer
-            self._viewer = mujoco.viewer.launch_passive(self.model, self.data)
-
-    def _get_obs(self) -> np.ndarray:
-        q   = self.data.qpos[:2].copy()
-        dq  = self.data.qvel[:2].copy()
-        ee  = self.data.site_xpos[self._ee_site_id][:2].copy()
-        return np.concatenate([q, dq, ee, self._target_pos]).astype(np.float32)
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        mujoco.mj_resetData(self.model, self.data)
-        self.data.qpos[:2] = self.np_random.uniform(-1.0, 1.0, size=2)
-        r     = self.np_random.uniform(0.15, 0.5)
-        theta = self.np_random.uniform(-np.pi / 2, np.pi / 2)
-        self._target_pos = np.array([r * np.cos(theta), r * np.sin(theta)])
-        self.data.mocap_pos[0, :2] = self._target_pos
-        mujoco.mj_forward(self.model, self.data)
-        self._step_count = 0
-        return self._get_obs(), {}
-
-    def step(self, action):
-        self.data.ctrl[:2] = action
-        for _ in range(5):  # 5 × 2ms = 10ms per env step → 100 Hz
-            mujoco.mj_step(self.model, self.data)
-        self._step_count += 1
-
-        ee   = self.data.site_xpos[self._ee_site_id][:2]
-        dist = np.linalg.norm(ee - self._target_pos)
-
-        reward     = -dist + (1.0 if dist < 0.05 else 0.0)
-        terminated = dist < 0.03
-        truncated  = self._step_count >= 500
-
-        if self.render_mode == "human":
-            self._viewer.sync()
-
-        return self._get_obs(), reward, terminated, truncated, {"distance": float(dist)}
-
-    def close(self):
-        if self.render_mode == "human" and hasattr(self, "_viewer"):
-            self._viewer.close()
-
-
-if __name__ == "__main__":
-    env = ReachEnv()
     obs, _ = env.reset()
-    print(f"Observation space : {env.observation_space}")
-    print(f"Action space      : {env.action_space}")
-    print(f"Initial obs       : {obs}")
-
-    total_reward = 0.0
-    for step in range(300):
-        action = env.action_space.sample()
-        obs, rew, term, trunc, info = env.step(action)
-        total_reward += rew
-        if term or trunc:
-            print(f"Episode ended at step {step + 1}  total reward: {total_reward:.2f}")
-            obs, _ = env.reset()
-            total_reward = 0.0
+    print(f"\nSample observation keys: {list(obs.keys())}")
+    for k, v in obs.items():
+        print(f"  {k}: shape={np.array(v).shape}  values={np.round(v, 3)}")
 
     env.close()
-    print("Environment works. Plug this into Stable Baselines 3 in Chapter 4.")
+
+if __name__ == "__main__":
+    explore()
 ```
 
-Run it:
-```bash
-python reach_env.py
+**What to observe:** Sparse reward — almost every step gives -1. Success rate with random
+actions is effectively 0. This tells you why HER (below) is critical.
+
+---
+
+## Project B — Train SAC with HER
+
+**Problem:** FetchReach has sparse rewards — the agent only gets a non-negative reward
+when it actually reaches the goal. With random exploration, this almost never happens,
+so the agent never learns.
+
+**Approach:** Train SAC (Soft Actor-Critic) with Hindsight Experience Replay (HER).
+Then train without HER and compare the learning curves.
+
+### SAC and why it works for robotics
+
+**SAC** (Soft Actor-Critic) is an off-policy RL algorithm that:
+- Learns from a replay buffer (efficient data reuse)
+- Maximizes both reward *and* entropy (encourages exploration)
+- Works well in continuous action spaces like robot joint control
+
+**HER** (Hindsight Experience Replay) solves the sparse reward problem. Idea: even when
+the agent fails to reach the goal, it *did* reach *somewhere*. Relabel those failed
+trajectories as if that somewhere was the goal — suddenly you have dense learning signal.
+[Read more: HER paper](https://arxiv.org/abs/1707.01495)
+
+### The code
+
+```python workspace/vla/ch02/train_sac_her.py
+"""Train SAC with and without HER on FetchReach-v4. Save and plot learning curves."""
+import numpy as np
+import matplotlib.pyplot as plt
+from stable_baselines3 import SAC, HerReplayBuffer
+from stable_baselines3.common.callbacks import EvalCallback
+import gymnasium as gym
+import gymnasium_robotics
+
+gym.register_envs(gymnasium_robotics)
+
+TOTAL_STEPS = 200_000
+ENV_ID      = "FetchReach-v4"
+
+def make_env() -> gym.Env:
+    return gym.make(ENV_ID)
+
+def train(use_her: bool, save_path: str) -> list[float]:
+    env      = make_env()
+    eval_env = make_env()
+
+    eval_cb = EvalCallback(
+        eval_env,
+        best_model_save_path=save_path,
+        eval_freq=5000,
+        n_eval_episodes=20,
+        verbose=0,
+    )
+
+    if use_her:
+        model = SAC(
+            "MultiInputPolicy", env,
+            replay_buffer_class=HerReplayBuffer,
+            replay_buffer_kwargs={"n_sampled_goal": 4, "goal_selection_strategy": "future"},
+            verbose=0,
+        )
+    else:
+        model = SAC("MultiInputPolicy", env, verbose=0)
+
+    model.learn(total_timesteps=TOTAL_STEPS, callback=eval_cb)
+    model.save(f"{save_path}/final_model")
+    env.close(); eval_env.close()
+
+    # Return success rates from eval callback
+    return eval_cb.evaluations_successes if hasattr(eval_cb, "evaluations_successes") else []
+
+if __name__ == "__main__":
+    print("Training SAC + HER...")
+    train(use_her=True,  save_path="./models/sac_her")
+    print("Training SAC (no HER)...")
+    train(use_her=False, save_path="./models/sac_no_her")
+    print("Done. Compare models/sac_her vs models/sac_no_her in TensorBoard:")
+    print("  tensorboard --logdir ./models")
 ```
+
+**What to observe:** SAC+HER typically reaches >90% success on FetchReach within 50k
+steps. SAC without HER may never learn meaningful behavior. This gap is HER's contribution.
+
+---
+
+## Project C — Reward Design Ablation
+
+**Problem:** You want to understand how reward shaping affects learning speed and final
+performance — a skill critical for any custom robot task.
+
+**Approach:** Train the same SAC agent on three reward variants and compare.
+
+### Dense vs. sparse rewards
+
+- **Sparse:** reward = 0 if goal reached, -1 otherwise. Clean, unbiased — but hard to learn.
+- **Dense:** reward = −distance to goal. Always informative — but can teach the wrong behavior
+  if the shaping conflicts with the true objective.
+- **HER:** sparse reward + trajectory relabeling. Best of both: clean objective, dense signal.
+
+```python workspace/vla/ch02/reward_ablation.py
+"""Compare sparse, dense, and HER rewards on a 2D reach task."""
+import numpy as np
+import gymnasium as gym
+from gymnasium import spaces
+from stable_baselines3 import SAC, HerReplayBuffer
+import matplotlib.pyplot as plt
+
+class Reach2D(gym.Env):
+    """Minimal 2D reach: agent moves a point to a random goal."""
+
+    def __init__(self, reward_type: str = "sparse"):
+        super().__init__()
+        self.reward_type = reward_type
+        self.observation_space = spaces.Dict({
+            "observation": spaces.Box(-1, 1, (2,), np.float32),
+            "desired_goal": spaces.Box(-1, 1, (2,), np.float32),
+            "achieved_goal": spaces.Box(-1, 1, (2,), np.float32),
+        })
+        self.action_space = spaces.Box(-0.1, 0.1, (2,), np.float32)
+        self.pos  = np.zeros(2, dtype=np.float32)
+        self.goal = np.zeros(2, dtype=np.float32)
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        self.pos  = self.np_random.uniform(-0.5, 0.5, 2).astype(np.float32)
+        self.goal = self.np_random.uniform(-0.5, 0.5, 2).astype(np.float32)
+        return self._obs(), {}
+
+    def step(self, action):
+        self.pos = np.clip(self.pos + action, -1, 1)
+        dist = float(np.linalg.norm(self.pos - self.goal))
+        success = dist < 0.05
+        if self.reward_type == "dense":
+            reward = -dist
+        else:
+            reward = 0.0 if success else -1.0
+        return self._obs(), reward, success, False, {"is_success": success}
+
+    def _obs(self):
+        return {"observation": self.pos.copy(),
+                "desired_goal": self.goal.copy(),
+                "achieved_goal": self.pos.copy()}
+
+    def compute_reward(self, achieved, desired, info):
+        dist = np.linalg.norm(achieved - desired, axis=-1)
+        if self.reward_type == "dense":
+            return -dist
+        return np.where(dist < 0.05, 0.0, -1.0).astype(np.float32)
+
+def run(reward_type: str, use_her: bool, steps: int = 50_000) -> float:
+    env = Reach2D(reward_type=reward_type)
+    kwargs = {}
+    if use_her:
+        kwargs = {"replay_buffer_class": HerReplayBuffer,
+                  "replay_buffer_kwargs": {"n_sampled_goal": 4,
+                                           "goal_selection_strategy": "future"}}
+    model = SAC("MultiInputPolicy", env, verbose=0, **kwargs)
+    model.learn(steps)
+    # Eval
+    successes = 0
+    for _ in range(100):
+        obs, _ = env.reset()
+        for _ in range(50):
+            action, _ = model.predict(obs, deterministic=True)
+            obs, _, term, trunc, info = env.step(action)
+            if term or trunc:
+                successes += info.get("is_success", False)
+                break
+    return successes / 100
+
+if __name__ == "__main__":
+    results = {
+        "sparse":      run("sparse", use_her=False),
+        "dense":       run("dense",  use_her=False),
+        "sparse+HER":  run("sparse", use_her=True),
+    }
+    for name, sr in results.items():
+        print(f"{name:15s}  success rate: {sr:.0%}")
+```
+
+**What to observe:** Dense reward and HER typically both outperform plain sparse, but via
+different mechanisms. HER is usually the practical choice for manipulation.
+
+---
+
+## Project D — Curriculum Learning
+
+**Problem:** Even with HER, very long-horizon or high-precision tasks are hard to learn
+from scratch. Curriculum learning starts easy and increases difficulty as the agent succeeds.
+
+**Approach:** Implement success-gated curriculum on the 2D reach task — start with targets
+close to the agent, expand the range only when success rate crosses a threshold.
+
+```python workspace/vla/ch02/curriculum.py
+"""Success-gated curriculum: expand goal range as success rate improves."""
+import numpy as np
+import gymnasium as gym
+from gymnasium import spaces
+from stable_baselines3 import SAC, HerReplayBuffer
+from stable_baselines3.common.callbacks import BaseCallback
+
+class CurriculumReach(gym.Env):
+    """2D reach with adjustable goal range."""
+
+    def __init__(self):
+        super().__init__()
+        self.goal_range = 0.1   # start easy: goals close to start
+        self.observation_space = spaces.Dict({
+            "observation": spaces.Box(-1, 1, (2,), np.float32),
+            "desired_goal": spaces.Box(-1, 1, (2,), np.float32),
+            "achieved_goal": spaces.Box(-1, 1, (2,), np.float32),
+        })
+        self.action_space = spaces.Box(-0.1, 0.1, (2,), np.float32)
+        self.pos  = np.zeros(2, dtype=np.float32)
+        self.goal = np.zeros(2, dtype=np.float32)
+        self.recent_successes: list[bool] = []
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        self.pos  = np.zeros(2, dtype=np.float32)
+        offset    = self.np_random.uniform(-self.goal_range, self.goal_range, 2)
+        self.goal = np.clip(offset.astype(np.float32), -1, 1)
+        return self._obs(), {}
+
+    def step(self, action):
+        self.pos  = np.clip(self.pos + action, -1, 1)
+        dist      = float(np.linalg.norm(self.pos - self.goal))
+        success   = dist < 0.05
+        self.recent_successes.append(success)
+        if len(self.recent_successes) > 200:
+            self.recent_successes.pop(0)
+        return self._obs(), (0.0 if success else -1.0), success, False, {"is_success": success}
+
+    def _obs(self):
+        return {"observation": self.pos.copy(),
+                "desired_goal": self.goal.copy(),
+                "achieved_goal": self.pos.copy()}
+
+    def compute_reward(self, achieved, desired, info):
+        dist = np.linalg.norm(achieved - desired, axis=-1)
+        return np.where(dist < 0.05, 0.0, -1.0).astype(np.float32)
+
+    def success_rate(self) -> float:
+        if not self.recent_successes:
+            return 0.0
+        return sum(self.recent_successes) / len(self.recent_successes)
+
+class CurriculumCallback(BaseCallback):
+    """Expand goal range when success rate > 80%."""
+    def __init__(self, env: CurriculumReach, max_range: float = 0.8):
+        super().__init__()
+        self.env       = env
+        self.max_range = max_range
+
+    def _on_step(self) -> bool:
+        if self.env.success_rate() > 0.8 and self.env.goal_range < self.max_range:
+            self.env.goal_range = min(self.env.goal_range * 1.5, self.max_range)
+            print(f"  [curriculum] goal range → {self.env.goal_range:.2f}")
+        return True
+
+if __name__ == "__main__":
+    env = CurriculumReach()
+    cb  = CurriculumCallback(env)
+    model = SAC(
+        "MultiInputPolicy", env, verbose=1,
+        replay_buffer_class=HerReplayBuffer,
+        replay_buffer_kwargs={"n_sampled_goal": 4, "goal_selection_strategy": "future"},
+    )
+    model.learn(total_timesteps=100_000, callback=cb)
+    print(f"\nFinal goal range: {env.goal_range:.2f}")
+```
+
+**What to observe:** Goal range expands as the agent improves. Without curriculum, the
+same agent on the hard task (full range) typically converges slower or not at all.
 
 ---
 
 ## Self-Check
 
-1. What is the difference between `motor` and `position` actuators? When would you choose each?
+1. What does `env.step(action)` return?
+   **Answer:** A tuple of `(observation, reward, terminated, truncated, info)`. `terminated`
+   means the episode ended naturally (goal reached, robot fell). `truncated` means the time
+   limit was hit.
 
-   **Answer:** `motor` applies raw torque — you write the stabilizing controller. `position`
-   has a built-in PD servo, you just command the target angle. Use `position` for learning
-   experiments; `motor` when you need physical accuracy (force control, contact-rich tasks).
+2. FetchReach uses sparse rewards. Why does this make learning hard?
+   **Answer:** With random actions the agent almost never reaches the goal, so almost every
+   step gives -1 and the agent receives no gradient signal about what's working.
 
-2. Your PD controller's joint angle oscillates around the target and never settles. Which
-   gain do you increase and why?
+3. How does HER generate extra learning signal without changing the environment?
+   **Answer:** After each failed episode, HER relabels the trajectory — treating whatever
+   position the agent actually reached as if it *were* the goal. This creates successful
+   transitions from failed rollouts.
 
-   **Answer:** Increase `kd`. The oscillation is underdamped — the derivative term resists
-   velocity and damps out the overshoot.
+4. Your SAC agent trains for 500k steps but success rate stays at 5%. What do you check?
+   **Answer:** Check reward scale (mean reward should be ~-1, not -100), verify obs
+   normalization, check that the goal is included in the observation, and try adding HER
+   if not already using it.
 
-3. `env.step()` runs 5 MuJoCo steps. The sim timestep is 2ms. What is the control frequency?
-
-   **Answer:** 5 × 2ms = 10ms per step → 100 Hz.
-
-4. What does `terminated=True` mean vs `truncated=True`?
-
-   **Answer:** `terminated` means the episode ended for task reasons (success or failure).
-   `truncated` means the time limit was hit. RL algorithms treat these differently when
-   computing value targets.
-
-5. You want to add the wrist camera image to the observation. What changes in the env?
-
-   **Answer:** Render an offscreen camera with `mujoco.Renderer`, add the pixel array to
-   `_get_obs()`, and update `observation_space` to include a `Dict` or `Box` for image data.
+5. Why start curriculum with easy goals rather than the full task?
+   **Answer:** With hard goals and sparse rewards, early exploration almost never succeeds.
+   Easy goals guarantee early successes, giving the agent a gradient signal to build on
+   before the task difficulty increases.
 
 ---
 
-## What's Next
+## Common Mistakes
 
-Chapter 3 introduces inverse kinematics: given a target end-effector position in world space,
-compute the joint angles to get there. The PD controller you just built is exactly what
-executes those joint angle targets on the robot.
+- **Forgetting to register gymnasium-robotics:** Call `gym.register_envs(gymnasium_robotics)`
+  before `gym.make()` or you'll get a `gym.error.NameNotFound`.
+
+- **Using `obs` directly with HER in dict-obs envs:** SB3 HER requires `MultiInputPolicy`,
+  not `MlpPolicy`. Dict observations need the multi-input policy.
+
+- **Reward scale too large:** If your dense reward is `-distance * 100`, gradients explode.
+  Keep rewards in the range [-1, 1] or normalize.
+
+- **Evaluating during training with the training env:** Use a separate `eval_env` for
+  `EvalCallback`. Evaluating in the training env can corrupt the replay buffer or stats.
+
+---
+
+## Resources
+
+1. [Stable Baselines 3 docs](https://stable-baselines3.readthedocs.io/) — SAC and HER configuration
+2. [HER paper](https://arxiv.org/abs/1707.01495) — read abstract + Section 3 (the algorithm)
+3. [Gymnasium docs](https://gymnasium.farama.org/) — environment interface and wrappers
+4. [gymnasium-robotics](https://robotics.farama.org/) — FetchReach and other robot envs

@@ -1,641 +1,326 @@
-# Chapter 4 — Reinforcement Learning for Robots (Applied)
+# Chapter 4 — Vision-Language-Action Models
 
 **Time:** 4–5 days
-**Hardware:** Laptop; GPU optional but cuts training time 5–10×
-**Prerequisites:** Chapters 1–3 (especially the Gymnasium env from Ch.2)
+**Hardware:** GPU 16 GB+ for fine-tuning (Colab A100 works; inference runs on 8 GB)
+**Prerequisites:** Chapter 3 (Imitation Learning, LeRobot)
 
 ---
 
-## Why This Chapter Exists
+## What are we here for
 
-RL is not the dominant approach for robot manipulation in 2025 — imitation learning is. So why is this chapter here?
+ACT and Diffusion Policy are trained per-task: collect demos, train, deploy. They have no
+prior knowledge of the world. A **Vision-Language-Action (VLA) model** is different — it's
+a large pretrained model that has seen millions of robot demonstrations across hundreds of
+tasks and robots. You give it a language instruction and an image; it outputs robot actions.
 
-Because without having trained an RL agent yourself, you won't understand two things that keep mattering later: (1) why reward design is so hard and why IL sidesteps it, and (2) what a "policy" actually is — a function that maps observations to actions, trained to maximize some objective. Every chapter after this uses that concept.
+The practical payoff: instead of collecting 200 demos and training from scratch, you can
+fine-tune a pretrained VLA on 20–50 demos and get better generalization. This chapter uses
+**SmolVLA** — a 450M-parameter VLA from HuggingFace that's small enough to fine-tune on a
+single A100.
 
-The specific gap this fills: understanding why sparse rewards fail, what HER does to fix them, and when RL is genuinely the right tool (contact-rich dynamics, tasks without easy demonstrations). That judgment call comes up in Chapter 7 (sim-to-real) and Chapter 10 (capstone).
+You'll run inference, probe how language conditioning works, fine-tune on a custom task,
+and measure how many demos fine-tuning actually needs.
 
-### If you can answer these, you can skip this chapter
-
-1. You're training a robot to reach a target. Your reward is `+1` when it touches the target, `0` otherwise. Training doesn't converge after 500k steps. What's wrong, and what are two ways to fix it?
-2. What does HER (Hindsight Experience Replay) do, and why does it help for sparse-reward manipulation tasks?
-3. Why would you choose RL over imitation learning for a locomotion task but prefer imitation learning for a pick-and-place task?
-
-**What you'll build:** Train a robot arm to reach, push, and eventually solve harder tasks using SAC with HER. You'll compare reward designs and see directly why bad rewards fail.
-
----
-
-## Part 1 — Core RL Concepts (Applied, Not Theoretical)
-
-### The Setup
-
-At each timestep:
-1. Robot is in state `s` (joint positions, velocities, object positions)
-2. Policy outputs action `a` (joint torques or target positions)
-3. Environment transitions to state `s'` and returns reward `r`
-4. Policy updates to maximize cumulative reward
-
-That's it. Everything else is implementation details.
-
-### What You Control
-
-As an applied roboticist, you control three things:
-
-**1. Observation design** — what the robot sees
-- Include: joint positions, velocities, object positions, target positions
-- Normalize: always normalize observations to roughly [-1, 1]
-- Don't include: raw RGB images (too complex for basic RL — use IL instead)
-
-**2. Action design** — what the robot can do
-- Absolute joint angles (position control) → easiest to learn
-- Joint torques → more physical but harder to stabilize
-- End-effector deltas → often best for manipulation
-
-**3. Reward design** — what the robot is optimized for
-- This is where 80% of the difficulty lives
-
-### The Two Algorithms You Need
-
-**SAC (Soft Actor-Critic):** Off-policy, sample efficient, handles continuous actions well. Standard choice for manipulation. Use this for everything in this chapter.
-
-**PPO (Proximal Policy Optimization):** On-policy, more stable but needs more samples. Better for locomotion and multi-agent. Mention it here; you'll encounter it elsewhere.
-
-Why SAC for manipulation:
-- Works with replay buffer (sample efficient)
-- Entropy regularization → explores well without needing curriculum tricks
-- Handles continuous action spaces cleanly
-
----
-
-## Part 2 — Reward Design (The Hard Part)
-
-### Dense vs. Sparse Rewards
-
-**Sparse:** reward = 1 if goal reached, 0 otherwise.
-- Clean to define
-- Extremely hard to learn (robot never stumbles onto the goal)
-- Works only with HER (see below)
-
-**Dense:** reward = -distance_to_goal (plus shaping terms)
-- Robot gets signal everywhere, learns faster
-- Risk: robot learns to game the reward, not solve the task
-
-**Shaped example for reach task:**
-```python
-def compute_reward(ee_pos, target_pos, action):
-    dist = np.linalg.norm(ee_pos - target_pos)
-    reward = -dist                          # distance penalty
-    reward -= 0.001 * np.sum(action**2)    # action regularization (smooth motion)
-    if dist < 0.05:
-        reward += 1.0                       # goal bonus
-    return reward
-```
-
-### Common Reward Mistakes
-
-**Mistake 1: Wrong scale.** If reward is -1000 (because you forgot to normalize), gradients explode.
-Fix: mean reward across a random policy should be roughly -1 to 0.
-
-**Mistake 2: Wrong horizon.** Reward accumulated over 500 steps with γ=0.99 discounts the last steps heavily.
-Fix: for short-horizon tasks (reach), γ=0.95 is better than 0.99.
-
-**Mistake 3: Reward hacking.** The robot finds a weird exploit — stays near the goal boundary to collect the bonus repeatedly.
-Fix: add time penalty, or use terminal state detection.
-
-**Mistake 4: Too sparse.** No learning signal — robot wanders randomly forever.
-Fix: add shaped reward or use HER.
-
-### Hindsight Experience Replay (HER) — The Key to Sparse Rewards
-
-The core insight of HER (Andrychowicz et al., 2017):
-
-After a failed episode (robot reached position X instead of goal G), relabel the experience as if X was the goal. The robot succeeded at reaching X — even though that wasn't the actual goal. Now you have a successful trajectory to learn from.
-
-Over many episodes, HER creates a dense stream of success data from failed attempts.
-
-**In practice:**
-- HER only works with goal-conditioned environments (observation includes the goal)
-- Stable Baselines 3 has HER built in as a wrapper
-- Almost always use HER for manipulation with sparse rewards
-
----
-
-## Part 3 — Stable Baselines 3 Quickstart
-
-### Install
-
+**Install:** (inside the LeRobot repo)
 ```bash
-pip install stable-baselines3[extra] gymnasium-robotics
+cd ~/lerobot
+pip install -e ".[smolvla]"
 ```
 
-### Minimal SAC Training Loop
-
-```python
-from stable_baselines3 import SAC
-from stable_baselines3.common.env_util import make_vec_env
-import gymnasium as gym
-
-env = gym.make("FetchReach-v4")
-model = SAC("MlpPolicy", env, verbose=1, learning_rate=1e-3)
-model.learn(total_timesteps=200_000)
-model.save("sac_reach")
-```
-
-That's the entire training loop. SB3 handles replay buffer, network updates, entropy tuning, etc.
-
-### With HER
-
-```python
-from stable_baselines3 import SAC
-from stable_baselines3.her.her_replay_buffer import HerReplayBuffer
-import gymnasium as gym
-
-env = gym.make("FetchReach-v4")
-model = SAC(
-    "MultiInputPolicy",    # for dict observation spaces (obs + achieved_goal + desired_goal)
-    env,
-    replay_buffer_class=HerReplayBuffer,
-    replay_buffer_kwargs=dict(
-        n_sampled_goal=4,          # relabel 4 goals per transition
-        goal_selection_strategy="future",  # use future states as relabeled goals
-    ),
-    verbose=1,
-    learning_rate=1e-3,
-    batch_size=256,
-    gamma=0.95,
-)
-model.learn(total_timesteps=500_000)
-```
-
-### Evaluation
-
-```python
-from stable_baselines3.common.evaluation import evaluate_policy
-
-mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=50)
-print(f"Mean reward: {mean_reward:.2f} ± {std_reward:.2f}")
-```
+**Skip if you can answer:**
+1. What does a VLA take as input and produce as output?
+2. Why fine-tune a pretrained VLA rather than train ACT from scratch on the same data?
+3. You fine-tune SmolVLA on "pick up the red cube." It fails on "grab the red block." Why?
+4. What is the Open X-Embodiment dataset and why does it matter for VLAs?
 
 ---
 
-## External Resources
+## Projects
 
-1. **Spinning Up in Deep RL (OpenAI)**
-   Best applied intro to RL for robotics. Read "Introduction" and "Key Concepts".
-   Skip the math proofs — focus on the intuition.
-   → https://spinningup.openai.com/en/latest/spinningup/rl_intro.html
-
-2. **Stable Baselines 3 Documentation**
-   → https://stable-baselines3.readthedocs.io/en/master/
-   Especially: SAC guide, HER guide, custom environments
-
-3. **HER Paper (Hindsight Experience Replay)**
-   Read abstract + intro + the "relabeling" section (Section 3).
-   Understanding HER is more important than any algorithm.
-   → https://arxiv.org/abs/1707.01495
-
-4. **Gymnasium-Robotics Environments**
-   FetchReach, FetchPush, FetchSlide — standard robot RL benchmarks.
-   → https://robotics.farama.org/
-
-5. **Reward Shaping Pitfalls (blog)**
-   Practical guide to what goes wrong with rewards.
-   Search "reward hacking examples RL" for concrete cautionary tales.
+| # | Project | What you build |
+|---|---------|---------------|
+| A | Run SmolVLA Inference | Load SmolVLA, run zero-shot on gym_pusht with language instructions |
+| B | Probe Language Conditioning | Same environment, different phrasings — measure behavioral change |
+| C | Fine-tune SmolVLA | Fine-tune on a custom task; compare zero-shot vs. fine-tuned success rate |
+| D | Data Efficiency | How many demos does fine-tuning need vs. ACT from scratch? |
 
 ---
 
-## Project 4A — Explore the Environment
+## Project A — Run SmolVLA Inference
 
-Before training anything, understand what you're working with.
+**Problem:** You need to understand what a VLA does before you can use or fine-tune one.
+Running inference is the fastest way to build that intuition.
 
-Create `learning/ch04_rl/01_explore_env.py`:
+**Approach:** Load SmolVLA from HuggingFace Hub and run it in `gym_pusht` with a natural
+language instruction. Observe what actions it generates and whether zero-shot works.
 
-```python
-import gymnasium as gym
+### What a VLA is
+
+A VLA has three parts:
+1. **Vision encoder** — extracts features from camera images (usually a ViT)
+2. **Language encoder** — encodes the instruction string into a token sequence
+3. **Action decoder** — takes combined vision+language features and outputs robot actions
+
+SmolVLA is built on SmolVLM-256M (vision-language model) with an action decoder head.
+It was pretrained on the Open X-Embodiment dataset — ~1M robot demonstrations from
+22 robot types across 50+ institutions.
+
+```python workspace/vla/ch04/run_inference.py
+"""Run SmolVLA zero-shot inference in gym_pusht. Observe action quality."""
 import numpy as np
+import gymnasium as gym
+import gym_pusht
+import torch
+from lerobot.common.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
-def explore_fetch_reach():
-    env = gym.make("FetchReach-v4", render_mode="human")
-    obs, info = env.reset()
+INSTRUCTIONS = [
+    "push the T block into the target area",
+    "move the block to the goal position",
+    "push the object",
+]
 
-    print("=== FetchReach-v4 Environment ===")
-    print(f"\nObservation space: {env.observation_space}")
-    print(f"\nObservation keys and shapes:")
-    for key, val in obs.items():
-        print(f"  {key}: shape={val.shape}  min={val.min():.3f}  max={val.max():.3f}")
+def run_episode(policy: SmolVLAPolicy, env: gym.Env,
+                instruction: str, max_steps: int = 200) -> bool:
+    obs, _ = env.reset()
+    device = next(policy.parameters()).device
 
-    print(f"\nAction space: {env.action_space}")
-    print(f"  Action = 4D delta: [dx, dy, dz, dgrasp]")
-    print(f"  Range: {env.action_space.low} to {env.action_space.high}")
-
-    print("\nRunning random policy for 5 episodes...")
-    for episode in range(5):
-        obs, _ = env.reset()
-        total_reward = 0
-        success = False
-        for step in range(50):
-            action = env.action_space.sample()
-            obs, reward, terminated, truncated, info = env.step(action)
-            total_reward += reward
-            if info.get('is_success', False):
-                success = True
-                break
-        goal = obs['desired_goal']
-        achieved = obs['achieved_goal']
-        dist = np.linalg.norm(goal - achieved)
-        print(f"  Episode {episode+1}: reward={total_reward:.1f}  success={success}  "
-              f"final_dist={dist*100:.1f}cm")
-
-    env.close()
-    print("\nKey insight: random policy almost never succeeds (sparse reward).")
-    print("This is why we need HER.")
+    for _ in range(max_steps):
+        with torch.no_grad():
+            action = policy.select_action({
+                "observation.image": torch.tensor(obs["pixels"]).permute(2, 0, 1)
+                                     .unsqueeze(0).to(device) / 255.0,
+                "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).to(device),
+                "task": [instruction],
+            })
+        obs, _, terminated, truncated, info = env.step(action.cpu().numpy()[0])
+        if terminated or truncated:
+            return bool(info.get("is_success", False))
+    return False
 
 if __name__ == "__main__":
-    explore_fetch_reach()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
+    policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base").to(device)
+    policy.eval()
+
+    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode=None)
+
+    for instruction in INSTRUCTIONS:
+        successes = sum(run_episode(policy, env, instruction) for _ in range(10))
+        print(f"'{instruction}':  {successes}/10 success")
+
+    env.close()
 ```
+
+**What to observe:** Zero-shot success rate is likely low on gym_pusht (SmolVLA wasn't
+pretrained on this exact env). But the policy should produce *plausible* motions — it
+understands "push" and "block." That's the value of pretraining.
 
 ---
 
-## Project 4B — Train SAC with HER on FetchReach
+## Project B — Probe Language Conditioning
 
-Create `learning/ch04_rl/02_train_sac_her.py`:
+**Problem:** Does the language instruction actually change the policy's behavior, or is it
+just passed through and ignored?
 
-```python
-import gymnasium as gym
+**Approach:** Run the same environment with semantically different and similar instructions,
+and measure whether the policy behavior (trajectory shape, success rate) changes.
+
+```python workspace/vla/ch04/probe_language.py
+"""Test how sensitive SmolVLA is to instruction phrasing."""
 import numpy as np
-from stable_baselines3 import SAC
-from stable_baselines3.her.her_replay_buffer import HerReplayBuffer
-from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
-from stable_baselines3.common.monitor import Monitor
-import matplotlib.pyplot as plt
-import os
+import gymnasium as gym
+import gym_pusht
+import torch
+from lerobot.common.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
-def train_fetch_reach(total_steps=300_000, save_dir="./models"):
-    os.makedirs(save_dir, exist_ok=True)
+# Groups: semantically equivalent phrasings vs. semantically different tasks
+INSTRUCTION_GROUPS = {
+    "correct task (paraphrases)": [
+        "push the T block into the target area",
+        "move the T-shaped block to the goal",
+        "get the block to the highlighted region",
+    ],
+    "wrong task": [
+        "pick up the block",
+        "rotate the block 90 degrees",
+        "do nothing",
+    ],
+    "ambiguous": [
+        "go",
+        "block",
+        "target",
+    ],
+}
 
-    # Training env
-    env = Monitor(gym.make("FetchReach-v4"))
-    # Eval env
-    eval_env = Monitor(gym.make("FetchReach-v4"))
-
-    model = SAC(
-        "MultiInputPolicy",
-        env,
-        replay_buffer_class=HerReplayBuffer,
-        replay_buffer_kwargs=dict(
-            n_sampled_goal=4,
-            goal_selection_strategy="future",
-        ),
-        verbose=1,
-        learning_rate=1e-3,
-        batch_size=256,
-        gamma=0.95,
-        tau=0.05,
-        buffer_size=1_000_000,
-        learning_starts=1000,
-        tensorboard_log="./tb_logs/",
-    )
-
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path=save_dir,
-        log_path=save_dir,
-        eval_freq=10_000,
-        n_eval_episodes=50,
-        deterministic=True,
-        verbose=1
-    )
-
-    print(f"Training SAC+HER for {total_steps:,} steps...")
-    model.learn(total_timesteps=total_steps, callback=eval_callback, progress_bar=True)
-    model.save(os.path.join(save_dir, "sac_her_reach_final"))
-
-    env.close()
-    eval_env.close()
-    return model
-
-def evaluate_and_render(model_path="./models/best_model"):
-    env = gym.make("FetchReach-v4", render_mode="human")
-    model = SAC.load(model_path)
-
-    print("\nEvaluating trained policy (20 episodes)...")
+def eval_instruction(policy, env, instruction: str, n_trials: int = 10) -> float:
     successes = 0
-    for episode in range(20):
+    device = next(policy.parameters()).device
+    for _ in range(n_trials):
         obs, _ = env.reset()
-        for step in range(50):
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = env.step(action)
-            if terminated or truncated:
+        for _ in range(200):
+            with torch.no_grad():
+                action = policy.select_action({
+                    "observation.image": torch.tensor(obs["pixels"]).permute(2,0,1).unsqueeze(0).to(device) / 255.0,
+                    "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).to(device),
+                    "task": [instruction],
+                })
+            obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
+            if term or trunc:
+                successes += int(info.get("is_success", False))
                 break
-        if info.get('is_success', False):
-            successes += 1
-            print(f"  Episode {episode+1}: SUCCESS")
-        else:
-            print(f"  Episode {episode+1}: failed")
-
-    print(f"\nSuccess rate: {successes}/20 = {successes/20*100:.0f}%")
-    env.close()
+    return successes / n_trials
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "eval":
-        evaluate_and_render()
-    else:
-        train_fetch_reach()
-        evaluate_and_render()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base").to(device)
+    policy.eval()
+    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode=None)
+
+    for group, instructions in INSTRUCTION_GROUPS.items():
+        print(f"\n{group}:")
+        for instr in instructions:
+            sr = eval_instruction(policy, env, instr)
+            print(f"  '{instr}': {sr:.0%}")
+
+    env.close()
 ```
 
-Run training:
-```bash
-python 02_train_sac_her.py
-# After training:
-python 02_train_sac_her.py eval
-```
-
-Expected: ~80–95% success rate after 300k steps.
+**What to observe:** Paraphrases of the correct task should give similar success rates.
+Completely wrong instructions should produce different (lower) success rates. If
+they're all the same, the model is ignoring language — a sign it needs fine-tuning.
 
 ---
 
-## Project 4C — Reward Design Ablation
+## Project C — Fine-tune SmolVLA
 
-This is the most educational project. You'll train the same environment with 4 different reward designs and compare learning curves.
+**Problem:** Zero-shot SmolVLA doesn't perform well on your specific task. Fine-tune it
+on your demonstration data and measure the improvement.
 
-Create `learning/ch04_rl/03_reward_ablation.py`:
+**Approach:** Fine-tune SmolVLA using LeRobot's training script with your pusht demos from
+Chapter 3. Compare zero-shot vs. fine-tuned success rate.
 
-```python
-import gymnasium as gym
-import numpy as np
-from gymnasium import spaces
-from stable_baselines3 import SAC
-from stable_baselines3.her.her_replay_buffer import HerReplayBuffer
-from stable_baselines3.common.monitor import Monitor
+### Why fine-tuning works
+
+Pretraining gives the model a strong prior about robot motion, spatial reasoning, and
+language-action mapping. Fine-tuning adapts these representations to your specific task,
+robot, and environment. With 50 demos you're teaching the *what* and *where*, not the
+basic *how* — the pretraining already handles that.
+
+```bash workspace/vla/ch04/finetune_smolvla.sh
+cd ~/lerobot
+python lerobot/scripts/train.py \
+  --policy.type=smolvla \
+  --policy.pretrained_model_name_or_path=lerobot/smolvla_base \
+  --dataset.repo_id=local/pusht_demos \
+  --dataset.root=./data/pusht_demos \
+  --training.batch_size=32 \
+  --training.num_epochs=50 \
+  --output_dir=./outputs/smolvla_finetuned
+```
+
+Then evaluate with the same `run_episode()` function from Project A, pointing to your
+fine-tuned checkpoint. Print zero-shot vs. fine-tuned side-by-side.
+
+**What to observe:** Fine-tuned success rate should jump significantly over zero-shot,
+even with only 50 demos. If it doesn't, check that your demo quality is high and that
+the task language instruction matches what you used in training.
+
+---
+
+## Project D — Data Efficiency
+
+**Problem:** Fine-tuning is faster than training from scratch — but by how much? And
+how does the data scaling curve compare?
+
+**Approach:** Train ACT from scratch and fine-tune SmolVLA on 10, 25, 50 demos each.
+Plot both curves.
+
+```python workspace/vla/ch04/data_efficiency.py
+"""Compare data efficiency: ACT from scratch vs. SmolVLA fine-tuning."""
+import json
 import matplotlib.pyplot as plt
 
-class FetchReachRewardWrapper(gym.Wrapper):
-    """
-    Wraps FetchReach to use a custom reward function.
-    """
-    def __init__(self, env, reward_mode="sparse"):
-        super().__init__(env)
-        self.reward_mode = reward_mode
+DEMO_COUNTS = [10, 25, 50]
 
-    def step(self, action):
-        obs, _, terminated, truncated, info = self.env.step(action)
-        goal = obs['desired_goal']
-        achieved = obs['achieved_goal']
-        dist = np.linalg.norm(goal - achieved)
-        success = dist < 0.05
+# Fill these in after running your training experiments
+# Format: {n_demos: success_rate}
+act_results    = {10: 0.0, 25: 0.0, 50: 0.0}   # from Chapter 3 Project E
+smolvla_results = {10: 0.0, 25: 0.0, 50: 0.0}  # from Project C runs at each scale
 
-        if self.reward_mode == "sparse":
-            reward = 0.0 if success else -1.0
-
-        elif self.reward_mode == "dense":
-            reward = -dist  # negative distance always
-
-        elif self.reward_mode == "dense_bonus":
-            reward = -dist
-            if success:
-                reward += 5.0  # large success bonus
-
-        elif self.reward_mode == "badly_shaped":
-            # Common mistake: reward for moving, not for reaching goal
-            reward = np.linalg.norm(action)  # bigger action = more reward (WRONG)
-
-        info['is_success'] = success
-        return obs, reward, terminated, truncated, info
-
-
-def train_with_reward(reward_mode, total_steps=200_000):
-    base_env = gym.make("FetchReach-v4")
-    env = Monitor(FetchReachRewardWrapper(base_env, reward_mode=reward_mode))
-
-    use_her = (reward_mode == "sparse")
-
-    if use_her:
-        model = SAC(
-            "MultiInputPolicy", env,
-            replay_buffer_class=HerReplayBuffer,
-            replay_buffer_kwargs=dict(n_sampled_goal=4, goal_selection_strategy="future"),
-            learning_rate=1e-3, batch_size=256, gamma=0.95, verbose=0
-        )
-    else:
-        model = SAC("MultiInputPolicy", env, learning_rate=1e-3,
-                    batch_size=256, gamma=0.95, verbose=0)
-
-    model.learn(total_timesteps=total_steps, progress_bar=True)
-
-    # Quick evaluation
-    eval_env = FetchReachRewardWrapper(gym.make("FetchReach-v4"), reward_mode=reward_mode)
-    successes = 0
-    for _ in range(50):
-        obs, _ = eval_env.reset()
-        for _ in range(50):
-            action, _ = model.predict(obs, deterministic=True)
-            obs, _, terminated, truncated, info = eval_env.step(action)
-            if terminated or truncated:
-                break
-        if info.get('is_success', False):
-            successes += 1
-
-    env.close()
-    eval_env.close()
-    return successes / 50
-
-def run_ablation():
-    modes = ["sparse", "dense", "dense_bonus", "badly_shaped"]
-    results = {}
-
-    print("Running reward design ablation (this takes ~30 min)...")
-    for mode in modes:
-        print(f"\nTraining with reward_mode='{mode}'...")
-        sr = train_with_reward(mode)
-        results[mode] = sr
-        print(f"  Success rate: {sr*100:.0f}%")
-
-    # Plot
-    fig, ax = plt.subplots(figsize=(10, 6))
-    colors = ['steelblue', 'green', 'orange', 'red']
-    bars = ax.bar(modes, [results[m]*100 for m in modes], color=colors)
-
-    for bar, mode in zip(bars, modes):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
-                f"{results[mode]*100:.0f}%", ha='center', fontsize=12, fontweight='bold')
-
-    ax.set_ylabel('Success Rate (%)', fontsize=12)
-    ax.set_title('Reward Design Ablation: FetchReach\n'
-                 '"badly_shaped" shows reward hacking; '
-                 '"sparse+HER" and "dense" both work', fontsize=12)
-    ax.set_ylim(0, 110)
-    ax.grid(True, axis='y', alpha=0.3)
-    plt.tight_layout()
-    plt.savefig('reward_ablation.png', dpi=150)
-    plt.show()
-
-    print("\n=== Summary ===")
-    for mode, sr in results.items():
-        print(f"  {mode:20s}: {sr*100:.0f}% success")
+def plot(act: dict, smolvla: dict) -> None:
+    counts = sorted(act.keys())
+    plt.plot(counts, [act[n] for n in counts], "o-", label="ACT (from scratch)")
+    plt.plot(counts, [smolvla[n] for n in counts], "s-", label="SmolVLA (fine-tuned)")
+    plt.xlabel("Number of demonstrations")
+    plt.ylabel("Success rate")
+    plt.title("Data efficiency: ACT vs. SmolVLA fine-tuning")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig("data_efficiency.png")
+    print("Saved data_efficiency.png")
 
 if __name__ == "__main__":
-    run_ablation()
+    plot(act_results, smolvla_results)
+    for n in DEMO_COUNTS:
+        delta = smolvla_results[n] - act_results[n]
+        print(f"{n:3d} demos: ACT={act_results[n]:.0%}  SmolVLA={smolvla_results[n]:.0%}  Δ={delta:+.0%}")
 ```
 
-**What you'll observe:**
-- `badly_shaped` → robot moves a lot but never reaches the goal
-- `sparse` without HER → barely learns
-- `sparse` + HER → works well
-- `dense` → works, and is often faster than HER
-- `dense_bonus` → best of both worlds
+**What to observe:** SmolVLA fine-tuning typically outperforms ACT from scratch at low
+demo counts (10–25 demos). At 200+ demos, the gap narrows. This tells you when pretraining
+is worth the overhead.
 
 ---
 
-## Project 4D — Curriculum Learning
+## Self-Check
 
-Create `learning/ch04_rl/04_curriculum.py`:
+1. What does a VLA take as input and produce as output?
+   **Answer:** Input: one or more camera images + a natural language instruction string.
+   Output: robot actions (joint positions or velocities) for the next timestep or chunk.
 
-```python
-import gymnasium as gym
-import numpy as np
-from gymnasium import spaces
-from stable_baselines3 import SAC
-from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.monitor import Monitor
+2. Why can fine-tuning a pretrained VLA outperform training ACT from scratch on the same demos?
+   **Answer:** The pretrained model already understands robot motion, spatial relationships,
+   and language-action mappings from millions of demonstrations. Fine-tuning adapts this
+   prior to your task; training from scratch must learn everything from your small dataset.
 
-class CurriculumReachEnv(gym.Wrapper):
-    """
-    FetchReach with curriculum: start with close targets, gradually increase distance.
-    """
-    def __init__(self, env):
-        super().__init__(env)
-        self.stage = 0
-        self.stage_distances = [0.05, 0.15, 0.30]  # max target distance per stage
-        self.stage_names = ["easy (5cm)", "medium (15cm)", "hard (30cm)"]
-        self.recent_successes = []
-        self.advance_threshold = 0.75  # advance at 75% success rate
-        self.window = 100
+3. Your fine-tuned SmolVLA succeeds on "pick up the red cube" but fails on "grab the red block."
+   Why?
+   **Answer:** Language conditioning is learned during fine-tuning. If you always used
+   "pick up the red cube" in training, the model didn't learn to generalize the instruction.
+   Use varied phrasings in demonstrations to get instruction robustness.
 
-    @property
-    def current_max_dist(self):
-        return self.stage_distances[min(self.stage, len(self.stage_distances)-1)]
+4. What is Open X-Embodiment and why does it matter?
+   **Answer:** A dataset of ~1M robot demonstrations from 22 robot types and 50+
+   institutions, curated for cross-embodiment training. It's the pretraining data that gives
+   VLAs their strong priors — without it, SmolVLA would be just another small transformer.
 
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        # Clamp the goal to be within current stage's max distance
-        ee_pos = obs['observation'][:3]
-        goal = obs['desired_goal']
-        direction = goal - ee_pos
-        dist = np.linalg.norm(direction)
-        if dist > self.current_max_dist:
-            direction = direction / dist * self.current_max_dist
-            obs['desired_goal'] = ee_pos + direction
-        return obs, info
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        success = info.get('is_success', False)
-        self.recent_successes.append(float(success))
-        if len(self.recent_successes) > self.window:
-            self.recent_successes.pop(0)
-
-        # Check stage advancement
-        if (len(self.recent_successes) == self.window and
-                np.mean(self.recent_successes) >= self.advance_threshold and
-                self.stage < len(self.stage_distances) - 1):
-            self.stage += 1
-            self.recent_successes = []
-            print(f"\n>>> CURRICULUM ADVANCE to stage {self.stage}: "
-                  f"{self.stage_names[self.stage]} <<<")
-
-        info['curriculum_stage'] = self.stage
-        info['success_rate'] = np.mean(self.recent_successes) if self.recent_successes else 0
-        return obs, reward, terminated, truncated, info
-
-
-class CurriculumLogger(BaseCallback):
-    def __init__(self, verbose=0):
-        super().__init__(verbose)
-        self.stages_over_time = []
-
-    def _on_step(self):
-        infos = self.locals.get('infos', [{}])
-        stage = infos[0].get('curriculum_stage', 0)
-        self.stages_over_time.append(stage)
-        return True
-
-
-def train_curriculum():
-    base_env = gym.make("FetchReach-v4")
-    env = Monitor(CurriculumReachEnv(base_env))
-
-    from stable_baselines3.her.her_replay_buffer import HerReplayBuffer
-    model = SAC(
-        "MultiInputPolicy", env,
-        replay_buffer_class=HerReplayBuffer,
-        replay_buffer_kwargs=dict(n_sampled_goal=4, goal_selection_strategy="future"),
-        learning_rate=1e-3, batch_size=256, gamma=0.95, verbose=1
-    )
-
-    logger = CurriculumLogger()
-    print("Training with curriculum (easy → medium → hard)...")
-    model.learn(total_timesteps=400_000, callback=logger, progress_bar=True)
-
-    print(f"\nFinal curriculum stage reached: {max(logger.stages_over_time)}")
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(12, 4))
-    plt.plot(logger.stages_over_time, alpha=0.7, color='steelblue')
-    plt.xlabel('Training step')
-    plt.ylabel('Curriculum stage (0=easy, 2=hard)')
-    plt.title('Curriculum Progression Over Training')
-    plt.grid(True, alpha=0.3)
-    plt.yticks([0, 1, 2], ['Easy (5cm)', 'Medium (15cm)', 'Hard (30cm)'])
-    plt.savefig('curriculum.png', dpi=150)
-    plt.show()
-
-if __name__ == "__main__":
-    train_curriculum()
-```
+5. Inference with SmolVLA is too slow for your 10 Hz control loop. What do you try?
+   **Answer:** Use a smaller chunk size (predict fewer steps per call), use `torch.compile`
+   or `float16` precision, or run the vision encoder at lower frequency than the action
+   decoder (most VLA frameworks support this).
 
 ---
 
-## Self-Check Questions
+## Common Mistakes
 
-Before moving to Chapter 5:
+- **Fine-tuning with inconsistent task instructions:** Use the same instruction phrasing
+  in all your training demos, and use that exact phrasing at eval time.
 
-1. SAC trains for 300k steps and the success rate is stuck at 5%. What are 3 things you check first?
-2. You're using dense reward `-distance`. Training converges but the policy moves very jerkily. How do you fix it?
-3. HER requires a "goal-conditioned" observation. What does that mean structurally?
-4. You increase `gamma` from 0.95 to 0.999 for a 50-step episode. What changes in the learned behavior?
-5. Why does off-policy SAC work here but not in environments with very long delays between action and reward?
+- **Expecting zero-shot to work well on novel envs:** SmolVLA was trained on real robots
+  and different sims. Zero-shot on gym_pusht will be mediocre — fine-tuning is expected.
 
-**Answers:**
-1. (a) Check reward scale — mean random-policy reward should be ~-1, not -1000. (b) Check observation normalization. (c) Add HER if reward is sparse.
-2. Add action regularization: `reward -= 0.001 * np.sum(action**2)` to penalize large actions.
-3. Observation is a dict with keys `observation`, `achieved_goal`, `desired_goal`. HER relabels by changing `desired_goal` to past `achieved_goal` values.
-4. Higher gamma weights future rewards more → robot optimizes for longer-horizon success. For short episodes (50 steps), this can cause instability because discounting is weak → effectively infinite horizon.
-5. SAC relies on rewards that correlate tightly with recent actions. Long delays break this assumption → Q-values become inaccurate.
+- **Running fine-tuning on CPU:** This takes days. Use Colab A100 or a local GPU.
+
+- **Comparing zero-shot and fine-tuned at different eval conditions:** Same environment,
+  same instruction, same number of trials — otherwise the comparison is meaningless.
 
 ---
 
-## What You Should Skip in This Chapter
+## Resources
 
-**RL theory / math derivations:** Bellman equations, policy gradient derivations, actor-critic proofs. Not needed. SB3 implements them correctly.
-
-**Custom SAC implementation:** Don't write your own SAC. SB3's is better tested than anything you'll write in a week.
-
-**Model-based RL (Dreamer, MBPO):** More sample efficient in theory, much harder to tune. Not standard in manipulation yet.
-
-**Multi-agent RL:** Not needed until bimanual manipulation and even then, it's usually avoided.
-
----
-
-## When To Use RL vs. Imitation Learning
-
-| Situation | Prefer |
-|-----------|--------|
-| Can't easily demonstrate the task | RL |
-| Need superhuman performance (speed/precision) | RL |
-| Have human demonstration data | Imitation Learning |
-| Short time to solution | Imitation Learning |
-| Long-horizon, multi-step task | Imitation Learning |
-| Novel environment not in training data | RL with DR |
-| Need to transfer to real robot quickly | Imitation Learning |
-
-Chapter 5 is where most real robot work actually happens.
+1. [SmolVLA blog post](https://huggingface.co/blog/smolvla) — architecture overview and benchmark results
+2. [OpenVLA paper](https://arxiv.org/abs/2406.09246) — the design decisions behind open-weight VLAs
+3. [Open X-Embodiment paper](https://arxiv.org/abs/2310.08864) — the pretraining dataset
+4. [π0 paper](https://arxiv.org/abs/2410.24164) — state-of-art VLA for dexterous manipulation (read for context)
