@@ -134,13 +134,16 @@ chained all the joint transforms for you.
 
 ### What a 4×4 transform is
 
-Papers and libraries pass around 4×4 matrices that bundle position + orientation together:
+Papers and libraries pass around 4×4 matrices that bundle position + orientation into one object.
+The top-left 3×3 block is the rotation matrix (orientation), the right column is the position,
+and the bottom row is always `[0, 0, 0, 1]` — a convention that makes chaining transforms work
+via matrix multiplication:
 
-```
-T = [[R00, R01, R02, tx],
-     [R10, R11, R12, ty],
-     [R20, R21, R22, tz],
-     [0,   0,   0,   1 ]]
+```text 4×4 transform
+T = [[R00, R01, R02, tx],   ← rotation (3×3) | tx = x position
+     [R10, R11, R12, ty],                     | ty = y position
+     [R20, R21, R22, tz],                     | tz = z position
+     [0,   0,   0,   1 ]]   ← always this row (math convention)
 ```
 
 To convert a point `p` from one frame to another: `p_world = T @ [px, py, pz, 1]`.
@@ -151,7 +154,12 @@ You'll see this in LeRobot, ROS 2, and policy papers. The math is just matrix mu
 
 ### Quaternions
 
-Orientation is also stored as quaternions in MuJoCo (`data.xquat`): `[w, x, y, z]`.
+A rotation matrix works, but it's 9 numbers. A **quaternion** is a compact 4-number alternative
+that represents the same rotation — think of it as an axis to rotate around `[x, y, z]` plus
+a scalar `w` that encodes how much to rotate. You don't need to understand the math; just know
+that `w=1, x=y=z=0` means "no rotation" (identity).
+
+MuJoCo stores orientation as quaternions in `data.xquat`: `[w, x, y, z]`.
 
 The only thing you need to know now: **convention varies by library**.
 - MuJoCo: `[w, x, y, z]`
@@ -173,7 +181,12 @@ euler = rot.as_euler('xyz', degrees=True)
 
 ## Part 3 — Forward Kinematics
 
-Forward kinematics (FK) answers: given joint angles, where is the end-effector?
+A robot arm is a chain of rigid links connected by **joints** — the rotatable hinges between
+links. Each joint has an **angle** (how far it's rotated). The **end-effector** is the last
+link in the chain — the hand or gripper that interacts with objects.
+
+**Forward kinematics (FK)** answers: given a set of joint angles, where does the end-effector
+end up in the world?
 
 You've been using it already — `data.xpos` after `mj_step()` or `mj_forward()` *is* the
 result of FK. MuJoCo chains the transforms across every link and gives you the result.

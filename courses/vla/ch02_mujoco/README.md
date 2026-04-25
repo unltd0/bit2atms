@@ -27,6 +27,9 @@ directly on this.
 
 ## Part 1 — Actuator Types
 
+An **actuator** is what makes a joint move — the motor attached to it. In a real robot it's
+a servo or motor; in MuJoCo you declare it in the XML and control it by writing to `data.ctrl`.
+
 MuJoCo gives you three actuator types. The choice affects how you write your controller.
 
 **`motor`** — applies raw torque. You are responsible for stabilizing the joint.
@@ -60,14 +63,18 @@ your own stabilizing controller.
 
 ## Part 2 — The PD Controller
 
-When using `motor` actuators you implement the controller yourself. The standard is PD:
+A **controller** is code that reads the current joint state and outputs a torque to drive the
+joint toward a target. The simplest effective controller is **PD** (Proportional-Derivative):
+
+- **P (proportional):** push toward the target proportional to how far away you are
+- **D (derivative):** push back proportional to how fast you're moving — acts as a brake
 
 ```
 torque = kp × (target_angle − current_angle) − kd × current_velocity
 ```
 
-- **kp** (proportional): how hard to push toward the target. Too low → slow. Too high → oscillates.
-- **kd** (derivative): damping. Resists velocity, prevents overshoot.
+- **kp** (proportional gain): how hard to push toward the target. Too low → slow. Too high → oscillates.
+- **kd** (derivative gain): damping. Resists velocity, prevents overshoot.
 
 Good starting values for a robot arm joint: `kp = 100`, `kd = 10`.
 For a heavier arm like the Franka Panda: `kp = 400`, `kd = 40`.
