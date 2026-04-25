@@ -37,6 +37,8 @@ cd workspace/ext/lerobot
 pip install -e ".[feetech]"
 ```
 
+**Working directory:** Create `workspace/vla/ch07/` for your scripts and data.
+
 **Skip if you can answer:**
 1. What is backlash in a servo, and how does it affect policy performance?
 2. You collect 50 demos but your policy fails consistently. What's the first thing to check?

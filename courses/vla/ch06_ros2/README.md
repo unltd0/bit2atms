@@ -22,7 +22,7 @@ sim with the same interface it'll use on hardware.
 
 **Install (Ubuntu 24.04):**
 ```bash
-sudo apt install ros-jazzy-desktop ros-jazzy-moveit
+sudo apt install ros-jazzy-desktop
 echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -41,6 +41,10 @@ docker run -it --rm \
 source /opt/ros/jazzy/setup.bash
 cd /workspace/vla/ch06
 ```
+
+**Working directory:** Create `workspace/vla/ch06/` for your files. Also clone Menagerie
+there: `git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie`
+from the repo root so the scripts can find the Franka XML.
 
 For RViz2 on macOS you'll also need [XQuartz](https://www.xquartz.org/) installed and running,
 with "Allow connections from network clients" enabled in XQuartz preferences.
@@ -90,7 +94,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class JointStatePublisher(Node):
     def __init__(self):
@@ -135,7 +139,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class FKSubscriber(Node):
     def __init__(self):
@@ -219,7 +223,7 @@ import os
 # Import auto-generated service (after colcon build)
 # from vla_msgs.srv import IKSolve
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class IKServiceNode(Node):
     def __init__(self):
@@ -284,7 +288,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 SIM_HZ     = 500   # simulation steps per second
 PUB_HZ     = 100   # joint state publish rate
 
@@ -352,7 +356,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class TFPublisher(Node):
     def __init__(self):

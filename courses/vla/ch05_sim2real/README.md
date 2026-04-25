@@ -24,8 +24,12 @@ learns to be robust to variation, rather than memorizing the exact sim physics.
 
 **Install:**
 ```bash
-pip install mujoco numpy stable-baselines3 gymnasium matplotlib
+pip install mujoco numpy stable-baselines3 gymnasium matplotlib torchvision
 ```
+
+**Working directory:** Create `workspace/vla/ch05/` for your files. Projects B and D
+import from `physics_dr.py` — run those scripts from `workspace/vla/ch05/` so the import
+resolves, or copy `physics_dr.py` there first.
 
 **Skip if you can answer:**
 1. What is the reality gap? Name its two main components.

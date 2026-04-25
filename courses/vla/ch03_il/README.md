@@ -195,13 +195,11 @@ def inspect(root: str) -> None:
     axes[1].set_title("Agent position coverage")
     axes[1].set_xlabel("x"); axes[1].set_ylabel("y")
 
-    # Episode lengths
-    ep_lengths = []
-    for ep_idx in range(dataset.num_episodes):
-        ep_data = dataset.episode_data_index
-        start = ep_data["from"][ep_idx].item()
-        end   = ep_data["to"][ep_idx].item()
-        ep_lengths.append(end - start)
+    # Episode lengths — group frames by episode_index column
+    ep_lengths = (
+        dataset.hf_dataset.to_pandas()
+        .groupby("episode_index").size().tolist()
+    )
     axes[2].hist(ep_lengths, bins=20)
     axes[2].set_title("Episode length distribution")
     axes[2].set_xlabel("steps")
