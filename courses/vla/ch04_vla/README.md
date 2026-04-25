@@ -24,8 +24,10 @@ and measure how many demos fine-tuning actually needs.
 **Install:** (inside the LeRobot repo)
 ```bash
 cd workspace/ext/lerobot
-pip install -e ".[smolvla]"
+pip install -e ".[smolvla,pusht]"
 ```
+
+**Working directory:** Create `workspace/vla/ch04/` for your files.
 
 **Skip if you can answer:**
 1. What does a VLA take as input and produce as output?

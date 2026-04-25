@@ -22,12 +22,15 @@ This chapter focuses on two IL algorithms that currently dominate robot manipula
 You'll collect demonstrations, train both algorithms, compare them, and study how data
 quantity affects performance. These skills directly transfer to Chapter 7 (real hardware).
 
-**Install:**
+**Install:** (run from the repo root)
 ```bash
 git clone https://github.com/huggingface/lerobot workspace/ext/lerobot
 cd workspace/ext/lerobot
-pip install -e ".[simulation]"
+pip install -e ".[pusht]"
 ```
+
+**Working directory:** Create `workspace/vla/ch03/` for your files — copy each code block
+into a `.py` or `.sh` file there as you work through the projects.
 
 **Skip if you can answer:**
 1. What is distributional shift, and why does behavioral cloning fail because of it?
@@ -80,11 +83,13 @@ N_DEMOS    = 50
 REPO_ID    = "local/pusht_demos"
 SAVE_DIR   = "./data/pusht_demos"
 
-def oracle_action(obs: dict) -> np.ndarray:
-    """Scripted policy: move toward block, then push toward goal."""
-    agent_pos  = obs["agent_pos"]
-    block_pos  = obs["block_pos"][:2]
-    target_pos = obs["goal_pos"][:2] if "goal_pos" in obs else np.array([256, 256])
+def oracle_action(state: np.ndarray) -> np.ndarray:
+    """Scripted policy: move toward block, then push toward goal.
+    state = [agent_x, agent_y, block_x, block_y, block_angle] from env.unwrapped.
+    """
+    agent_pos  = state[:2]
+    block_pos  = state[2:4]
+    target_pos = np.array([256.0, 256.0])  # fixed goal center
 
     # Phase 1: approach block
     to_block = block_pos - agent_pos
@@ -96,6 +101,8 @@ def oracle_action(obs: dict) -> np.ndarray:
     return np.clip(to_goal * 0.03, -1, 1)
 
 def collect(n_demos: int, save_dir: str) -> None:
+    # pixels_agent_pos gives {"pixels": HxWx3, "agent_pos": [x,y]} for the dataset.
+    # Block position for the oracle comes from env.unwrapped body attributes.
     env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
 
     dataset = LeRobotDataset.create(
@@ -117,7 +124,10 @@ def collect(n_demos: int, save_dir: str) -> None:
         done   = False
         frames = []
         while not done:
-            action = oracle_action(obs)
+            # Build state vector for oracle from internal sim bodies (obs_type-independent)
+            u = env.unwrapped
+            state  = np.array([*u.agent.position, *u.block.position, u.block.angle % (2*np.pi)])
+            action = oracle_action(state)
             frames.append((obs, action))
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated

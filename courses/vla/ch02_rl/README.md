@@ -27,6 +27,10 @@ reward designs, and implement curriculum learning.
 pip install stable-baselines3[extra] gymnasium gymnasium-robotics
 ```
 
+**Working directory:** Create `workspace/vla/ch02/` for your files — this folder is your
+scratchpad and is gitignored. Copy each code block below into a `.py` file there as you
+work through the projects.
+
 **Skip if you can answer:**
 1. What does `env.step(action)` return? What does each element mean?
 2. What is the difference between sparse and dense rewards? When does each work?
@@ -202,6 +206,10 @@ if __name__ == "__main__":
     print("Done. Compare models/sac_her vs models/sac_no_her in TensorBoard:")
     print("  tensorboard --logdir ./models")
 ```
+
+**No GPU?** Reduce `TOTAL_STEPS = 50_000` and expect lower final success rate.
+For a free A100 GPU: open [Google Colab](https://colab.research.google.com), set runtime
+to GPU, and paste the script there.
 
 **What to observe:** SAC+HER typically reaches >90% success on FetchReach within 50k
 steps. SAC without HER may never learn meaningful behavior. This gap is HER's contribution.
