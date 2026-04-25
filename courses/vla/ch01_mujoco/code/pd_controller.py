@@ -31,8 +31,7 @@ ARM_XML = """<?xml version="1.0"?>
 TARGET_QPOS  = np.array([0.5, -0.3])
 SIM_DURATION = 3.0
 
-def run_pd(kp: float, kd: float) -> tuple[np.ndarray, np.ndarray]:
-    model      = mujoco.MjModel.from_xml_string(ARM_XML)
+def run_pd(model: mujoco.MjModel, kp: float, kd: float) -> tuple[np.ndarray, np.ndarray]:
     data       = mujoco.MjData(model)
     steps      = int(SIM_DURATION / model.opt.timestep)
     timestamps = np.zeros(steps)
@@ -45,6 +44,7 @@ def run_pd(kp: float, kd: float) -> tuple[np.ndarray, np.ndarray]:
     return timestamps, q
 
 if __name__ == "__main__":
+    model = mujoco.MjModel.from_xml_string(ARM_XML)
     configs = [
         (50,  1,  "kp=50  kd=1   underdamped"),
         (50,  10, "kp=50  kd=10  well-tuned"),
@@ -54,7 +54,7 @@ if __name__ == "__main__":
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     fig.suptitle("PD Controller — joint j1 trajectory")
     for ax, (kp, kd, label) in zip(axes.flat, configs):
-        timestamps, q = run_pd(kp, kd)
+        timestamps, q = run_pd(model, kp, kd)
         ax.plot(timestamps, np.degrees(q[:, 0]))
         ax.axhline(np.degrees(TARGET_QPOS[0]), color="r", linestyle="--", label="target")
         ax.set_title(label); ax.set_xlabel("time (s)"); ax.set_ylabel("angle (deg)")

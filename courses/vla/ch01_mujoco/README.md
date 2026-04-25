@@ -98,13 +98,14 @@ R   = data.xmat[body_id].reshape(3, 3)
 ```python courses/vla/ch01_mujoco/code/read_robot_state.py
 ```
 
-**What to observe:** The EE position changes between the two joint configurations —
-that's **forward kinematics (FK)**. Open the viewer, drag joints, watch the printed
-positions update.
+**What to observe:** The terminal prints EE and body positions for the neutral pose then
+the rotated pose — that's **forward kinematics (FK)**. Same joints, different angles,
+different EE position.
 
 **What to expect in the viewer:** The arm launches in the rotated pose with no control
-signal, so it falls under gravity immediately — that's correct. Drag joints with Ctrl+click
-to explore poses; watch the terminal for printed EE positions.
+signal and falls under gravity — that's expected. To explore poses: double-click a body
+to select it, then use the joint sliders in the right UI panel. Ctrl+drag on a selected
+body applies an external force perturbation (not joint control).
 
 **Headless / no display?** Comment out the `with mujoco.viewer...` block. The two
 `print(f"... pose — EE: ...")` lines above it are the actual deliverable.

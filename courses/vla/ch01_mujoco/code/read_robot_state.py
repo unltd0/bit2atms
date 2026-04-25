@@ -15,7 +15,7 @@ def print_robot_info(model: mujoco.MjModel) -> None:
         print(f"  [{i}] {name:30s}  [{np.degrees(lo):.0f}°, {np.degrees(hi):.0f}°]")
 
 def read_body_poses(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    """Print body positions. Caller must have called mj_forward first."""
+    mujoco.mj_forward(model, data)
     print("\nBody positions (world frame):")
     for i in range(1, model.nbody):
         print(f"  {model.body(i).name:30s}  {np.round(data.xpos[i], 3)}")
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     print_robot_info(model)
     demo_two_configurations(model, data)
 
-    print("\nLaunching viewer — Ctrl+drag to move joints. Close to exit.")
+    print("\nLaunching viewer. Double-click a body to select it, use right-panel sliders to move joints.")
     print("(Skip the viewer block if running headless/SSH — the printed output above is the deliverable.)")
     with mujoco.viewer.launch_passive(model, data) as viewer:
         while viewer.is_running():
