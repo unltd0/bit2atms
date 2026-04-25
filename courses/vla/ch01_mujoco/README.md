@@ -70,7 +70,7 @@ You can verify this yourself:
 
 ```python
 import mujoco, os
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 model = mujoco.MjModel.from_xml_path(FRANKA_XML)
 data  = mujoco.MjData(model)
 print(f"Time before step: {data.time:.4f}s")
@@ -93,68 +93,14 @@ Use `mj_forward()` to recompute poses from the current joint angles without adva
 
 ```python
 mujoco.mj_forward(model, data)
-body_id = model.body("panda_hand").id
+body_id = model.body("hand").id
 pos = data.xpos[body_id]          # [x, y, z] world frame
 R   = data.xmat[body_id].reshape(3, 3)
 ```
 
 ### The code
 
-```python workspace/vla/ch01/read_robot_state.py
-"""Load the Franka Panda, read joint states and body poses in two configurations."""
-import numpy as np
-import mujoco
-import mujoco.viewer
-import os
-
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
-
-def print_robot_info(model: mujoco.MjModel) -> None:
-    print(f"Bodies: {model.nbody}  Joints: {model.njnt}  Actuators: {model.nu}")
-    print("\nJoint names and limits:")
-    for i in range(model.njnt):
-        name = model.joint(i).name
-        lo, hi = model.jnt_range[i]
-        print(f"  [{i}] {name:30s}  [{np.degrees(lo):.0f}°, {np.degrees(hi):.0f}°]")
-
-def read_body_poses(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    mujoco.mj_forward(model, data)
-    print("\nBody positions (world frame):")
-    for i in range(1, model.nbody):
-        print(f"  {model.body(i).name:30s}  {np.round(data.xpos[i], 3)}")
-
-def demo_two_configurations(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    ee_id = model.body("panda_hand").id
-
-    mujoco.mj_resetData(model, data)
-    # qpos[:7] = the 7 joint angles in radians, one per DOF (shoulder → wrist)
-    data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
-    mujoco.mj_forward(model, data)
-    print(f"\nNeutral pose  — EE: {np.round(data.xpos[ee_id], 3)}")
-
-    data.qpos[:7] = [0.785, -0.785, 0, -2.356, 0, 1.571, 0.785]
-    mujoco.mj_forward(model, data)
-    print(f"Rotated pose  — EE: {np.round(data.xpos[ee_id], 3)}")
-    print("\nSame arm, joint 0 rotated 45° → different EE position. That's FK.")
-
-if __name__ == "__main__":
-    if not os.path.exists(FRANKA_XML):
-        print("Troubleshooting: clone Menagerie first:")
-        print("  git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie")
-        raise SystemExit(1)
-
-    model = mujoco.MjModel.from_xml_path(FRANKA_XML)
-    data  = mujoco.MjData(model)
-    print_robot_info(model)
-    read_body_poses(model, data)
-    demo_two_configurations(model, data)
-
-    print("\nLaunching viewer — Ctrl+drag to move joints. Close to exit.")
-    print("(Skip the viewer block if running headless/SSH — the printed output above is the deliverable.)")
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-        while viewer.is_running():
-            mujoco.mj_step(model, data)
-            viewer.sync()
+```python courses/vla/ch01_mujoco/code/read_robot_state.py
 ```
 
 **What to observe:** The EE position changes between the two joint configurations —
@@ -207,51 +153,7 @@ axis; `w` encodes magnitude. Identity (no rotation) = `[1, 0, 0, 0]`. Use
 
 ### The code
 
-```python workspace/vla/ch01/camera_to_world.py
-"""
-Given a cup position in camera (wrist) frame, compute its world-frame position.
-The core transform computation used in every pick-and-place pipeline.
-"""
-import numpy as np
-import mujoco
-import os
-
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
-
-def make_T(pos: np.ndarray, mat_flat: np.ndarray) -> np.ndarray:
-    """Build a 4×4 homogeneous transform from MuJoCo xpos and xmat."""
-    T = np.eye(4)
-    T[:3, :3] = mat_flat.reshape(3, 3)
-    T[:3, 3]  = pos
-    return T
-
-def transform_point(T: np.ndarray, p: np.ndarray) -> np.ndarray:
-    return (T @ np.append(p, 1.0))[:3]
-
-def localize_cup(model: mujoco.MjModel, data: mujoco.MjData,
-                 cup_in_camera: np.ndarray) -> np.ndarray:
-    mujoco.mj_forward(model, data)
-    hand_id = model.body("panda_hand").id
-    T_world_camera = make_T(data.xpos[hand_id], data.xmat[hand_id])
-    return transform_point(T_world_camera, cup_in_camera)
-
-if __name__ == "__main__":
-    if not os.path.exists(FRANKA_XML):
-        print("Troubleshooting: clone Menagerie first.")
-        raise SystemExit(1)
-
-    model = mujoco.MjModel.from_xml_path(FRANKA_XML)
-    data  = mujoco.MjData(model)
-    cup_in_camera = np.array([0.05, -0.12, 0.31])
-
-    data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
-    print(f"Neutral pose  → cup in world: {np.round(localize_cup(model, data, cup_in_camera), 3)}")
-
-    data.qpos[:7] = [0.785, -0.785, 0, -2.356, 0, 1.571, 0.785]
-    print(f"Rotated pose  → cup in world: {np.round(localize_cup(model, data, cup_in_camera), 3)}")
-
-    print("\nSame cup in camera space. Different world positions.")
-    print("Try: set cup_in_camera = [0,0,0] → you get panda_hand's exact world position.")
+```python courses/vla/ch01_mujoco/code/camera_to_world.py
 ```
 
 ---
@@ -295,71 +197,7 @@ torque = kp × (target_angle − current_angle) − kd × current_velocity
 
 ### The code
 
-```python workspace/vla/ch01/pd_controller.py
-"""
-PD controller on a 2-DOF arm. Run 4 kp/kd combinations and plot trajectories.
-Shows how gain tuning changes stability.
-"""
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import mujoco
-
-ARM_XML = """
-<mujoco>
-  <option timestep="0.002"/>
-  <worldbody>
-    <body name="link1" pos="0 0 0">
-      <joint name="j1" type="hinge" axis="0 0 1" range="-3.14 3.14"/>
-      <geom type="capsule" size="0.04 0.2" pos="0 0 0.2"/>
-      <body name="link2" pos="0 0 0.4">
-        <joint name="j2" type="hinge" axis="0 1 0" range="-3.14 3.14"/>
-        <geom type="capsule" size="0.03 0.15" pos="0 0 0.15"/>
-      </body>
-    </body>
-  </worldbody>
-  <actuator>
-    <motor name="m1" joint="j1" ctrllimited="true" ctrlrange="-10 10"/>
-    <motor name="m2" joint="j2" ctrllimited="true" ctrlrange="-10 10"/>
-  </actuator>
-</mujoco>
-"""
-
-TARGET       = np.array([0.5, -0.3])
-SIM_DURATION = 3.0
-
-def run_pd(kp: float, kd: float) -> tuple[np.ndarray, np.ndarray]:
-    model = mujoco.MjModel.from_xml_string(ARM_XML)
-    data  = mujoco.MjData(model)
-    steps = int(SIM_DURATION / model.opt.timestep)
-    time  = np.zeros(steps)
-    q     = np.zeros((steps, 2))
-    for i in range(steps):
-        data.ctrl[:2] = kp * (TARGET - data.qpos[:2]) - kd * data.qvel[:2]
-        mujoco.mj_step(model, data)
-        time[i] = data.time
-        q[i]    = data.qpos[:2]
-    return time, q
-
-if __name__ == "__main__":
-    configs = [
-        (50,  1,  "kp=50  kd=1   underdamped"),
-        (50,  10, "kp=50  kd=10  well-tuned"),
-        (200, 1,  "kp=200 kd=1   oscillates"),
-        (200, 30, "kp=200 kd=30  well-tuned high stiffness"),
-    ]
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    fig.suptitle("PD Controller — joint 1 trajectory")
-    for ax, (kp, kd, label) in zip(axes.flat, configs):
-        time, q = run_pd(kp, kd)
-        ax.plot(time, np.degrees(q[:, 0]))
-        ax.axhline(np.degrees(TARGET[0]), color="r", linestyle="--", label="target")
-        ax.set_title(label); ax.set_xlabel("time (s)"); ax.set_ylabel("angle (deg)")
-        ax.legend()
-    plt.tight_layout()
-    out = os.path.join(os.path.dirname(__file__), "pd_gains.png")
-    plt.savefig(out)
-    print(f"Saved {out}")
+```python courses/vla/ch01_mujoco/code/pd_controller.py
 ```
 
 **What to observe:** Underdamped configs oscillate; well-tuned ones converge smoothly.
@@ -395,52 +233,7 @@ singularities, and multiple simultaneous tasks. [Read more: Pink docs](https://j
 
 ### The code
 
-```python workspace/vla/ch01/ik_solver.py
-"""
-Pink IK solver on the Franka Panda. Move the end-effector to any 3D target.
-"""
-import numpy as np
-import mujoco
-import mujoco.viewer
-import pink
-from pink.tasks import FrameTask
-import pinocchio as pin
-from robot_descriptions.loaders.pinocchio import load_robot_description
-import os, time as time_module
-
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
-
-if __name__ == "__main__":
-    if not os.path.exists(FRANKA_XML):
-        print("Troubleshooting: clone Menagerie first.")
-        raise SystemExit(1)
-
-    # Load into MuJoCo
-    mj_model = mujoco.MjModel.from_xml_path(FRANKA_XML)
-    mj_data  = mujoco.MjData(mj_model)
-    mj_data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
-    mujoco.mj_forward(mj_model, mj_data)
-
-    # Load into Pink/Pinocchio for IK
-    robot = load_robot_description("panda_description")
-    configuration = pink.Configuration(robot.model, robot.data, robot.q0)
-
-    # IK task: reach target position
-    ee_task = FrameTask("panda_hand", position_cost=1.0, orientation_cost=0.0)
-    target = pin.SE3.Identity()
-    target.translation = np.array([0.5, 0.1, 0.4])   # ← change this
-    ee_task.set_target(target)
-
-    dt = mj_model.opt.timestep
-
-    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
-        while viewer.is_running():
-            velocity = pink.solve_ik(configuration, [ee_task], dt, solver="quadprog")
-            configuration.integrate_inplace(velocity, dt)
-            mj_data.qpos[:7] = configuration.q[:7]   # Pinocchio q may include finger joints; take arm DOFs only
-            mujoco.mj_forward(mj_model, mj_data)
-            viewer.sync()
-            time_module.sleep(dt)
+```python courses/vla/ch01_mujoco/code/ik_solver.py
 ```
 
 **Experiment:** Change `target.translation` to different positions. Try `[0.8, 0.0, 0.3]`
