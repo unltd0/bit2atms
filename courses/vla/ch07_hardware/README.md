@@ -33,7 +33,7 @@ the demonstration. One kit is not enough to collect data. Order two before start
 
 **Install:**
 ```bash
-cd ~/lerobot
+cd workspace/ext/lerobot
 pip install -e ".[feetech]"
 ```
 
@@ -209,7 +209,7 @@ python lerobot/scripts/control_robot.py record \
 count successes over 20 trials.
 
 ```bash workspace/vla/ch07/train_real.sh
-cd ~/lerobot
+cd workspace/ext/lerobot
 python lerobot/scripts/train.py \
   --policy.type=act \
   --dataset.repo_id=local/real_pickplace \

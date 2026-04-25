@@ -29,6 +29,5 @@ logs/
 runs/
 .playwright-mcp/
 
-# Workspace: your personal exercise files are tracked by default.
-# If you want to keep your work private, uncomment the line below:
-# workspace/
+# External clones (mujoco_menagerie, lerobot, etc.) — not tracked
+workspace/ext/

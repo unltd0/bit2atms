@@ -23,7 +23,7 @@ and measure how many demos fine-tuning actually needs.
 
 **Install:** (inside the LeRobot repo)
 ```bash
-cd ~/lerobot
+cd workspace/ext/lerobot
 pip install -e ".[smolvla]"
 ```
 
@@ -210,7 +210,7 @@ robot, and environment. With 50 demos you're teaching the *what* and *where*, no
 basic *how* — the pretraining already handles that.
 
 ```bash workspace/vla/ch04/finetune_smolvla.sh
-cd ~/lerobot
+cd workspace/ext/lerobot
 # Fine-tuning 50 epochs on an A100 takes ~30–60 min depending on dataset size
 python lerobot/scripts/train.py \
   --policy.type=smolvla \

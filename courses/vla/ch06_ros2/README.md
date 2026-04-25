@@ -90,7 +90,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class JointStatePublisher(Node):
     def __init__(self):
@@ -135,7 +135,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class FKSubscriber(Node):
     def __init__(self):
@@ -219,7 +219,7 @@ import os
 # Import auto-generated service (after colcon build)
 # from vla_msgs.srv import IKSolve
 
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class IKServiceNode(Node):
     def __init__(self):
@@ -284,7 +284,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 SIM_HZ     = 500   # simulation steps per second
 PUB_HZ     = 100   # joint state publish rate
 
@@ -352,7 +352,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.expanduser("~/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "./workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class TFPublisher(Node):
     def __init__(self):

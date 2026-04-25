@@ -1542,16 +1542,9 @@ const LANG_META = {
   plaintext:  ['Text',       'lang-text'],
 };
 
-renderer.code = function(code, lang){
-  // Support "lang Title e.g." — first word is language, rest is display title
-  const parts = (lang||'').trim().split(/\s+/);
-  const key = parts[0].toLowerCase();
-  const title = parts.length > 1 ? parts.slice(1).join(' ') : null;
+function buildCodeBlock(code, key, displayLabel){
   const meta = LANG_META[key];
-  const displayLabel = title || (meta ? meta[0] : (key || 'Code'));
-  const langClass    = meta ? meta[1] : 'lang-default';
-
-  // Highlight: use explicit lang if hljs knows it, else auto-detect
+  const langClass = meta ? meta[1] : 'lang-default';
   let highlighted, detectedLang = key;
   if(key && hljs.getLanguage(key)){
     highlighted = hljs.highlight(code, {language: key}).value;
@@ -1562,7 +1555,6 @@ renderer.code = function(code, lang){
     highlighted = result.value;
     detectedLang = result.language || key;
   }
-
   return `<div class="code-block-wrap">
     <div class="code-header" onclick="toggleCode(this)">
       <div class="code-lang-wrap">
@@ -1576,6 +1568,41 @@ renderer.code = function(code, lang){
     </div>
     <div class="code-body"><pre><code class="hljs${detectedLang ? ' language-'+detectedLang : ''}">${highlighted}</code></pre></div>
   </div>`;
+}
+
+async function resolveCodeFilePlaceholders(container){
+  const placeholders = container.querySelectorAll('.code-file-placeholder');
+  await Promise.all([...placeholders].map(async el => {
+    const src = el.dataset.src;
+    const key = el.dataset.lang;
+    const label = el.dataset.label;
+    try {
+      const r = await fetch(resolveFileUrl(src));
+      const code = r.ok ? await r.text() : `# Could not load ${src}`;
+      el.outerHTML = buildCodeBlock(code, key, label);
+    } catch(e) {
+      el.outerHTML = buildCodeBlock(`# Could not load ${src}`, key, label);
+    }
+  }));
+}
+
+renderer.code = function(code, lang){
+  // Support "lang Title e.g." — first word is language, rest is display title
+  const parts = (lang||'').trim().split(/\s+/);
+  const key = parts[0].toLowerCase();
+  const title = parts.length > 1 ? parts.slice(1).join(' ') : null;
+  const meta = LANG_META[key];
+  const displayLabel = title || (meta ? meta[0] : (key || 'Code'));
+  const langClass    = meta ? meta[1] : 'lang-default';
+
+  // If title looks like a file path, emit a placeholder for async fetch
+  if(title && /\.\w+$/.test(title.split(/\s+/).pop())){
+    const filePath = title.trim();
+    const fileName = filePath.split('/').pop();
+    return `<div class="code-file-placeholder" data-src="${filePath}" data-lang="${key}" data-label="${fileName}"></div>`;
+  }
+
+  return buildCodeBlock(code, key, displayLabel);
 };
 
 marked.use({ renderer, gfm:true, breaks:false });
@@ -1742,6 +1769,9 @@ async function loadChapter(id){
     const md=await fetchMD(ch.file);
     const html=marked.parse(md);
     contentEl.innerHTML=html;
+
+    // Fetch and inject any file-referenced code blocks
+    await resolveCodeFilePlaceholders(contentEl);
 
     // Post-process: colorize h2s
     colorizeH2s(contentEl);
