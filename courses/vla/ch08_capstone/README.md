@@ -6,6 +6,10 @@
 
 ---
 
+**Working directory:** Create `workspace/vla/ch08/` for your capstone code and data.
+
+---
+
 ## What are we here for
 
 You've built up every component: sim, control, IK, RL, IL, VLA, sim-to-real, ROS 2,
@@ -32,6 +36,12 @@ Pick one capstone based on your hardware access and interests. Each is designed 
 cube", "move the blue bottle") from an unstructured scene.
 
 **Hardware:** SO-101 + RealSense D435 depth camera + GPU 8 GB+
+
+**Install (Capstone A):**
+```bash
+pip install pyrealsense2
+# Grounded SAM 2 — follow install at https://github.com/IDEA-Research/Grounded-SAM-2
+```
 
 ### Architecture
 

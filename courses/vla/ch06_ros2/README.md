@@ -22,7 +22,7 @@ sim with the same interface it'll use on hardware.
 
 **Install (Ubuntu 24.04):**
 ```bash
-sudo apt install ros-jazzy-desktop ros-jazzy-moveit
+sudo apt install ros-jazzy-desktop
 echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -41,6 +41,10 @@ docker run -it --rm \
 source /opt/ros/jazzy/setup.bash
 cd /workspace/vla/ch06
 ```
+
+**Working directory:** Create `workspace/vla/ch06/` for your files. Also clone Menagerie
+there: `git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie`
+from the repo root so the scripts can find the Franka XML.
 
 For RViz2 on macOS you'll also need [XQuartz](https://www.xquartz.org/) installed and running,
 with "Allow connections from network clients" enabled in XQuartz preferences.
@@ -90,7 +94,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class JointStatePublisher(Node):
     def __init__(self):
@@ -135,7 +139,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class FKSubscriber(Node):
     def __init__(self):
@@ -186,11 +190,13 @@ and returns joint angles.
 
 ### Custom service definition
 
-> **Note:** Using a custom `.srv` requires creating a ROS 2 package and running `colcon build`
-> to generate the Python bindings. The service creation line is commented out below —
+> **Note:** Using a custom `.srv` requires creating a full ROS 2 package (with `package.xml`
+> and `CMakeLists.txt`), running `colcon build`, and sourcing the install space before
+> Python can import the generated bindings. The service creation line is commented out below —
 > this project is a working template that needs a package scaffold to fully run.
 > See the [ROS 2 custom interfaces tutorial](https://docs.ros.org/en/jazzy/Tutorials/Beginner-Client-Libraries/Custom-ROS2-Interfaces.html)
-> for the setup steps. Projects A, C, and D do not require this.
+> for the setup steps. **If you just want to read the code and understand the pattern, skip
+> the colcon build — Projects A, C, and D do not require this.**
 
 First define the service interface:
 
@@ -219,7 +225,7 @@ import os
 # Import auto-generated service (after colcon build)
 # from vla_msgs.srv import IKSolve
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class IKServiceNode(Node):
     def __init__(self):
@@ -284,7 +290,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 SIM_HZ     = 500   # simulation steps per second
 PUB_HZ     = 100   # joint state publish rate
 
@@ -352,7 +358,7 @@ import mujoco
 import numpy as np
 import os
 
-FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = os.path.join(os.path.dirname(__file__), "../../ext/mujoco_menagerie/franka_emika_panda/scene.xml")
 
 class TFPublisher(Node):
     def __init__(self):

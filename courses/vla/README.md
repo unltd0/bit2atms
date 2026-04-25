@@ -19,14 +19,14 @@ python3 -m venv bit2atms-env
 source bit2atms-env/bin/activate   # macOS / Linux
 
 # Ch.1 — MuJoCo & Robot Fundamentals
-pip install mujoco numpy matplotlib scipy pink pin robot_descriptions quadprog
+pip install mujoco numpy matplotlib scipy pin-pink pin robot_descriptions quadprog
 git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
 
 # Ch.2 — Reinforcement Learning (add when you reach Ch.2)
 pip install stable-baselines3[extra] gymnasium gymnasium-robotics
 
 # Ch.3 — Imitation Learning (add when you reach Ch.3)
-# git clone https://github.com/huggingface/lerobot workspace/ext/lerobot && cd workspace/ext/lerobot && pip install -e ".[simulation]"
+# git clone https://github.com/huggingface/lerobot workspace/ext/lerobot && cd workspace/ext/lerobot && pip install -e ".[pusht]"
 ```
 
 Each chapter's README also lists its installs at the top.
@@ -54,7 +54,7 @@ Each chapter's README also lists its installs at the top.
 Load a real robot, read its state, localize objects with camera transforms, write a PD
 controller, and solve IK with Pink. These four skills are used in every subsequent chapter.
 
-**Install:** `pip install mujoco pink pin robot_descriptions quadprog`
+**Install:** `pip install mujoco pin-pink pin robot_descriptions quadprog`
 
 **Projects:** Load robot + read state · Camera-to-world transform · PD controller gains · IK solver
 
@@ -77,7 +77,7 @@ and failure analysis. This is the core skill for robot manipulation.
 **Install:**
 ```bash
 git clone https://github.com/huggingface/lerobot workspace/ext/lerobot && cd workspace/ext/lerobot
-pip install -e ".[simulation]"
+pip install -e ".[pusht]"
 ```
 
 **Projects:** Collect demos · Inspect dataset · Train ACT · Train Diffusion Policy · Data scaling · Failure analysis
@@ -177,7 +177,7 @@ Time estimates per chapter are in the Chapters table above. This schedule assume
 | `gymnasium` | RL/IL environment interface | `pip install gymnasium` |
 | `stable-baselines3` | SAC, PPO, TQC | `pip install stable-baselines3[extra]` |
 | `lerobot` | ACT, Diffusion Policy, SmolVLA | `git clone + pip install -e .` |
-| `pink` + `pin` | Differential IK | `pip install pink pin` |
+| `pin-pink` + `pin` | Differential IK | `pip install pin-pink pin` |
 
 ---
 

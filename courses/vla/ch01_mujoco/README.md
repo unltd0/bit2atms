@@ -18,9 +18,9 @@ objects using camera transforms, write a controller that holds a pose, and solve
 angles that put the hand wherever you want. These four skills appear in every subsequent
 chapter.
 
-**Install:**
+**Install:** (run from the repo root)
 ```bash
-pip install mujoco numpy matplotlib scipy pink pinocchio robot_descriptions quadprog
+pip install mujoco numpy matplotlib scipy pin-pink pinocchio robot_descriptions quadprog
 git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
 ```
 
@@ -159,9 +159,16 @@ axis; `w` encodes magnitude. Identity (no rotation) = `[1, 0, 0, 0]`. Use
 ```python courses/vla/ch01_mujoco/code/camera_to_world.py
 ```
 
-**What to observe:** The same cup (same camera-frame coordinates) maps to different world
-positions depending on where the arm is pointing. Set `cup_in_camera = [0, 0, 0]` — you
-get back exactly the hand's world position. That's the sanity check for any transform.
+**Run it:** `python courses/vla/ch01_mujoco/code/camera_to_world.py` from the repo root.
+
+**What to observe:** You'll see two lines like:
+```
+Cup world position (neutral pose):  [0.52  0.08  0.43]
+Cup world position (rotated pose):  [0.38  0.23  0.41]
+```
+Same cup, same camera offset, different world positions — because the arm is pointing
+somewhere different. Sanity check: set `cup_in_camera = [0, 0, 0]` in the script and rerun —
+the output should exactly match the hand's world position printed above it.
 
 ---
 
@@ -237,7 +244,7 @@ FK is just matrix multiplication along the chain. IK is harder:
 
 Pink uses the **Jacobian** — a matrix mapping joint velocities to end-effector velocity —
 to solve a constrained optimization problem at each step. It handles joint limits,
-singularities, and multiple simultaneous tasks. [Read more: Pink docs](https://jmirabel.github.io/pink/)
+singularities, and multiple simultaneous tasks. [Read more: Pink docs](https://stephane-caron.github.io/pink/)
 
 ### The code
 

@@ -22,12 +22,15 @@ This chapter focuses on two IL algorithms that currently dominate robot manipula
 You'll collect demonstrations, train both algorithms, compare them, and study how data
 quantity affects performance. These skills directly transfer to Chapter 7 (real hardware).
 
-**Install:**
+**Install:** (run from the repo root)
 ```bash
 git clone https://github.com/huggingface/lerobot workspace/ext/lerobot
 cd workspace/ext/lerobot
-pip install -e ".[simulation]"
+pip install -e ".[pusht]"
 ```
+
+**Working directory:** Create `workspace/vla/ch03/` for your files — copy each code block
+into a `.py` or `.sh` file there as you work through the projects.
 
 **Skip if you can answer:**
 1. What is distributional shift, and why does behavioral cloning fail because of it?
@@ -80,11 +83,13 @@ N_DEMOS    = 50
 REPO_ID    = "local/pusht_demos"
 SAVE_DIR   = "./data/pusht_demos"
 
-def oracle_action(obs: dict) -> np.ndarray:
-    """Scripted policy: move toward block, then push toward goal."""
-    agent_pos  = obs["agent_pos"]
-    block_pos  = obs["block_pos"][:2]
-    target_pos = obs["goal_pos"][:2] if "goal_pos" in obs else np.array([256, 256])
+def oracle_action(state: np.ndarray) -> np.ndarray:
+    """Scripted policy: move toward block, then push toward goal.
+    state = [agent_x, agent_y, block_x, block_y, block_angle] from env.unwrapped.
+    """
+    agent_pos  = state[:2]
+    block_pos  = state[2:4]
+    target_pos = np.array([256.0, 256.0])  # fixed goal center
 
     # Phase 1: approach block
     to_block = block_pos - agent_pos
@@ -96,6 +101,8 @@ def oracle_action(obs: dict) -> np.ndarray:
     return np.clip(to_goal * 0.03, -1, 1)
 
 def collect(n_demos: int, save_dir: str) -> None:
+    # pixels_agent_pos gives {"pixels": HxWx3, "agent_pos": [x,y]} for the dataset.
+    # Block position for the oracle comes from env.unwrapped body attributes.
     env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
 
     dataset = LeRobotDataset.create(
@@ -117,7 +124,10 @@ def collect(n_demos: int, save_dir: str) -> None:
         done   = False
         frames = []
         while not done:
-            action = oracle_action(obs)
+            # Build state vector for oracle from internal sim bodies (obs_type-independent)
+            u = env.unwrapped
+            state  = np.array([*u.agent.position, *u.block.position, u.block.angle % (2*np.pi)])
+            action = oracle_action(state)
             frames.append((obs, action))
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
@@ -185,13 +195,11 @@ def inspect(root: str) -> None:
     axes[1].set_title("Agent position coverage")
     axes[1].set_xlabel("x"); axes[1].set_ylabel("y")
 
-    # Episode lengths
-    ep_lengths = []
-    for ep_idx in range(dataset.num_episodes):
-        ep_data = dataset.episode_data_index
-        start = ep_data["from"][ep_idx].item()
-        end   = ep_data["to"][ep_idx].item()
-        ep_lengths.append(end - start)
+    # Episode lengths — group frames by episode_index column
+    ep_lengths = (
+        dataset.hf_dataset.to_pandas()
+        .groupby("episode_index").size().tolist()
+    )
     axes[2].hist(ep_lengths, bins=20)
     axes[2].set_title("Episode length distribution")
     axes[2].set_xlabel("steps")
@@ -497,6 +505,11 @@ for those categories typically improves success rate more than doubling the rand
 
 - **Treating all failures as equal:** 30% failure rate with 3 distinct failure modes is
   three separate problems. Fix the biggest one first.
+
+- **Image normalization in eval_policy.py:** The script divides images by 255.0 before
+  passing to `policy.select_action()`. This works at the Python level, but some LeRobot
+  policies expect pre-normalized images via a dataset transform — check your installed
+  version's policy inference docs if success rates look wrong.
 
 ---
 
