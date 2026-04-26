@@ -31,6 +31,18 @@ pip install stable-baselines3[extra] gymnasium gymnasium-robotics
 
 Each chapter's README also lists its installs at the top.
 
+## Workspace Setup
+
+Your working files go in `workspace/vla/chXX/`. Run this once to create the folder structure with empty placeholder files for every chapter:
+
+```bash
+bash scripts/reset_workspace.sh
+```
+
+If `workspace/vla/` already has files, the script backs them up to `workspace_old/<timestamp>.zip` before resetting. The backup directory is gitignored — it never gets committed.
+
+As you work through each chapter, copy the code from the reader into the corresponding file in your workspace. The reader shows the save path above each code block (e.g. `workspace/vla/ch01/read_robot_state.py`).
+
 ---
 
 ## Chapters

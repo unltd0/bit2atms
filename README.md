@@ -32,7 +32,26 @@ More courses coming. See [CONTRIBUTING.md](CONTRIBUTING.md) to propose one.
 3. Do exercises in your `workspace/` folder
 4. Commit your work (or keep it local — up to you)
 
-The `workspace/` folder is your personal scratchpad. It's tracked by git so you can commit progress if you want, or just leave it local.
+The `workspace/` folder is your personal scratchpad. It is **not tracked by git** by default (gitignored). To track your progress in your fork, remove the ignore rule:
+
+```bash
+# in workspace/.gitignore, delete the line: **
+# then:
+git add workspace/
+git commit -m "start tracking workspace"
+```
+
+## Workspace setup
+
+Run once after cloning to create the folder structure and empty placeholder files for every chapter:
+
+```bash
+bash scripts/reset_workspace.sh
+```
+
+If `workspace/vla/` already has files, the script backs them up to `workspace_old/<timestamp>.zip` before resetting. The backup directory is gitignored — it never gets committed.
+
+As you work through each chapter, copy code from the reader into the corresponding file in your workspace. The reader shows the save path above each code block (e.g. `workspace/vla/ch01/read_robot_state.py`).
 
 ## Repo layout
 

@@ -1216,6 +1216,15 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
   font-family: var(--font-ui);
 }
 .code-copy:hover { color: var(--text); border-color: var(--border2); background: var(--bg3); }
+.code-copy[data-wspath] {
+  font-family: var(--font-code);
+  font-size: 10px;
+  color: var(--text3);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .code-toggle {
   width: 24px; height: 24px;
   display: flex; align-items: center; justify-content: center;
@@ -1542,7 +1551,7 @@ const LANG_META = {
   plaintext:  ['Text',       'lang-text'],
 };
 
-function buildCodeBlock(code, key, displayLabel){
+function buildCodeBlock(code, key, displayLabel, wsPath){
   const meta = LANG_META[key];
   const langClass = meta ? meta[1] : 'lang-default';
   let highlighted, detectedLang = key;
@@ -1555,6 +1564,8 @@ function buildCodeBlock(code, key, displayLabel){
     highlighted = result.value;
     detectedLang = result.language || key;
   }
+  const pathAttr = wsPath ? `data-wspath="${wsPath}"` : '';
+  const pathBtn  = wsPath ? `<button class="code-copy" onclick="event.stopPropagation();copyPath(this)" ${pathAttr} title="Copy workspace path">${wsPath}</button>` : '';
   return `<div class="code-block-wrap">
     <div class="code-header" onclick="toggleCode(this)">
       <div class="code-lang-wrap">
@@ -1562,7 +1573,8 @@ function buildCodeBlock(code, key, displayLabel){
         <span class="code-lang">${displayLabel}</span>
       </div>
       <div class="code-header-right">
-        <button class="code-copy" onclick="event.stopPropagation();copyCode(this)">Copy</button>
+        ${pathBtn}
+        <button class="code-copy" onclick="event.stopPropagation();copyCode(this)">Copy code</button>
         <div class="code-toggle"><svg viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 1l4 4 4-4"/></svg></div>
       </div>
     </div>
@@ -1576,12 +1588,13 @@ async function resolveCodeFilePlaceholders(container){
     const src = el.dataset.src;
     const key = el.dataset.lang;
     const label = el.dataset.label;
+    const wsPath = el.dataset.wspath || '';
     try {
       const r = await fetch(resolveFileUrl(src));
       const code = r.ok ? await r.text() : `# Could not load ${src}`;
-      el.outerHTML = buildCodeBlock(code, key, label);
+      el.outerHTML = buildCodeBlock(code, key, label, wsPath);
     } catch(e) {
-      el.outerHTML = buildCodeBlock(`# Could not load ${src}`, key, label);
+      el.outerHTML = buildCodeBlock(`# Could not load ${src}`, key, label, wsPath);
     }
   }));
 }
@@ -1599,7 +1612,9 @@ renderer.code = function(code, lang){
   if(title && /\.\w+$/.test(title.split(/\s+/).pop())){
     const filePath = title.trim();
     const fileName = filePath.split('/').pop();
-    return `<div class="code-file-placeholder" data-src="${filePath}" data-lang="${key}" data-label="${fileName}"></div>`;
+    // Derive workspace path: courses/vla/chXX_foo/code/file.py → workspace/vla/chXX/file.py
+    const wsPath = filePath.replace(/^courses\/([^/]+)\/([^/]+?)(?:_[^/]+)?\/(?:code\/)?([^/]+)$/, 'workspace/$1/$2/$3');
+    return `<div class="code-file-placeholder" data-src="${filePath}" data-lang="${key}" data-label="${fileName}" data-wspath="${wsPath}"></div>`;
   }
 
   return buildCodeBlock(code, key, displayLabel);
@@ -1611,7 +1626,16 @@ function copyCode(btn){
   const code = btn.closest('.code-block-wrap').querySelector('code').innerText;
   navigator.clipboard.writeText(code).then(()=>{
     btn.textContent='Copied!';
-    setTimeout(()=>btn.textContent='Copy',1800);
+    setTimeout(()=>btn.textContent='Copy code',1800);
+  });
+}
+
+function copyPath(btn){
+  const path = btn.dataset.wspath;
+  navigator.clipboard.writeText(path).then(()=>{
+    const orig = btn.textContent;
+    btn.textContent='Copied!';
+    setTimeout(()=>btn.textContent=orig,1800);
   });
 }
 
