@@ -272,16 +272,21 @@ body {
 .tb-btn:hover { border-color: var(--border2); color: var(--text); background: var(--bg3); }
 .tb-btn svg { width: 13px; height: 13px; }
 
-/* Search gets a distinct pill style */
+/* Search and Appearance — icon only on all screens */
 #btn-search {
   background: var(--bg3);
   border-color: var(--border2);
   color: var(--text2);
-  padding-right: 16px;
-  min-width: 140px;
-  justify-content: space-between;
+  padding: 5px 10px;
+  min-width: unset;
+  font-size: 0;  /* hides text */
+  gap: 0;
 }
+#btn-search svg { width: 15px; height: 15px; }
 #btn-search:hover { border-color: var(--accent); color: var(--text); }
+
+#btn-appearance { font-size: 0; gap: 0; padding: 5px 10px; }
+#btn-appearance svg { width: 15px; height: 15px; }
 
 /* ─── Progress bars ──────────────────────────────────────────────── */
 /* Top: overall curriculum progress */
@@ -1264,6 +1269,17 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
 }
 #sidebar-backdrop.visible { display: block; }
 
+#btn-toc {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 8px 14px;
+  flex-shrink: 0;
+}
+#btn-toc svg { width: 18px; height: 18px; display: block; }
+
 @media (max-width: 768px) {
   :root {
     --sidebar-w: 0px;
@@ -1271,15 +1287,15 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
   }
 
   #btn-menu { display: flex; align-items: center; }
+  #btn-toc  { display: flex; align-items: center; }
 
   .logo { width: auto; border-right: none; padding: 0 10px; }
 
   #breadcrumb { padding: 0 8px; font-size: 11px; }
 
-  /* Hide text labels on topbar buttons, keep icons */
+  /* Icon-only topbar on mobile */
   .tb-btn { padding: 6px 8px; min-width: unset; }
-  #btn-search { min-width: unset; padding: 6px 8px; }
-  .tb-btn span, kbd, #btn-notes-tab, #btn-reset { display: none; }
+  #btn-notes-tab, #btn-reset { display: none; }
 
   #sidebar {
     width: 280px;
@@ -1289,11 +1305,26 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
   }
   #sidebar.open { transform: translateX(0); }
 
+  /* Right col becomes a drawer from the right */
+  #right-col {
+    display: flex;
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: 300px;
+    max-width: 85vw;
+    height: 100%;
+    transform: translateX(100%);
+    transition: transform 0.25s cubic-bezier(.4,0,.2,1);
+    z-index: 100;
+    background: var(--bg2);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  #right-col.open { transform: translateX(0); }
+
   #layout {
     grid-template-columns: 0 1fr 0;
   }
-
-  #right-col { display: none; }
 
   #content-wrap { padding: 28px 20px 80px; }
 
@@ -1313,6 +1344,9 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
     VLA Learning
   </div>
   <div id="breadcrumb"><span class="cur">Overview</span></div>
+  <button id="btn-toc" aria-label="Open table of contents">
+    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 4h14M2 9h9M2 14h11"/><circle cx="15" cy="9" r="2"/></svg>
+  </button>
   <div id="topbar-right">
     <button class="tb-btn" id="btn-search">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="4.5"/><path d="m10 10 3 3"/></svg>
@@ -2062,12 +2096,16 @@ document.getElementById('btn-notes-tab').addEventListener('click',()=>{
 // ── Mobile sidebar toggle ──────────────────────────────────────────────
 const sidebarEl   = document.getElementById('sidebar');
 const backdropEl  = document.getElementById('sidebar-backdrop');
-function openSidebar()  { sidebarEl.classList.add('open'); backdropEl.classList.add('visible'); }
-function closeSidebar() { sidebarEl.classList.remove('open'); backdropEl.classList.remove('visible'); }
+const rightColEl  = document.getElementById('right-col');
+
+function openSidebar()   { sidebarEl.classList.add('open');  backdropEl.classList.add('visible'); closeRightCol(); }
+function closeSidebar()  { sidebarEl.classList.remove('open'); if (!rightColEl.classList.contains('open')) backdropEl.classList.remove('visible'); }
+function openRightCol()  { rightColEl.classList.add('open'); backdropEl.classList.add('visible'); closeSidebar(); }
+function closeRightCol() { rightColEl.classList.remove('open'); if (!sidebarEl.classList.contains('open')) backdropEl.classList.remove('visible'); }
+
 document.getElementById('btn-menu').addEventListener('click', openSidebar);
-backdropEl.addEventListener('click', closeSidebar);
-// Close sidebar on chapter nav on mobile
-const origNav = typeof nav === 'function' ? nav : null;
+document.getElementById('btn-toc').addEventListener('click', openRightCol);
+backdropEl.addEventListener('click', () => { closeSidebar(); closeRightCol(); });
 
 // ── Notes ──────────────────────────────────────────────────────────────
 let noteTimer=null;
