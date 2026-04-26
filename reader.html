@@ -780,8 +780,21 @@ body {
   max-width: 100%;
   border-radius: 8px;
   border: 1px solid var(--border);
-  margin: 16px 0;
+  margin: 16px auto;
   display: block;
+}
+#content figure {
+  margin: 20px auto;
+  text-align: center;
+}
+#content figure img {
+  margin: 0 auto;
+}
+#content figcaption {
+  margin-top: 6px;
+  font-size: 0.85em;
+  color: var(--text2);
+  font-style: italic;
 }
 
 /* Video embed */
@@ -1904,6 +1917,24 @@ async function loadChapter(id){
       const src = img.getAttribute('src');
       if (src && !/^(https?:\/\/|\/|data:)/.test(src)) {
         img.src = resolveFileUrl(chDir + src);
+      }
+    });
+
+    // Wrap img + next sibling <p><em>caption</em></p> into <figure><figcaption>
+    contentEl.querySelectorAll('img').forEach(img => {
+      const p = img.closest('p');
+      if (!p) return;
+      const figure = document.createElement('figure');
+      const next = p.nextElementSibling;
+      p.replaceWith(figure);
+      figure.appendChild(img);
+      // Only treat next sibling as caption if it's a <p> containing only <em>
+      if (next && next.tagName === 'P' &&
+          next.childNodes.length === 1 && next.childNodes[0].tagName === 'EM') {
+        const cap = document.createElement('figcaption');
+        cap.innerHTML = next.childNodes[0].innerHTML;
+        figure.appendChild(cap);
+        next.remove();
       }
     });
 
