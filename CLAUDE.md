@@ -122,6 +122,19 @@ Example prompts:
 
 See [courses/vla/course_guideline_for_claude.md](courses/vla/course_guideline_for_claude.md) for the full guideline (audience, tone, what to include/exclude) — use it when reviewing or generating VLA course content.
 
+### Keeping the workspace scaffold in sync
+
+`scripts/reset_workspace.sh` creates empty placeholder files for every chapter. When chapter filenames change, **update the `CHAPTERS` array in that script to match**. The ch02 entry must list exactly the files referenced in the chapter:
+
+```bash
+"ch02 explore_env.py train_sac_her.py reward_ablation.py curriculum.py"
+```
+
+Usage:
+- `bash scripts/reset_workspace.sh` — backup existing files, then reset
+- `bash scripts/reset_workspace.sh --add-only` — only create missing files, touch nothing else
+- `FORCE=1 bash scripts/reset_workspace.sh` — reset without backup prompt
+
 
 
 - Each chapter is a single `README.md` — plain Markdown, no front matter
