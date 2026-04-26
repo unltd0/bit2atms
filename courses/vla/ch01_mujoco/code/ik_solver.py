@@ -33,8 +33,8 @@ if __name__ == "__main__":
     configuration = pink.Configuration(robot.model, robot.data, q0)
 
     # IK task: reach target position.
-    # "hand" is the Pinocchio frame name from panda_description — matches MuJoCo body name here.
-    ee_task = FrameTask("hand", position_cost=1.0, orientation_cost=0.0)
+    # "panda_hand" is the Pinocchio frame name from panda_description.
+    ee_task = FrameTask("panda_hand", position_cost=1.0, orientation_cost=0.0)
     target = pin.SE3.Identity()
     target.translation = np.array([0.5, 0.1, 0.4])   # ← change this
     ee_task.set_target(target)

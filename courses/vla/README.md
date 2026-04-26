@@ -19,7 +19,7 @@ python3 -m venv bit2atms-env
 source bit2atms-env/bin/activate   # macOS / Linux
 
 # Ch.1 — MuJoCo & Robot Fundamentals
-pip install mujoco numpy matplotlib scipy pin-pink pin robot_descriptions quadprog
+pip install mujoco numpy matplotlib scipy pin-pink pinocchio robot_descriptions quadprog
 git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
 
 # Ch.2 — Reinforcement Learning (add when you reach Ch.2)
@@ -66,7 +66,7 @@ As you work through each chapter, copy the code from the reader into the corresp
 Load a real robot, read its state, localize objects with camera transforms, write a PD
 controller, and solve IK with Pink. These four skills are used in every subsequent chapter.
 
-**Install:** `pip install mujoco pin-pink pin robot_descriptions quadprog`
+**Install:** `pip install mujoco pin-pink pinocchio robot_descriptions quadprog`
 
 **Projects:** Load robot + read state · Camera-to-world transform · PD controller gains · IK solver
 
@@ -189,7 +189,7 @@ Time estimates per chapter are in the Chapters table above. This schedule assume
 | `gymnasium` | RL/IL environment interface | `pip install gymnasium` |
 | `stable-baselines3` | SAC, PPO, TQC | `pip install stable-baselines3[extra]` |
 | `lerobot` | ACT, Diffusion Policy, SmolVLA | `git clone + pip install -e .` |
-| `pin-pink` + `pin` | Differential IK | `pip install pin-pink pin` |
+| `pin-pink` + `pinocchio` | Differential IK | `pip install pin-pink pinocchio` |
 
 ---
 

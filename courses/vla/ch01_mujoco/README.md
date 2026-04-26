@@ -119,7 +119,7 @@ axes (X, Y, Z). Every link in a robot has one. It answers: *where is this body?*
 > The hardware only speaks joint angles. Going the other direction — "I want the hand at
 > this position, what joint angles achieve it?" — is the **inverse kinematics (IK)** problem,
 > and it's non-trivial: one Cartesian target can map to multiple joint solutions, or none.
-> That's what Project D solves.
+> That's what Project C solves.
 
 MuJoCo gives you `data.xpos[body_id]` (the origin) and `data.xmat[body_id]` (a 3×3
 rotation matrix stored flat as 9 numbers — reshape to use it). These are computed by
@@ -271,17 +271,14 @@ p_cup_in_world    = T_camera_in_world @ p_cup_in_camera
 
 In this project the target is hardcoded in world space, so no transform is needed. You'll use this in Chapter 8 (Capstone A) when a real depth camera gives you the cup position in camera space.
 
-### Why two separate loads?
+### Why load the model twice?
 
-MuJoCo handles physics simulation (gravity, collisions, dynamics). Pink/Pinocchio handle
-inverse kinematics optimization (finding joint angles for a target pose). They're separate
-libraries with different APIs and data structures, so we load the robot into both.
+You need the robot description loaded into **both** MuJoCo and Pinocchio:
 
-Pink uses **Pinocchio** — a separate kinematics library — internally. So you load the
-robot twice: once into MuJoCo for physics and visualization, once into Pinocchio for IK.
-Pink computes new joint angles; you copy them into MuJoCo's `qpos` each step to keep the
-viewer in sync. Both models must describe the same robot — `panda_description` and the
-Menagerie Franka match on the 7 arm joints used here.
+- **MuJoCo** handles physics simulation — gravity, collisions, dynamics. You use it for visualization.
+- **Pinocchio** (used internally by Pink) handles inverse kinematics optimization — computing Jacobians, solving constrained optimization to find joint angles for a target pose.
+
+They're separate libraries with different APIs and data structures, so there's no way to do IK inside MuJoCo here. The workflow is: Pink/Pinocchio computes new joint angles → you copy them into MuJoCo's `qpos` each step → `mj_forward()` updates the viewer. Both models must describe the same robot — `panda_description` and the Menagerie Franka match on the 7 arm joints used here.
 
 ### Why IK needs a library
 
@@ -355,7 +352,7 @@ not simulating dynamics. You'd add `mj_step()` when you need contact forces or i
 - **IK diverging near singularities:** Add a `PostureTask` to keep the arm near a neutral
   configuration — this regularizes the IK and prevents runaway joint velocities.
 
-- **MuJoCo and Pinocchio models out of sync (Project D):** `panda_description` and
+- **MuJoCo and Pinocchio models out of sync (Project C):** `panda_description` and
   the Menagerie MJCF describe the same 7-DOF arm but may differ in finger joints or base
   frames. If the viewer shows wrong poses, print `configuration.q` length vs `mj_model.nq`
   and check the slice — you may need `[:7]` or a different offset.
