@@ -49,11 +49,11 @@ if __name__ == "__main__":
     configs = [
         (5,  2, "kp=5   kd=2   slow — kp too low"),
         (30, 1, "kp=30  kd=1   well-tuned — fast, smooth"),
-        (30, 5, "kp=30  kd=5   overshoot — kd too high"),
-        (80, 5, "kp=80  kd=5   aggressive — kp too high, big overshoot"),
+        (30, 5, "kp=30  kd=5   overshoot — kd overbrakes"),
+        (80, 5, "kp=80  kd=5   underdamped — kp too high, oscillates"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    fig.suptitle("PD Controller — joint j1  (target = 28.6°, dashed red)")
+    fig.suptitle("PD Controller — joint j1  (target = 28.6°)  |  gravity=off, no friction, motor actuators")
     for ax, (kp, kd, label) in zip(axes.flat, configs):
         timestamps, q = run_pd(model, kp, kd)
         ax.plot(timestamps, np.degrees(q[:, 0]))

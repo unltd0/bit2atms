@@ -224,10 +224,10 @@ Each panel shows joint j1 angle over time. The dashed red line is the target (28
 
 | Panel | What to look for |
 |---|---|
-| **slow (kp too low)** | Takes ~3 s to arrive — kp is too weak to accelerate the arm quickly |
-| **well-tuned** | Fast rise, settles at the target in ~0.3 s without bouncing — kp and kd are balanced |
-| **overshoot (kd too high)** | Shoots past to 58°, bounces back, eventually settles — kd is braking so hard it carries the arm past target |
-| **aggressive (kp too high)** | Spikes to −15° then overshoots to 29°, eventually settles — kp is so strong the first torque impulse overwhelms kd's braking |
+| **slow (kp too low)** | Arm crawls to target over ~3 s — kp is too weak to push the arm fast |
+| **well-tuned** | Reaches target in ~0.3 s, no bounce — kp pushes hard, kd brakes just enough to stop exactly at target |
+| **overshoot (kd overbrakes)** | Shoots past to 58°, bounces back and settles — kd is braking so early and hard it carries momentum past target before the arm reverses |
+| **underdamped (kp too high)** | Fast rise but dips to −15°, bounces through target several times — kp generates so much torque that kd=5 can't absorb the kinetic energy fast enough |
 
 The well-tuned case (top-right) is what you want on a real robot: fast, no oscillation, no overshoots that could hit objects.
 
