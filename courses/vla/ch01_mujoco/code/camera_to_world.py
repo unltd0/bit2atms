@@ -6,8 +6,7 @@ import numpy as np
 import mujoco
 import os
 
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-FRANKA_XML = os.path.join(_SCRIPT_DIR, "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = "workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml"
 
 def make_T(pos: np.ndarray, mat_flat: np.ndarray) -> np.ndarray:
     """Build a 4×4 homogeneous transform from MuJoCo xpos and xmat."""

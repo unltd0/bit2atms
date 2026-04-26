@@ -11,8 +11,7 @@ from robot_descriptions.loaders.pinocchio import load_robot_description
 import os
 import time as time_module
 
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-FRANKA_XML = os.path.join(_SCRIPT_DIR, "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+FRANKA_XML = "workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml"
 
 if __name__ == "__main__":
     if not os.path.exists(FRANKA_XML):
