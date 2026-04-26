@@ -1243,12 +1243,71 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
 .code-block-wrap.collapsed .code-body { max-height: 0; }
 .code-block-wrap.collapsed .code-header { border-bottom-color: transparent; }
 .code-block-wrap.collapsed { border-color: var(--border); }
+
+/* ─── Mobile responsive ──────────────────────────────────────────── */
+#btn-menu {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 8px 14px;
+  flex-shrink: 0;
+}
+#btn-menu svg { width: 18px; height: 18px; display: block; }
+
+#sidebar-backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 89;
+}
+#sidebar-backdrop.visible { display: block; }
+
+@media (max-width: 768px) {
+  :root {
+    --sidebar-w: 0px;
+    --right-w: 0px;
+  }
+
+  #btn-menu { display: flex; align-items: center; }
+
+  .logo { width: auto; border-right: none; padding: 0 10px; }
+
+  #breadcrumb { padding: 0 8px; font-size: 11px; }
+
+  /* Hide text labels on topbar buttons, keep icons */
+  .tb-btn { padding: 6px 8px; min-width: unset; }
+  #btn-search { min-width: unset; padding: 6px 8px; }
+  .tb-btn span, kbd, #btn-notes-tab, #btn-reset { display: none; }
+
+  #sidebar {
+    width: 280px;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(.4,0,.2,1);
+    z-index: 100;
+  }
+  #sidebar.open { transform: translateX(0); }
+
+  #layout {
+    grid-template-columns: 0 1fr 0;
+  }
+
+  #right-col { display: none; }
+
+  #content-wrap { padding: 28px 20px 80px; }
+
+  #read-progress { left: 0; right: 0; }
+}
 </style>
 </head>
 <body>
 
 <!-- Topbar -->
 <div id="topbar">
+  <button id="btn-menu" aria-label="Open menu">
+    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 4h14M2 9h14M2 14h14"/></svg>
+  </button>
   <div class="logo">
     <div class="logo-icon">⬡</div>
     VLA Learning
@@ -1320,6 +1379,7 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
 <div id="read-progress"><div id="read-progress-fill"></div></div>
 
 <!-- Sidebar -->
+<div id="sidebar-backdrop"></div>
 <div id="sidebar">
   <div class="sb-section">
     <div class="sb-section-title">Curriculum</div>
@@ -1708,7 +1768,7 @@ function renderSidebar(){
     }
     el.appendChild(badge);
     el.appendChild(wrap);
-    el.addEventListener('click',()=>nav(ch.id));
+    el.addEventListener('click',()=>{ nav(ch.id); closeSidebar(); });
     list.appendChild(el);
   });
 
@@ -1998,6 +2058,16 @@ document.getElementById('btn-notes-tab').addEventListener('click',()=>{
   document.getElementById('notes-pane').classList.add('active');
   document.getElementById('notes-textarea').focus();
 });
+
+// ── Mobile sidebar toggle ──────────────────────────────────────────────
+const sidebarEl   = document.getElementById('sidebar');
+const backdropEl  = document.getElementById('sidebar-backdrop');
+function openSidebar()  { sidebarEl.classList.add('open'); backdropEl.classList.add('visible'); }
+function closeSidebar() { sidebarEl.classList.remove('open'); backdropEl.classList.remove('visible'); }
+document.getElementById('btn-menu').addEventListener('click', openSidebar);
+backdropEl.addEventListener('click', closeSidebar);
+// Close sidebar on chapter nav on mobile
+const origNav = typeof nav === 'function' ? nav : null;
 
 // ── Notes ──────────────────────────────────────────────────────────────
 let noteTimer=null;
