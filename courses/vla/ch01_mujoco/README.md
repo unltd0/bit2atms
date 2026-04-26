@@ -52,9 +52,8 @@ git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujo
 | # | Project | What you build |
 |---|---------|---------------|
 | A | Load a Robot, Read Its State | Load Franka Panda, print joint states and body poses in two configurations |
-| B | Camera-to-World Transform | Localize a simulated cup from wrist-camera coordinates to world coordinates |
-| C | PD Controller | Hold a target joint pose; plot four kp/kd combinations |
-| D | IK Solver | Move the end-effector to any 3D target using Pink differential IK |
+| B | PD Controller | Hold a target joint pose; plot four kp/kd combinations |
+| C | IK Solver | Move the end-effector to any 3D target using Pink differential IK |
 
 ---
 
@@ -163,72 +162,7 @@ Only `qpos[0]` changed (base rotation, 0 → 45°). The EE swept 23 cm in the XY
 
 ---
 
-## Project B — Camera-to-World Transform
-
-**Problem:** A wrist-mounted camera sees a cup at a known position in **camera space** — coordinates relative to the camera lens. The controller needs the cup's position in **world space** — coordinates relative to the robot base — to plan a grasp.
-
-**Approach:** Read the wrist body's transform from MuJoCo (`xpos` + `xmat`) and apply
-it to the cup's camera-frame position. MuJoCo has already done the FK — you just use it.
-
-In a real pipeline the cup position in camera space would come from a depth camera or
-object detector. Here we hardcode it (`cup_in_camera = [0.05, -0.12, 0.31]`) to focus on
-the transform math without needing real hardware. The math is identical either way.
-
-### The 4×4 transform matrix
-
-The standard representation in robotics — used by MuJoCo, ROS, Pink, and most robotics textbooks — bundles position + orientation into a single 4×4 matrix called a **homogeneous transform**:
-
-```text 4×4 transform
-T_wrist_in_world =               ← where the wrist is and which way it faces, in world space
-  [[R00, R01, R02, tx],          ← rotation (3×3)  |  tx = x position of wrist
-   [R10, R11, R12, ty],                             |  ty = y position of wrist
-   [R20, R21, R22, tz],                             |  tz = z position of wrist
-   [0,   0,   0,   1 ]]          ← fixed bottom row, always exactly this
-```
-
-`T_wrist_in_world` is the transform matrix — it encodes where the wrist is and which way it faces. It is **not** the cup position. The cup position is a separate vector.
-
-The bottom row `[0, 0, 0, 1]` never changes — it's a bookkeeping row that makes the matrix algebra work out. It has no physical meaning on its own.
-
-To transform the cup position from camera space to world space:
-
-```text
-p_cup_in_camera = [px, py, pz, 1]   ← cup position in camera frame, with 1 appended
-p_cup_in_world  = T_wrist_in_world @ p_cup_in_camera
-```
-
-The appended `1` is the same bookkeeping trick as the bottom row — it lets the matrix multiply handle both rotation and translation in one step instead of two. The result is a 4-element vector; discard the last `1` to get `[x, y, z]`. That's what `transform_point()` does with `[:3]`.
-
-To chain two transforms (A→B→C): `T_AC = T_AB @ T_BC`
-
-### Quaternions (brief note)
-
-MuJoCo also stores orientation as a **quaternion** in `data.xquat`: `[w, x, y, z]`.
-A quaternion is a compact 4-number rotation representation. `[x, y, z]` is the rotation
-axis; `w` encodes magnitude. Identity (no rotation) = `[1, 0, 0, 0]`. Use
-`scipy.spatial.transform.Rotation` to convert — but watch the convention: MuJoCo is
-`[w, x, y, z]`, scipy and ROS 2 are `[x, y, z, w]`. You won't need this conversion until
-Chapter 6 (ROS 2), but keep it in mind — mixing conventions causes silent bugs.
-
-### The code
-
-```python courses/vla/ch01_mujoco/code/camera_to_world.py
-```
-
-**Run it:** `python courses/vla/ch01_mujoco/code/camera_to_world.py` from the repo root.
-
-**What to observe:** You'll see two lines like:
-```
-Cup world position (neutral pose):  [0.52  0.08  0.43]
-Cup world position (rotated pose):  [0.38  0.23  0.41]
-```
-Same cup, same camera offset, different world positions — because the arm is pointing
-somewhere different. Sanity check: set `cup_in_camera = [0, 0, 0]` in the script and rerun —
-the output should exactly match the hand's world position printed above it.
-
----
-
-## Project C — PD Controller: Tune the Gains
+## Project B — PD Controller: Tune the Gains
 
 **Problem:** You need the robot to hold a target joint configuration using `motor`
 actuators — which means you write the control loop yourself.
@@ -277,13 +211,41 @@ converge smoothly. Scale gains up ~4× for a heavier arm like the Franka Panda.
 
 ---
 
-## Project D — IK Solver: Reach Any Target
+## Project C — IK Solver: Reach Any Target
 
 **Problem:** Given a desired end-effector position in world space, find the joint angles
 that put the hand there — this is **inverse kinematics (IK)**.
 
 **Approach:** Use Pink, a differential IK library. At each timestep Pink solves for the
 joint velocity that moves the end-effector toward the target, then integrates it.
+
+### Background — coordinate transforms
+
+IK works in world space, but in a real pipeline the target comes from a camera in camera space. The standard tool for converting between frames is the **homogeneous transform** — used by MuJoCo, ROS, and Pink.
+
+```text 4×4 transform
+T_wrist_in_world =               ← where the wrist is and which way it faces, in world space
+  [[R00, R01, R02, tx],          ← rotation (3×3)  |  tx = x position of wrist
+   [R10, R11, R12, ty],                             |  ty = y position of wrist
+   [R20, R21, R22, tz],                             |  tz = z position of wrist
+   [0,   0,   0,   1 ]]          ← fixed bottom row, always exactly this
+```
+
+The bottom row never changes — bookkeeping that makes the matrix algebra work. To convert a cup position from camera space to world space:
+
+```text
+p_cup_in_camera = [px, py, pz, 1]   ← cup position in camera frame, with 1 appended
+p_cup_in_world  = T_wrist_in_world @ p_cup_in_camera
+```
+
+**Chaining** — if the camera is offset from the wrist (mounted on a bracket), multiply two transforms:
+
+```text
+T_camera_in_world = T_wrist_in_world @ T_camera_on_wrist
+p_cup_in_world    = T_camera_in_world @ p_cup_in_camera
+```
+
+In this project the target is hardcoded in world space, so no transform is needed. You'll use this in Chapter 8 (Capstone A) when a real depth camera gives you the cup position in camera space.
 
 ### Why two separate loads?
 
@@ -346,7 +308,7 @@ not simulating dynamics. You'd add `mj_step()` when you need contact forces or i
    **Answer:** A 3×3 rotation matrix stored row-major as a flat array. Call `.reshape(3, 3)`.
    Each row is one of the body's local axes expressed in world coordinates.
 
-5. In Project D you set `orientation_cost=0.0`. What does that mean for the IK solution?
+5. In Project C you set `orientation_cost=0.0`. What does that mean for the IK solution?
    **Answer:** Pink ignores orientation — it only tries to match the position. The arm
    will reach the target but may arrive at any orientation. Set `orientation_cost > 0`
    and provide a full `SE3` target to also constrain how the hand faces.
