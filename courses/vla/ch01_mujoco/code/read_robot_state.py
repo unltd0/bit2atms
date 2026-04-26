@@ -4,8 +4,8 @@ import mujoco
 import mujoco.viewer
 import os
 
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-FRANKA_XML = os.path.join(_SCRIPT_DIR, "../../../../workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml")
+# Resolve from cwd (repo root) — run this script from the repo root regardless of where you saved it.
+FRANKA_XML = "workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml"
 
 def print_robot_info(model: mujoco.MjModel) -> None:
     print(f"Bodies: {model.nbody}  Joints: {model.njnt}  Actuators: {model.nu}")
@@ -40,8 +40,9 @@ def demo_two_configurations(model: mujoco.MjModel, data: mujoco.MjData) -> None:
 
 if __name__ == "__main__":
     if not os.path.exists(FRANKA_XML):
-        print("Troubleshooting: clone Menagerie first:")
+        print("Could not find Menagerie. Run from the repo root and clone it first:")
         print("  git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie")
+        print("Then run:  python courses/vla/ch01_mujoco/code/read_robot_state.py")
         raise SystemExit(1)
 
     model = mujoco.MjModel.from_xml_path(FRANKA_XML)
