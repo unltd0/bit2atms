@@ -18,9 +18,13 @@ better for manipulation), but understanding it is essential. Reward shaping and 
 techniques you'll reuse even when the primary algorithm is IL. And RL gives you intuition
 for what "exploration" means, which matters when your IL policy fails.
 
-This chapter uses Stable Baselines 3 and the `gymnasium-robotics` FetchReach environment —
-a standard robotic reach task with sparse rewards. You'll explore it, train on it, ablate
-reward designs, and implement curriculum learning.
+This chapter uses **Stable Baselines 3** (a library of ready-to-use RL algorithms — you
+call `SAC(...)` and it handles all the math) and the `gymnasium-robotics` FetchReach
+environment — a simulated robot arm whose only job is to move its hand to a target point.
+
+You'll first explore what the environment gives you, then train a reaching policy, then
+compare how different reward designs affect learning speed, and finally implement curriculum
+learning (starting with easy goals, graduating to hard ones).
 
 **Install:**
 ```bash
@@ -34,8 +38,7 @@ work through the projects.
 **Skip if you can answer:**
 1. What does `env.step(action)` return? What does each element mean?
 2. What is the difference between sparse and dense rewards? When does each work?
-3. What problem does HER solve, and how does it solve it?
-4. Your SAC policy doesn't improve after 100k steps. What do you check first?
+3. Your SAC policy doesn't improve after 100k steps. What do you check first?
 
 ---
 
@@ -68,7 +71,7 @@ obs, reward, terminated, truncated, info = env.step(action)  # take an action
 
 - **observation:** what the agent sees (joint positions, goal position, etc.)
 - **action:** what the agent does (joint velocities or torques)
-- **reward:** scalar feedback — positive when doing well, zero or negative otherwise
+- **reward:** scalar feedback — a number telling the agent how that step went (higher is better)
 - **terminated:** episode ended (goal reached or robot fell)
 - **truncated:** episode hit the time limit
 
@@ -218,17 +221,22 @@ steps. SAC without HER may never learn meaningful behavior. This gap is HER's co
 
 ## Project C — Reward Design Ablation
 
-**Problem:** You want to understand how reward shaping affects learning speed and final
-performance — a skill critical for any custom robot task.
+**Problem:** You want to understand how reward design affects learning speed — a skill
+critical for any custom robot task.
 
-**Approach:** Train the same SAC agent on three reward variants and compare.
+**Approach:** Build a minimal 2D version of the reach task (easier to reason about than
+FetchReach) and train SAC on three reward designs side-by-side.
 
-### Dense vs. sparse rewards
+### Two ways to give feedback
 
-- **Sparse:** reward = 0 if goal reached, -1 otherwise. Clean, unbiased — but hard to learn.
-- **Dense:** reward = −distance to goal. Always informative — but can teach the wrong behavior
-  if the shaping conflicts with the true objective.
-- **HER:** sparse reward + trajectory relabeling. Best of both: clean objective, dense signal.
+- **Sparse reward:** the agent gets 0 when it reaches the goal, -1 every other step.
+  Clean signal — but if random actions almost never reach the goal, the agent rarely
+  sees the 0 and has nothing to learn from.
+- **Dense reward:** the agent gets −(distance to goal) every step. Always informative —
+  the agent always knows if it's getting closer. Can occasionally teach the wrong behavior
+  if the proxy metric (distance) doesn't perfectly match the real objective.
+- **HER:** uses the sparse reward but relabels failed trajectories (see Project B).
+  Best of both: clean objective, dense effective signal.
 
 ```python workspace/vla/ch02/reward_ablation.py
 """Compare sparse, dense, and HER rewards on a 2D reach task."""
@@ -321,8 +329,9 @@ different mechanisms. HER is usually the practical choice for manipulation.
 **Problem:** Even with HER, very long-horizon or high-precision tasks are hard to learn
 from scratch. Curriculum learning starts easy and increases difficulty as the agent succeeds.
 
-**Approach:** Implement success-gated curriculum on the 2D reach task — start with targets
-close to the agent, expand the range only when success rate crosses a threshold.
+**Approach:** Continue with the 2D reach task from Project C and add a curriculum: start
+with targets close to the agent, expand the goal range only when success rate crosses a
+threshold.
 
 ```python workspace/vla/ch02/curriculum.py
 """Success-gated curriculum: expand goal range as success rate improves."""
