@@ -101,8 +101,10 @@ import numpy as np
 import gymnasium as gym
 import gymnasium_robotics
 
-# gymnasium-robotics ships its envs separately from gymnasium.
-# This line registers them so gym.make("FetchReach-v4") works.
+# gymnasium-robotics is a separate package that contains pre-built robot environments
+# (FetchReach, FetchPush, FetchPick, Ant, HalfCheetah, and more).
+# This line registers all of them with gymnasium so gym.make("FetchReach-v4") works.
+# See the full list: https://robotics.farama.org/
 gym.register_envs(gymnasium_robotics)
 
 def explore(env_id: str = "FetchReach-v4", n_episodes: int = 5) -> None:
