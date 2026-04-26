@@ -10,13 +10,14 @@
 
 You have a robot that can move. Now you want it to *learn* to reach a target without you
 telling it exactly how. That's reinforcement learning: the agent tries things, gets rewards
-when it does well, and gradually learns a **policy** — a function that maps observations
-to actions.
+when it does well, and gradually learns a **policy** — a function that maps what it sees
+to what it should do.
 
 RL is not always the right tool (Chapter 3 covers imitation learning, which is often
-better for manipulation), but understanding it is essential. Reward shaping and HER are
-techniques you'll reuse even when the primary algorithm is IL. And RL gives you intuition
-for what "exploration" means, which matters when your IL policy fails.
+better for manipulation), but understanding it is essential. Reward shaping and HER (both
+explained below) are techniques you'll reuse even when the primary algorithm is imitation
+learning. And RL gives you intuition for what "exploration" means, which matters when your
+policy fails.
 
 This chapter uses **Stable Baselines 3** (a library of ready-to-use RL algorithms — you
 call `SAC(...)` and it handles all the math) and the `gymnasium-robotics` FetchReach
@@ -44,7 +45,7 @@ there as you work through the projects.
 
 | # | Project | What you build |
 |---|---------|---------------|
-| A | Train SAC with HER | Train a reaching policy; compare with and without HER |
+| A | Train SAC with HER | Train a reaching policy and see it succeed |
 | B | Reward Design Ablation | Measure how sparse vs. dense vs. HER rewards affect learning speed |
 | C | Curriculum Learning | Stage training by distance; gate stages on success rate |
 
@@ -60,10 +61,9 @@ there as you work through the projects.
 
 The catch: it only gives reward when the gripper gets within 5 cm of the target — and **with truly random actions, that almost never happens**. The agent wanders forever without ever seeing a success.
 
-**Approach:** Train SAC (Soft Actor-Critic) with Hindsight Experience Replay (HER), which
-turns failed attempts into useful training signal. Then train without HER and compare.
+**Approach:** Train SAC+HER on FetchReach. After training, the agent should reach the target >90% of the time.
 
-### The Gym contract
+### How the environment works
 
 FetchReach-v4 is a pre-built robot environment from [gymnasium-robotics](https://robotics.farama.org/). MuJoCo simulates the physics (same as Chapter 1), gymnasium-robotics defines the Fetch robot model and reward, and **Gymnasium** provides the standard RL contract every library speaks:
 
@@ -72,38 +72,26 @@ obs, info = env.reset()                                       # start episode
 obs, reward, terminated, truncated, info = env.step(action)  # take one step
 ```
 
-- **obs** — `dict` with 3 keys: `observation` (10 robot state values), `desired_goal` (target x,y,z), `achieved_goal` (gripper x,y,z)
+- **obs** — a snapshot of the environment: where the gripper is, where the target is, joint states. A `dict` with 3 keys: `observation` (10 robot state values), `desired_goal` (target x,y,z), `achieved_goal` (current gripper x,y,z). Called an *observation* rather than *state* because on a real robot you can't sense everything directly (e.g. internal joint torques).
 - **action** — 4 floats in [-1, 1]: gripper velocity in x, y, z + open/close (open/close unused in reach)
-- **reward** — `0.0` if within 5 cm of target, `-1.0` otherwise — this is a *sparse* reward: the agent gets no signal about whether it's getting closer or farther, just pass/fail
+- **reward** — `0.0` if within 5 cm of target, `-1.0` otherwise. This is *sparse*: no signal about whether the gripper is getting closer or farther, just pass/fail.
 - **terminated** — `True` when goal reached
 - **truncated** — `True` when 50-step limit hit
 
-**obs** is a snapshot of the environment at that moment — where the gripper is, where the target is, joint states. It's called an *observation* rather than *state* because the agent may not see everything (a real robot can't directly sense its own internal torques, for example).
-
-The goal is to learn a **policy** — a function that maps what the robot sees to what it should do: `action = policy(obs)`. RL trains this by running many episodes and nudging the policy towards actions that led to more reward:
-
-```python
-action = policy(obs)                   # predict: what should I do given what I see?
-obs, reward, done, _, _ = env.step(action)  # execute: apply action, get new obs + reward
-model.learn(...)                       # improve: adjust policy to favour higher-reward actions
-```
-
-SAC and HER handle the `model.learn()` step — you don't implement it manually.
+The goal is to learn a **policy**: `action = policy(obs)`. RL trains this by running episodes, collecting (obs, action, reward) tuples, and nudging the policy towards actions that led to more reward.
 
 ### SAC and HER
 
 **SAC** (Soft Actor-Critic) is the go-to algorithm for continuous robot control — the policy outputs continuous numbers (e.g. move gripper 0.3 cm in x), not discrete choices (left/right/up), and SAC is built for that. It's stable, sample-efficient, and works out of the box with Stable Baselines 3. SAC has useful internals (replay buffer, entropy regularization, actor-critic architecture) that won't matter for this course — [read more here](https://spinningup.openai.com/en/latest/algorithms/sac.html) if curious.
 
-**HER** (Hindsight Experience Replay) solves the sparse reward problem. Even when the agent
-fails to reach the goal, it *did* reach *somewhere*. HER relabels those failed trajectories
-as if that somewhere *was* the goal — suddenly you have useful learning signal from every
-episode, not just the rare successes.
-[Read more: HER paper](https://arxiv.org/abs/1707.01495)
+**HER** (Hindsight Experience Replay) solves the sparse reward problem. Even when the agent fails to reach the goal, it *did* reach *somewhere*. HER relabels those failed trajectories as if that somewhere *was* the goal — suddenly you have useful learning signal from every episode, not just the rare successes. [Read more: HER paper](https://arxiv.org/abs/1707.01495)
 
 ### The code
 
+Train SAC+HER on FetchReach for 200k steps. `EvalCallback` prints success rate every 5k steps so you can watch it improve — expect it to climb from ~0% to >90%. Models are saved to `./models/sac_her/`.
+
 ```python workspace/vla/ch02/train_sac_her.py
-"""Train SAC with and without HER on FetchReach-v4. Compare learning curves."""
+"""Train SAC+HER on FetchReach-v4 and report success rate."""
 import numpy as np
 from stable_baselines3 import SAC, HerReplayBuffer
 from stable_baselines3.common.callbacks import EvalCallback
@@ -118,75 +106,61 @@ ENV_ID      = "FetchReach-v4"
 def make_env() -> gym.Env:
     return gym.make(ENV_ID)
 
-def train(use_her: bool, save_path: str) -> list[float]:
+def train(save_path: str) -> None:
     env      = make_env()
-    eval_env = make_env()
+    eval_env = make_env()  # separate env so evaluation doesn't interfere with training state
 
+    # EvalCallback runs the current policy every eval_freq steps on eval_env,
+    # prints mean success rate, and saves the best model seen so far.
     eval_cb = EvalCallback(
         eval_env,
         best_model_save_path=save_path,
-        eval_freq=5000,
-        n_eval_episodes=20,
-        verbose=0,
+        eval_freq=5_000,       # print progress every 5000 steps
+        n_eval_episodes=20,    # average over 20 episodes for a stable success rate
+        verbose=1,             # prints success rate so training doesn't feel stuck
     )
 
-    if use_her:
-        model = SAC(
-            "MultiInputPolicy", env,           # MultiInputPolicy handles dict observations
-            replay_buffer_class=HerReplayBuffer,
-            replay_buffer_kwargs={
-                "n_sampled_goal": 4,           # relabel each transition with 4 fake goals
-                "goal_selection_strategy": "future",  # pick goals from later in same episode
-            },
-            verbose=0,
-        )
-    else:
-        model = SAC("MultiInputPolicy", env, verbose=0)
+    model = SAC(
+        "MultiInputPolicy", env,  # MultiInputPolicy handles dict observations (obs + goals)
+        replay_buffer_class=HerReplayBuffer,
+        replay_buffer_kwargs={
+            "n_sampled_goal": 4,                    # relabel each transition with 4 fake goals
+            "goal_selection_strategy": "future",    # pick relabel goals from later in the episode
+        },
+        verbose=0,
+    )
 
     model.learn(total_timesteps=TOTAL_STEPS, callback=eval_cb)
     model.save(f"{save_path}/final_model")
     env.close()
     eval_env.close()
-
-    # evaluations_results: (n_evals, n_eval_episodes) — take mean per eval checkpoint
-    if hasattr(eval_cb, "evaluations_results"):
-        return [float(np.mean(r)) for r in eval_cb.evaluations_results]
-    return []
+    print(f"\nTraining done. Best model saved to {save_path}/best_model")
 
 if __name__ == "__main__":
-    # Each run is 200k steps — expect ~5 min on GPU, ~20–40 min on CPU
-    print("Training SAC + HER...")
-    train(use_her=True,  save_path="./models/sac_her")
-    print("Training SAC (no HER)...")
-    train(use_her=False, save_path="./models/sac_no_her")
-    print("Done. Inspect results:")
-    print("  tensorboard --logdir ./models")
+    # Expect ~5 min on GPU, ~20–40 min on CPU
+    # Watch success_mean in the logs — it should climb from ~0% to >90%
+    train(save_path="./models/sac_her")
 ```
 
 **No GPU?** Reduce `TOTAL_STEPS = 50_000` and expect lower final success rate.
 For a free GPU: open [Google Colab](https://colab.research.google.com), set runtime to GPU,
 and paste the script there.
 
-**What to observe:** SAC+HER typically reaches >90% success on FetchReach within 50k steps.
-SAC without HER may never learn. That gap is entirely HER's contribution.
+**What to observe:** Success rate starts near 0% and climbs to >90% within 50k steps. If it plateaus below 50%, check that `gym.register_envs(gymnasium_robotics)` is called before `gym.make()`.
 
 ---
 
 ## Project B — Reward Design Ablation
 
-**Problem:** You want to understand how reward design affects learning speed — a skill
-critical for any custom robot task.
+**Problem:** FetchReach's reward is sparse — pass/fail only. But there are other ways to design rewards, and the choice dramatically affects how fast (or whether) an agent learns. Understanding this is essential before you design rewards for any custom robot task.
 
-**Approach:** Build a minimal 2D version of the reach task (easier to reason about than
-FetchReach) and train SAC on three reward designs side-by-side.
+**Approach:** Build a minimal 2D version of the reach task — simpler and faster to run than FetchReach, so the comparison is quick. Train SAC on three reward designs and compare success rates:
 
-### Two ways to give feedback
+- **Sparse:** `0` when goal reached, `-1` every other step. Clean signal — but the agent rarely stumbles on success, so it rarely learns.
+- **Dense:** `−distance` every step. Always informative — the agent always knows if it's getting closer. Can teach the wrong behaviour if distance isn't a perfect proxy for the real objective.
+- **Sparse + HER:** relabels failed trajectories as successes for different goals. Best of both: clean objective, dense effective signal.
 
-- **Sparse reward:** `0` when goal reached, `-1` every other step. Clean signal — but the
-  agent rarely stumbles on success, so it rarely learns.
-- **Dense reward:** `−distance` every step. Always informative — the agent always knows
-  if it's getting closer. Can teach the wrong behavior if distance isn't a perfect proxy.
-- **HER:** sparse reward + relabeling. Best of both: clean objective, dense effective signal.
+The script trains all three and prints final success rates side by side.
 
 ```python workspace/vla/ch02/reward_ablation.py
 """Compare sparse, dense, and HER rewards on a 2D reach task."""
@@ -196,11 +170,15 @@ from gymnasium import spaces
 from stable_baselines3 import SAC, HerReplayBuffer
 
 class Reach2D(gym.Env):
-    """Minimal 2D reach: agent moves a point to a random goal."""
+    """
+    Minimal 2D reach: agent moves a 2D point to a random goal.
+    Simpler than FetchReach — same reward structure, runs in seconds.
+    """
 
     def __init__(self, reward_type: str = "sparse"):
         super().__init__()
         self.reward_type = reward_type
+        # HER requires a dict observation space with these exact keys
         self.observation_space = spaces.Dict({
             "observation":   spaces.Box(-1, 1, (2,), np.float32),
             "desired_goal":  spaces.Box(-1, 1, (2,), np.float32),
@@ -229,6 +207,7 @@ class Reach2D(gym.Env):
                 "achieved_goal": self.pos.copy()}
 
     def compute_reward(self, achieved, desired, info):
+        # HER calls this internally to recompute rewards for relabelled goals
         dist = np.linalg.norm(achieved - desired, axis=-1)
         if self.reward_type == "dense":
             return -dist
@@ -244,6 +223,7 @@ def run(reward_type: str, use_her: bool, steps: int = 50_000) -> float:
     model = SAC("MultiInputPolicy", env, verbose=0, **kwargs)
     model.learn(steps)
 
+    # Evaluate: run 100 episodes with the trained policy, count successes
     successes = 0
     for _ in range(100):
         obs, _ = env.reset()
@@ -256,28 +236,28 @@ def run(reward_type: str, use_her: bool, steps: int = 50_000) -> float:
     return successes / 100
 
 if __name__ == "__main__":
+    print("Running reward ablation — takes a few minutes...")
     results = {
         "sparse":     run("sparse", use_her=False),
         "dense":      run("dense",  use_her=False),
         "sparse+HER": run("sparse", use_her=True),
     }
+    print("\nResults:")
     for name, sr in results.items():
-        print(f"{name:15s}  success rate: {sr:.0%}")
+        print(f"  {name:15s}  success rate: {sr:.0%}")
 ```
 
-**What to observe:** Dense and HER both outperform plain sparse, but via different
-mechanisms. HER is usually the practical choice for manipulation.
+**What to observe:** Dense and HER both outperform plain sparse. HER wins because it keeps the reward clean (sparse) while solving the learning signal problem — which is why it's the default for manipulation.
 
 ---
 
 ## Project C — Curriculum Learning
 
-**Problem:** Even with HER, high-precision or long-horizon tasks are hard to learn from
-scratch. With random starting positions and hard goals, early exploration almost never
-succeeds — no gradient signal, no learning.
+**Problem:** Even SAC+HER can struggle when goals are too hard from the start. If the target is always far away and random exploration almost never gets close, there's still no learning signal early on.
 
-**Approach:** Start with goals close to the agent. Expand the goal range only when success
-rate crosses a threshold. The agent builds skill incrementally instead of drowning in failure.
+**Approach:** Start with goals very close to the agent (easy). Expand the goal range automatically once success rate crosses 80%. The agent builds skill incrementally instead of drowning in failure from step one.
+
+The script prints `[curriculum] goal range → X.XX` each time difficulty increases — you'll see it step up as the agent improves.
 
 ```python workspace/vla/ch02/curriculum.py
 """Success-gated curriculum: expand goal range as success rate improves."""
@@ -288,7 +268,7 @@ from stable_baselines3 import SAC, HerReplayBuffer
 from stable_baselines3.common.callbacks import BaseCallback
 
 class CurriculumReach(gym.Env):
-    """2D reach with adjustable goal range."""
+    """2D reach with adjustable goal range — same as Reach2D but difficulty is dynamic."""
 
     def __init__(self):
         super().__init__()
@@ -314,6 +294,7 @@ class CurriculumReach(gym.Env):
         self.pos = np.clip(self.pos + action, -1, 1)
         dist     = float(np.linalg.norm(self.pos - self.goal))
         success  = dist < 0.05
+        # track last 200 steps to compute a rolling success rate
         self.recent_successes.append(success)
         if len(self.recent_successes) > 200:
             self.recent_successes.pop(0)
@@ -334,7 +315,7 @@ class CurriculumReach(gym.Env):
         return sum(self.recent_successes) / len(self.recent_successes)
 
 class CurriculumCallback(BaseCallback):
-    """Expand goal range by 1.5x whenever success rate exceeds 80%."""
+    """Called by SB3 after every training step. Expands goal range when agent is ready."""
 
     def __init__(self, env: CurriculumReach, max_range: float = 0.8):
         super().__init__()
@@ -345,7 +326,7 @@ class CurriculumCallback(BaseCallback):
         if self.env.success_rate() > 0.8 and self.env.goal_range < self.max_range:
             self.env.goal_range = min(self.env.goal_range * 1.5, self.max_range)
             print(f"  [curriculum] goal range → {self.env.goal_range:.2f}")
-        return True
+        return True  # return False to stop training early
 
 if __name__ == "__main__":
     env   = CurriculumReach()
@@ -359,8 +340,7 @@ if __name__ == "__main__":
     print(f"\nFinal goal range: {env.goal_range:.2f}")
 ```
 
-**What to observe:** Goal range expands as the agent improves. Without curriculum, the same
-agent on the full range typically converges much slower or not at all.
+**What to observe:** Goal range expands in steps as success rate crosses 80%. Without curriculum, the same agent on full range typically converges much slower or not at all.
 
 ---
 
@@ -412,3 +392,4 @@ agent on the full range typically converges much slower or not at all.
 2. [HER paper](https://arxiv.org/abs/1707.01495) — read abstract + Section 3 (the algorithm)
 3. [Gymnasium docs](https://gymnasium.farama.org/) — environment interface and wrappers
 4. [gymnasium-robotics](https://robotics.farama.org/) — FetchReach and other robot envs
+5. [SAC — Spinning Up](https://spinningup.openai.com/en/latest/algorithms/sac.html) — SAC internals if you want to go deeper
