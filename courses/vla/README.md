@@ -49,7 +49,7 @@ As you work through each chapter, copy the code from the reader into the corresp
 
 | # | Chapter | Time |
 |---|---------|------|
-| 1 | [MuJoCo & Robot Fundamentals](ch01_mujoco/README.md) | 2–3 days |
+| 1 | [MuJoCo & Robot Fundamentals](ch01_mujoco/README.md) | 1–2 days |
 | 2 | [Reinforcement Learning](ch02_rl/README.md) | 3–5 days |
 | 3 | [Imitation Learning](ch03_il/README.md) | 5–7 days |
 | 4 | [Vision-Language-Action Models](ch04_vla/README.md) | 4–5 days |
@@ -68,7 +68,7 @@ controller, and solve IK with Pink. These four skills are used in every subseque
 
 **Install:** `pip install mujoco pin-pink pinocchio robot_descriptions quadprog`
 
-**Projects:** Load robot + read state · Camera-to-world transform · PD controller gains · IK solver
+**Projects:** Load robot + read state · PD controller gains · IK solver
 
 ---
 
@@ -146,7 +146,7 @@ Time estimates per chapter are in the Chapters table above. This schedule assume
 
 | Week | Chapters | Approx. time |
 |------|---------|-------------|
-| 1 | Ch.1–2 (sim, RL) | 5–8 days |
+| 1 | Ch.1–2 (sim, RL) | 4–7 days |
 | 2 | Ch.3 (imitation learning) | 5–7 days |
 | 3 | Ch.4–5 (VLA, sim-to-real) | 8–10 days |
 | 4 | Ch.6–7 (ROS 2, hardware setup) | 4–6 days |

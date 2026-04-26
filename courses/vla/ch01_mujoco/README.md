@@ -1,6 +1,6 @@
 # Chapter 1 — MuJoCo & Robot Fundamentals
 
-**Time:** 2–3 days
+**Time:** 1–2 days
 **Hardware:** Laptop only
 **Prerequisites:** Python, NumPy basics
 
@@ -13,7 +13,7 @@ by DeepMind, Google, and most serious robot learning labs. Before you can train 
 collect demonstrations, or run IK, you need to be fluent with it: how to load a robot, step
 the physics, read where things are, make joints move, and plan end-effector paths.
 
-This chapter covers all of that in four projects. You'll load a real robot model, localize
+This chapter covers all of that in three projects. You'll load a real robot model, localize
 objects using camera transforms, write a controller that holds a pose, and solve for joint
 angles that put the hand wherever you want. These four skills appear in every subsequent
 chapter.
