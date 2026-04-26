@@ -165,8 +165,7 @@ Only `qpos[0]` changed (base rotation, 0 → 45°). The EE swept 23 cm in the XY
 
 ## Project B — Camera-to-World Transform
 
-**Problem:** A wrist-mounted camera sees a cup at a known position in camera space.
-The controller needs the cup's position in *world* space to plan a grasp.
+**Problem:** A wrist-mounted camera sees a cup at a known position in **camera space** — coordinates relative to the camera lens. The controller needs the cup's position in **world space** — coordinates relative to the robot base — to plan a grasp.
 
 **Approach:** Read the wrist body's transform from MuJoCo (`xpos` + `xmat`) and apply
 it to the cup's camera-frame position. MuJoCo has already done the FK — you just use it.
@@ -177,20 +176,28 @@ the transform math without needing real hardware. The math is identical either w
 
 ### The 4×4 transform matrix
 
-Papers and libraries bundle position + orientation into a single 4×4 matrix:
+The standard representation in robotics — used by MuJoCo, ROS, Pink, and most robotics textbooks — bundles position + orientation into a single 4×4 matrix called a **homogeneous transform**:
 
 ```text 4×4 transform
-T = [[R00, R01, R02, tx],   ← rotation (3×3)  |  tx = x position
-     [R10, R11, R12, ty],                      |  ty = y position
-     [R20, R21, R22, tz],                      |  tz = z position
-     [0,   0,   0,   1 ]]   ← always this row (math convention for chaining)
+T_wrist_in_world =               ← where the wrist is and which way it faces, in world space
+  [[R00, R01, R02, tx],          ← rotation (3×3)  |  tx = x position of wrist
+   [R10, R11, R12, ty],                             |  ty = y position of wrist
+   [R20, R21, R22, tz],                             |  tz = z position of wrist
+   [0,   0,   0,   1 ]]          ← fixed bottom row, always exactly this
 ```
 
-To convert a point from one frame to another: `p_world = T @ [px, py, pz, 1]`.
-Think of it as "apply the arm's rotation then shift by its position" — the matrix bundles
-both operations into one multiplication. The appended `1` is a math convention that makes the matrix multiply handle both rotation
-and translation in one step. The result's last element is always 1 — discard it to get back
-to `[x, y, z]`. That's what `transform_point()` does with `[:3]`.
+`T_wrist_in_world` is the transform matrix — it encodes where the wrist is and which way it faces. It is **not** the cup position. The cup position is a separate vector.
+
+The bottom row `[0, 0, 0, 1]` never changes — it's a bookkeeping row that makes the matrix algebra work out. It has no physical meaning on its own.
+
+To transform the cup position from camera space to world space:
+
+```text
+p_cup_in_camera = [px, py, pz, 1]   ← cup position in camera frame, with 1 appended
+p_cup_in_world  = T_wrist_in_world @ p_cup_in_camera
+```
+
+The appended `1` is the same bookkeeping trick as the bottom row — it lets the matrix multiply handle both rotation and translation in one step instead of two. The result is a 4-element vector; discard the last `1` to get `[x, y, z]`. That's what `transform_point()` does with `[:3]`.
 
 To chain two transforms (A→B→C): `T_AC = T_AB @ T_BC`
 
