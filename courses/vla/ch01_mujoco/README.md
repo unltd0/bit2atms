@@ -67,7 +67,13 @@ MuJoCo splits everything into two objects:
 - **`MjData`** — the live state: joint positions, velocities, body poses, contact forces. Updated every call to `mj_step()`.
 
 > **Quick note on two key functions:**
-> - `mj_forward(model, data)` — recomputes derived quantities (body positions, rotation matrices) from current joint angles **without advancing time**. Use this when you just want to query poses.
+> - `mj_forward(model, data)` — recomputes derived quantities (body positions, rotation matrices) from whatever joint angles are currently in `data.qpos`, **without advancing time**. Use it to query poses after you set `qpos` manually. Calling it twice with the same `data` is safe and harmless — it just recomputes the same values.
+>   ```python
+>   data.qpos[0] = 1.0   # set joint 0 to 1 rad
+>   data.qpos[1] = -0.5  # set joint 1 to -0.5 rad
+>   mujoco.mj_forward(model, data)           # now data.xpos is up-to-date
+>   pos = data.xpos[model.body("hand").id]   # read the new end-effector position
+>   ```
 > - `mj_step(model, data)` — advances physics by one timestep (integrates dynamics, applies gravity, handles collisions). Use this for simulation loops.
 
 `mj_step(model, data)` advances physics by one timestep (default 2 ms): reads `data.ctrl`, computes forces, writes results back to `data`.
@@ -102,14 +108,17 @@ MuJoCo gives you `data.xpos[body_id]` (the origin) and `data.xmat[body_id]` (a 3
 rotation matrix stored flat as 9 numbers — reshape to use it). These are computed by
 **forward kinematics** — chaining all the joint transforms from base to tip.
 
-Use `mj_forward()` to recompute poses from the current joint angles without advancing time:
+Use `mj_forward()` to recompute poses after setting joint angles:
 
 ```python
-mujoco.mj_forward(model, data)
+data.qpos[0] = 1.5   # shoulder joint to 1.5 rad
+mujoco.mj_forward(model, data)     # update all body poses
 body_id = model.body("hand").id
-pos = data.xpos[body_id]          # [x, y, z] world frame
+pos = data.xpos[body_id]           # [x, y, z] world frame
 R   = data.xmat[body_id].reshape(3, 3)
 ```
+
+`data.qpos` holds one value per joint in the model. You can set all joints at once with `data.qpos[:] = my_array`. After calling `mj_forward()`, `data.xpos` and `data.xmat` reflect the new configuration.
 
 ### The code
 
