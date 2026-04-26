@@ -192,9 +192,9 @@ The principle transfers directly to any motor-actuated hardware.
 An **actuator** is what makes a joint move — the motor attached to it. In MuJoCo you
 declare it in XML and command it via `data.ctrl`. Three types:
 
-- **`motor`** — applies raw torque. You stabilize the joint yourself.
-- **`position`** — built-in PD servo. Set a target angle; MuJoCo drives there.
-- **`velocity`** — set a target joint velocity.
+- **`motor`** — applies raw torque. You stabilize the joint yourself. Closest to real hardware.
+- **`position`** — set a target angle; MuJoCo drives there automatically. (Sim convenience only — real motors don't work this way. Useful for prototyping when you don't care about torque realism.)
+- **`velocity`** — set a target joint velocity. (Useful for wheels or conveyor belts; rarely used for robot arms.)
 
 For this project you use `motor` so you implement the full control loop.
 
