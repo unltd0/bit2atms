@@ -18,9 +18,14 @@ objects using camera transforms, write a controller that holds a pose, and solve
 angles that put the hand wherever you want. These four skills appear in every subsequent
 chapter.
 
-> **End-effector (EE)** — the tip of the robot arm: the hand, gripper, or tool that
-> actually touches objects. Everything upstream (shoulder, elbow, wrist joints) exists
+> **End-effector (EE)** — the physical tip of the robot arm: the hand, gripper, or tool
+> that actually touches objects. Everything upstream (shoulder, elbow, wrist joints) exists
 > only to position and orient this tip.
+>
+> In code, "end-effector" usually refers to the **pose** of that tip — its position
+> `[x, y, z]` plus orientation in world space. When someone says "move the end-effector
+> to `[0.5, 0, 0.4]`" they mean: find joint angles that put the tip body at those
+> coordinates.
 
 **Install:** (run from the repo root)
 ```bash
