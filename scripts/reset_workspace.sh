@@ -24,7 +24,7 @@ OLD_DIR="$REPO_ROOT/workspace_old"
 # Format: "chXX file1.py file2.sh ..."
 CHAPTERS=(
   "ch01 read_robot_state.py ik_solver.py pd_controller.py"
-  "ch02 train_sac_her.py reward_ablation.py curriculum.py"
+  "ch02 train_sac_her.py visualise.py reward_ablation.py curriculum.py"
   "ch03 collect_demos.py eval_policy.py"
   "ch04 smolvla_finetune.py eval_smolvla.py"
   "ch05 physics_dr.py visual_dr.py eval_transfer.py"
