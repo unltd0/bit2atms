@@ -5,6 +5,7 @@ Open-source, follow-along courses on Physical AI: robot manipulation, sim-to-rea
 ## Ground rules
 
 - **Never `git commit` or `git push` without explicit user permission.** Make all file changes, then stop and ask before committing or pushing.
+- **Before every single commit — no exceptions — explicitly show the user what will be committed and ask for confirmation.** Do not batch multiple commits without re-confirming each one. "Push" is also a separate confirmation from "commit".
 
 ---
 
