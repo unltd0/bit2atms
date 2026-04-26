@@ -134,12 +134,12 @@ def train(save_path: str) -> None:
     model.save(f"{save_path}/final_model")
     env.close()
     eval_env.close()
-    print(f"\nTraining done. Best model saved to {save_path}/best_model")
+    print(f"\nTraining done. Best model saved to {save_path}/")
 
 if __name__ == "__main__":
     # Expect ~5 min on GPU, ~20–40 min on CPU
     # Watch success_mean in the logs — it should climb from ~0% to >90%
-    train(save_path="./models/sac_her")
+    train(save_path="workspace/vla/ch02/models/sac_her")
 ```
 
 **No GPU?** Reduce `TOTAL_STEPS = 50_000` and expect lower final success rate.
@@ -147,6 +147,40 @@ For a free GPU: open [Google Colab](https://colab.research.google.com), set runt
 and paste the script there.
 
 **What to observe:** Success rate starts near 0% and climbs to >90% within 50k steps. If it plateaus below 50%, check that `gym.register_envs(gymnasium_robotics)` is called before `gym.make()`.
+
+### Visualise the trained policy
+
+Once training is done, load the saved model and watch it run in MuJoCo. `render_mode="human"` opens a live window showing the robot arm moving.
+
+```python workspace/vla/ch02/visualise.py
+"""Load the trained SAC+HER model and watch it run in MuJoCo."""
+import gymnasium as gym
+import gymnasium_robotics
+from stable_baselines3 import SAC
+
+gym.register_envs(gymnasium_robotics)
+
+MODEL_PATH = "workspace/vla/ch02/models/sac_her/best_model"
+N_EPISODES = 5
+
+env = gym.make("FetchReach-v4", render_mode="human")
+model = SAC.load(MODEL_PATH, env=env)
+
+for ep in range(N_EPISODES):
+    obs, _ = env.reset()
+    total_reward = 0.0
+    for _ in range(50):
+        action, _ = model.predict(obs, deterministic=True)
+        obs, reward, terminated, truncated, _ = env.step(action)
+        total_reward += reward
+        if terminated or truncated:
+            break
+    print(f"Episode {ep+1}: total reward = {total_reward:.1f}")
+
+env.close()
+```
+
+You should see the Fetch arm moving its gripper to the target marker. If the policy trained well, it reaches it most of the time.
 
 ---
 
