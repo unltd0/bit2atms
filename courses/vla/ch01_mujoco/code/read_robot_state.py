@@ -52,7 +52,14 @@ if __name__ == "__main__":
 
     print("\nLaunching viewer. Double-click a body to select it, use right-panel sliders to move joints.")
     print("(Skip the viewer block if running headless/SSH — the printed output above is the deliverable.)")
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-        while viewer.is_running():
-            mujoco.mj_step(model, data)  # no ctrl set — arm falls under gravity; that's expected
-            viewer.sync()
+    # macOS requires mjpython instead of python for the viewer.
+    # If you see a RuntimeError here, re-run with: mjpython workspace/vla/read_robot_state.py
+    try:
+        with mujoco.viewer.launch_passive(model, data) as viewer:
+            while viewer.is_running():
+                mujoco.mj_step(model, data)  # no ctrl set — arm falls under gravity; that's expected
+                viewer.sync()
+    except RuntimeError as e:
+        print(f"\nViewer unavailable: {e}")
+        print("On macOS, re-run with:  mjpython workspace/vla/read_robot_state.py")
+        print("The FK output above is the actual deliverable — viewer is optional.")

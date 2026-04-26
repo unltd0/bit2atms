@@ -156,6 +156,8 @@ signal and falls under gravity — that's expected. To explore poses: double-cli
 to select it, then use the joint sliders in the right UI panel. Ctrl+drag on a selected
 body applies an external force perturbation (not joint control).
 
+**macOS viewer error?** MuJoCo's passive viewer requires `mjpython` on macOS. If you see a `RuntimeError` about `launch_passive`, re-run with `mjpython` instead of `python`. The script will also print a clear message telling you this. The FK output that printed before the error is the actual deliverable — viewer is optional.
+
 **Headless / no display?** Comment out the `with mujoco.viewer...` block at the bottom
 of the script. The EE and body position printouts from `demo_two_configurations` are the
 actual deliverable.
