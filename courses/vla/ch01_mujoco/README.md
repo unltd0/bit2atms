@@ -164,11 +164,18 @@ Only `qpos[0]` changed (base rotation, 0 → 45°). The EE swept 23 cm in the XY
 
 ## Project B — PD Controller: Tune the Gains
 
-**Problem:** You need the robot to hold a **target joint configuration** — a specific set of joint angles, like "shoulder at 30°, elbow at -45°" — and stay there despite gravity pulling it down. To do this you need a **control loop**: code that runs repeatedly, checks how far each joint is from its target, and applies a corrective torque to push it back. With `motor` actuators MuJoCo gives you raw torque control and nothing else — you write that loop yourself.
+**Problem:** You need the robot to hold a **target joint configuration** — a specific set of joint angles, like "shoulder at 30°, elbow at -45°" — and stay there despite gravity pulling it down.
 
-**Approach:** Build a minimal 2-DOF (degrees of freedom = independently controllable joints)
-arm with motor actuators, implement a PD controller, run it with four gain combinations,
-and plot the trajectories.
+You might wonder: why not just set `data.qpos` to the target angles every timestep and call it done?
+
+- **Set `qpos` directly** — only useful when you want to inspect a pose (like in Project A). You're telling MuJoCo "pretend the robot is in this configuration" so you can read back body positions. No physics runs, no gravity, no time advances.
+- **Send torques via `data.ctrl`** — what you do when physics matter. The simulator (and real hardware) only understands "apply this much force to this motor." Gravity, inertia, and contact all push back; your controller has to fight them every timestep.
+
+Forcing `qpos` every timestep would make the arm teleport to the target — bypassing gravity and inertia entirely, which is useless for understanding how a real robot behaves.
+
+The correct approach is a **control loop**: code that runs every timestep, measures how far each joint is from its target, and applies a corrective torque to push it back. With `motor` actuators MuJoCo gives you raw torque control and nothing else — you write that loop yourself.
+
+**Approach:** Build a simple 2-joint arm, write a PD controller (the math that computes how much torque to apply each timestep), run it with four different tunings of the two gain numbers (`kp` and `kd`), and plot how each joint angle changes over time — so you can see which tuning converges cleanly and which oscillates.
 
 We use a custom 2-DOF arm here, not the Franka. The Franka Menagerie model uses
 `position` actuators (built-in PD servo — MuJoCo does the control for you). To write and
