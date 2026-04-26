@@ -160,6 +160,10 @@ Only `qpos[0]` changed (base rotation, 0 → 45°). The EE swept 23 cm in the XY
 
 **macOS viewer error?** Re-run with `mjpython` instead of `python`. The terminal output above is the actual deliverable — viewer is optional.
 
+![FK before and after](assets/fk_configs.png)
+
+Left: neutral pose (Config 1). Right: base joint rotated 45° (Config 2). The arm sweeps in the XY plane — Z stays the same because a base rotation doesn't change height.
+
 ---
 
 ## Project B — PD Controller: Tune the Gains
@@ -306,6 +310,10 @@ not simulating dynamics. You'd add `mj_step()` when you need contact forces or i
 
 **Experiment:** Change `target.translation` to different positions. Try `[0.8, 0.0, 0.3]`
 (near workspace edge) and watch how the arm reaches — or stops when it can't.
+
+![IK before and after](assets/ik_result.png)
+
+Left: neutral pose (initial configuration). Right: IK solver moved the end-effector to `[0.5, 0.1, 0.4]` — the arm reconfigured all seven joints to reach the target position.
 
 ---
 
