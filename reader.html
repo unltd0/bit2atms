@@ -1799,6 +1799,17 @@ async function loadChapter(id){
     // Scroll spy
     setupScrollSpy();
 
+    // Intercept heading anchor-link clicks (#) to update URL in chId/anchor format
+    contentEl.querySelectorAll('.anchor-link').forEach(a=>{
+      a.addEventListener('click', e=>{
+        e.preventDefault();
+        const slug = a.getAttribute('href').slice(1);
+        history.pushState({chId:state.cur,anchor:slug},'',`#${state.cur}/${slug}`);
+        const el = document.getElementById(slug);
+        if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+      });
+    });
+
   } catch(err){
     contentEl.innerHTML=`
       <div style="padding:40px 0">
@@ -1911,7 +1922,11 @@ function buildToc(el){
     a.className=`toc-item toc-${h.tagName.toLowerCase()}`;
     a.textContent=h.textContent.replace('#','').trim();
     a.href='#'+h.id;
-    a.addEventListener('click',e=>{ e.preventDefault(); h.scrollIntoView({behavior:'smooth',block:'start'}); });
+    a.addEventListener('click',e=>{
+      e.preventDefault();
+      h.scrollIntoView({behavior:'smooth',block:'start'});
+      history.pushState({chId:state.cur,anchor:h.id},'',`#${state.cur}/${h.id}`);
+    });
     toc.appendChild(a);
   });
 }
