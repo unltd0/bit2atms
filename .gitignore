@@ -28,7 +28,7 @@ env/
 logs/
 runs/
 .playwright-mcp/
-pd_gains.png
+/pd_gains.png
 
 # External clones (mujoco_menagerie, lerobot, etc.) — not tracked
 workspace/ext/

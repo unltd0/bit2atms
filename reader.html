@@ -1800,6 +1800,15 @@ async function loadChapter(id){
     const html=marked.parse(md);
     contentEl.innerHTML=html;
 
+    // Rewrite relative img src to be relative to the chapter's directory
+    const chDir = ch.file.replace(/\/[^/]+$/, '/');
+    contentEl.querySelectorAll('img').forEach(img => {
+      const src = img.getAttribute('src');
+      if (src && !/^(https?:\/\/|\/|data:)/.test(src)) {
+        img.src = resolveFileUrl(chDir + src);
+      }
+    });
+
     // Fetch and inject any file-referenced code blocks
     await resolveCodeFilePlaceholders(contentEl);
 

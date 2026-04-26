@@ -216,9 +216,22 @@ torque = kp × (target_angle − current_angle) − kd × current_velocity
 ```python courses/vla/ch01_mujoco/code/pd_controller.py
 ```
 
-**What to observe:** The script saves `pd_gains.png` in your working directory. Open it
-to see the four trajectories side by side — underdamped configs oscillate, well-tuned ones
-converge smoothly. Scale gains up ~4× for a heavier arm like the Franka Panda.
+**What to observe:** The script saves `pd_gains.png` in your working directory. Here is what the four panels should look like:
+
+![PD gain comparison](assets/pd_gains.png)
+
+Each panel shows joint j1 angle over time. The dashed red line is the target (28.6°). All four cases eventually reach the target — what differs is **how they get there**.
+
+| Panel | What to look for |
+|---|---|
+| **slow (kp too low)** | Takes ~3 s to arrive — kp is too weak to accelerate the arm quickly |
+| **well-tuned** | Fast rise, settles at the target in ~0.3 s without bouncing — kp and kd are balanced |
+| **overshoot (kd too high)** | Shoots past to 58°, bounces back, eventually settles — kd is braking so hard it carries the arm past target |
+| **aggressive (kp too high)** | Spikes to −15° then overshoots to 29°, eventually settles — kp is so strong the first torque impulse overwhelms kd's braking |
+
+The well-tuned case (top-right) is what you want on a real robot: fast, no oscillation, no overshoots that could hit objects.
+
+> **Why gravity=0 here?** With gravity on, the arm settles *below* the target — not because the controller gives up, but because of how proportional control works. The only torque the controller produces is `kp × error`. At equilibrium, that torque is exactly balancing gravity — which means there must be a nonzero error left to generate it. Less error → less push → can't fully overcome gravity. Increasing kp reduces the gap but never closes it completely. This is called **steady-state error** and it's a fundamental limitation of pure PD control. Real robots add a **feedforward gravity compensation term** — a separate torque estimate based on the arm's current pose — to cancel gravity before the PD loop even runs, so the PD only has to handle small deviations. For this exercise we zero gravity to keep the focus on gain tuning, not compensation.
 
 ---
 

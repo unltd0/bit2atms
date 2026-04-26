@@ -9,7 +9,8 @@ import mujoco
 # Create the arm XML inline
 ARM_XML = """<?xml version="1.0"?>
 <mujoco>
-  <option timestep="0.002"/>
+  <compiler angle="radian"/>
+  <option timestep="0.002" gravity="0 0 0"/>
   <worldbody>
     <body name="link1" pos="0 0 0">
       <joint name="j1" type="hinge" axis="0 0 1" range="-3.14 3.14"/>
@@ -21,15 +22,15 @@ ARM_XML = """<?xml version="1.0"?>
     </body>
   </worldbody>
   <actuator>
-    <motor name="m1" joint="j1" ctrllimited="true" ctrlrange="-10 10"/>
-    <motor name="m2" joint="j2" ctrllimited="true" ctrlrange="-10 10"/>
+    <motor name="m1" joint="j1" ctrllimited="true" ctrlrange="-100 100"/>
+    <motor name="m2" joint="j2" ctrllimited="true" ctrlrange="-100 100"/>
   </actuator>
 </mujoco>
 """
 
 # Module-level constants shared across all runs
 TARGET_QPOS  = np.array([0.5, -0.3])  # target joint angles in radians [j1, j2]
-SIM_DURATION = 3.0                     # seconds
+SIM_DURATION = 10.0                    # seconds
 
 def run_pd(model: mujoco.MjModel, kp: float, kd: float) -> tuple[np.ndarray, np.ndarray]:
     data       = mujoco.MjData(model)
@@ -46,13 +47,13 @@ def run_pd(model: mujoco.MjModel, kp: float, kd: float) -> tuple[np.ndarray, np.
 if __name__ == "__main__":
     model = mujoco.MjModel.from_xml_string(ARM_XML)
     configs = [
-        (50,  1,  "kp=50  kd=1   underdamped"),
-        (50,  10, "kp=50  kd=10  well-tuned"),
-        (200, 1,  "kp=200 kd=1   oscillates"),
-        (200, 30, "kp=200 kd=30  well-tuned high stiffness"),
+        (5,  2, "kp=5   kd=2   slow — kp too low"),
+        (30, 1, "kp=30  kd=1   well-tuned — fast, smooth"),
+        (30, 5, "kp=30  kd=5   overshoot — kd too high"),
+        (80, 5, "kp=80  kd=5   aggressive — kp too high, big overshoot"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    fig.suptitle("PD Controller — joint j1 trajectory")
+    fig.suptitle("PD Controller — joint j1  (target = 28.6°, dashed red)")
     for ax, (kp, kd, label) in zip(axes.flat, configs):
         timestamps, q = run_pd(model, kp, kd)
         ax.plot(timestamps, np.degrees(q[:, 0]))
