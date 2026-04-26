@@ -69,11 +69,12 @@ obs, info  = env.reset()             # start a new episode, get first observatio
 obs, reward, terminated, truncated, info = env.step(action)  # take an action
 ```
 
-- **observation:** what the agent sees (joint positions, goal position, etc.)
-- **action:** what the agent does (joint velocities or torques)
-- **reward:** scalar feedback — a number telling the agent how that step went (higher is better)
-- **terminated:** episode ended (goal reached or robot fell)
-- **truncated:** episode hit the time limit
+- **observation:** `dict` or `np.ndarray` — what the agent sees (joint positions, goal position, etc.)
+- **action:** `np.ndarray` — what the agent does (joint velocities or torques)
+- **reward:** `float` — a number telling the agent how that step went (higher is better)
+- **terminated:** `bool` — episode ended naturally (goal reached or robot fell)
+- **truncated:** `bool` — episode hit the time limit
+- **info:** `dict` — extras like `is_success`; ignore until you need them
 
 A **policy** is a function: `action = policy(observation)`. RL learns this function by
 maximizing cumulative reward over an episode.
