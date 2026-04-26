@@ -18,6 +18,10 @@ objects using camera transforms, write a controller that holds a pose, and solve
 angles that put the hand wherever you want. These four skills appear in every subsequent
 chapter.
 
+> **End-effector (EE)** — the tip of the robot arm: the hand, gripper, or tool that
+> actually touches objects. Everything upstream (shoulder, elbow, wrist joints) exists
+> only to position and orient this tip.
+
 **Install:** (run from the repo root)
 ```bash
 # mujoco       — physics simulator engine
@@ -74,9 +78,7 @@ MuJoCo splits everything into two objects:
 >   mujoco.mj_forward(model, data)           # now data.xpos is up-to-date
 >   pos = data.xpos[model.body("hand").id]   # read the new end-effector position
 >   ```
-> - `mj_step(model, data)` — advances physics by one timestep (integrates dynamics, applies gravity, handles collisions). Use this for simulation loops.
-
-`mj_step(model, data)` advances physics by one timestep (default 2 ms): reads `data.ctrl`, computes forces, writes results back to `data`.
+> - `mj_step(model, data)` — advances physics by one timestep (default 2 ms): reads `data.ctrl`, computes forces, integrates dynamics (gravity, collisions), and writes results back to `data`. Use this for simulation loops.
 
 You can verify this yourself:
 
@@ -121,6 +123,10 @@ R   = data.xmat[body_id].reshape(3, 3)
 `data.qpos` holds one value per joint in the model. You can set all joints at once with `data.qpos[:] = my_array`. After calling `mj_forward()`, `data.xpos` and `data.xmat` reflect the new configuration.
 
 ### The code
+
+`read_robot_state.py` loads the Franka Panda, sets two joint configurations, prints the
+end-effector position for each, then opens the interactive viewer so you can see the arm
+in 3D.
 
 ```python courses/vla/ch01_mujoco/code/read_robot_state.py
 ```
