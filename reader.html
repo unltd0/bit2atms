@@ -1728,11 +1728,16 @@ function updateProgress(){
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────
-async function nav(id,anchor){
+async function nav(id, anchor, opts={}){
   state.scroll[state.cur]=window.scrollY;
   save();
   state.cur=id;
   LS.set('vla_cur',id);
+  // Update URL — #chapterId or #chapterId/anchor-slug
+  if(!opts.skipHistory){
+    const hash = anchor ? `${id}/${anchor}` : id;
+    history.pushState({chId:id, anchor:anchor||''}, '', `#${hash}`);
+  }
   renderSidebar();
   await loadChapter(id);
   if(anchor){
@@ -2278,14 +2283,41 @@ async function pollChanges(){
 }
 setInterval(pollChanges,3000);
 
+// ── Parse URL hash → {chId, anchor} ────────────────────────────────────
+function parseHash(){
+  const raw = location.hash.slice(1);           // e.g. "ch01" or "ch01/coordinate-frames"
+  const [chPart, anchorPart=''] = raw.split('/');
+  const ch = CHAPTERS.find(c => c.id === chPart);
+  return { ch, anchor: anchorPart };
+}
+
+// ── Browser back / forward ──────────────────────────────────────────────
+window.addEventListener('popstate', async e => {
+  const { ch, anchor } = parseHash();
+  if(ch){
+    state.cur = ch.id;
+    LS.set('vla_cur', ch.id);
+    renderSidebar();
+    await loadChapter(ch.id);
+    if(anchor){
+      setTimeout(()=>{ const el=document.getElementById(anchor); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); },120);
+    } else {
+      const s=state.scroll[ch.id]||0;
+      setTimeout(()=>window.scrollTo(0,s),60);
+    }
+  }
+});
+
 // ── Init ───────────────────────────────────────────────────────────────
 async function init(){
   applyAppearance();
-  const hash=location.hash.slice(1);
-  const hashCh=CHAPTERS.find(c=>c.id===hash);
-  if(hashCh) state.cur=hash;
+  const { ch, anchor } = parseHash();
+  if(ch){ state.cur = ch.id; }
   renderSidebar();
-  await nav(state.cur);
+  await nav(state.cur, anchor || undefined, {skipHistory: true});
+  // Set canonical URL on first load without pushing a new history entry
+  const initHash = anchor ? `${state.cur}/${anchor}` : state.cur;
+  history.replaceState({chId:state.cur, anchor:anchor||''}, '', `#${initHash}`);
 }
 
 boot();
