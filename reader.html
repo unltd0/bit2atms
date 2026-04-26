@@ -1740,8 +1740,9 @@ async function nav(id, anchor, opts={}){
   }
   renderSidebar();
   await loadChapter(id);
+  const scrollBehavior = opts.instant ? 'instant' : 'smooth';
   if(anchor){
-    setTimeout(()=>{ const el=document.getElementById(anchor); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); },120);
+    setTimeout(()=>{ const el=document.getElementById(anchor); if(el) el.scrollIntoView({behavior:scrollBehavior,block:'start'}); },120);
   } else {
     const s=state.scroll[id]||0;
     setTimeout(()=>window.scrollTo(0,s),60);
@@ -2315,7 +2316,7 @@ window.addEventListener('popstate', async e => {
     renderSidebar();
     await loadChapter(ch.id);
     if(anchor){
-      setTimeout(()=>{ const el=document.getElementById(anchor); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); },120);
+      setTimeout(()=>{ const el=document.getElementById(anchor); if(el) el.scrollIntoView({behavior:'instant',block:'start'}); },120);
     } else {
       const s=state.scroll[ch.id]||0;
       setTimeout(()=>window.scrollTo(0,s),60);
@@ -2329,7 +2330,7 @@ async function init(){
   const { ch, anchor } = parseHash();
   if(ch){ state.cur = ch.id; }
   renderSidebar();
-  await nav(state.cur, anchor || undefined, {skipHistory: true});
+  await nav(state.cur, anchor || undefined, {skipHistory: true, instant: true});
   // Set canonical URL on first load without pushing a new history entry
   const initHash = anchor ? `${state.cur}/${anchor}` : state.cur;
   history.replaceState({chId:state.cur, anchor:anchor||''}, '', `#${initHash}`);
