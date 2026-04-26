@@ -175,7 +175,12 @@ Forcing `qpos` every timestep would make the arm teleport to the target — bypa
 
 The correct approach is a **control loop**: code that runs every timestep, measures how far each joint is from its target, and applies a corrective torque to push it back. With `motor` actuators MuJoCo gives you raw torque control and nothing else — you write that loop yourself.
 
-**Approach:** Build a simple 2-joint arm, write a PD controller (the math that computes how much torque to apply each timestep), run it with four different tunings of the two gain numbers (`kp` and `kd`), and plot how each joint angle changes over time — so you can see which tuning converges cleanly and which oscillates.
+**Approach:** Build a simple 2-joint arm and write a PD controller. A PD controller has two knobs:
+
+- **`kp`** (proportional gain) — how hard to push toward the target. Too low: slow. Too high: overshoots and oscillates.
+- **`kd`** (derivative gain) — how hard to brake based on current velocity. Damps the oscillation caused by high `kp`.
+
+You'll run the arm with four combinations — low/high `kp` × low/high `kd` — and plot the joint angle over time for each. The plot makes the effect of each gain immediately visible.
 
 We use a custom 2-DOF arm here, not the Franka. The Franka Menagerie model uses
 `position` actuators (built-in PD servo — MuJoCo does the control for you). To write and
