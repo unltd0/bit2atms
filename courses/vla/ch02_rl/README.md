@@ -87,33 +87,53 @@ import numpy as np
 import gymnasium as gym
 import gymnasium_robotics
 
+# gymnasium-robotics ships its envs separately from gymnasium.
+# This line registers them so gym.make("FetchReach-v4") works.
 gym.register_envs(gymnasium_robotics)
 
 def explore(env_id: str = "FetchReach-v4", n_episodes: int = 5) -> None:
+    # render_mode=None = no popup window, headless — faster for exploration
     env = gym.make(env_id, render_mode=None)
 
+    # observation_space tells you the shape and range of what the agent sees.
+    # action_space tells you what actions are valid and their range.
+    # Always print these before writing any training code.
     print(f"Observation space: {env.observation_space}")
     print(f"Action space:      {env.action_space}")
-    print(f"  action low:  {env.action_space.low}")
-    print(f"  action high: {env.action_space.high}")
+    print(f"  action low:  {env.action_space.low}")   # minimum value per action dim
+    print(f"  action high: {env.action_space.high}")  # maximum value per action dim
 
     rewards_per_ep = []
     for ep in range(n_episodes):
-        obs, _ = env.reset()
+        obs, _ = env.reset()   # start a fresh episode, get the first observation
         ep_reward = 0.0
-        for step in range(50):
+        for step in range(50): # FetchReach episodes are 50 steps max
+            # sample() picks a random action uniformly within the action space.
+            # This is our "policy" for now — pure random, no learning.
             action = env.action_space.sample()
+
+            # step() advances the sim by one timestep and returns 5 things:
+            #   obs        — new observation after the action
+            #   reward     — float: 0.0 if goal reached, -1.0 otherwise (sparse)
+            #   terminated — bool: True if goal reached
+            #   truncated  — bool: True if 50-step limit hit
+            #   info       — dict with extras, e.g. info["is_success"]
             obs, reward, terminated, truncated, info = env.step(action)
             ep_reward += reward
+
             if terminated or truncated:
-                break
+                break  # episode over — reset next iteration
+
         rewards_per_ep.append(ep_reward)
         print(f"Episode {ep+1}: total reward = {ep_reward:.1f}  "
               f"(success={info.get('is_success', False)})")
 
     print(f"\nMean reward over {n_episodes} random episodes: {np.mean(rewards_per_ep):.2f}")
+    # Expect ~-50 (failure every step). Success rate ≈ 0% with random actions.
     print("With random actions, success rate is ~0%. That's why we need RL.")
 
+    # Print what's inside the observation dict — crucial for writing a policy later.
+    # FetchReach obs has 3 keys: observation (robot state), desired_goal, achieved_goal.
     obs, _ = env.reset()
     print(f"\nSample observation keys: {list(obs.keys())}")
     for k, v in obs.items():
