@@ -5,12 +5,16 @@
 # then wipes and recreates the folder structure with empty placeholder files.
 #
 # Usage (from repo root):
-#   bash scripts/reset_workspace.sh
-#
-# To skip the backup prompt and force reset:
-#   FORCE=1 bash scripts/reset_workspace.sh
+#   bash scripts/reset_workspace.sh            # backup existing files, then reset
+#   bash scripts/reset_workspace.sh --add-only # only create missing files, touch nothing else
+#   FORCE=1 bash scripts/reset_workspace.sh    # reset without backup prompt
 
 set -euo pipefail
+
+ADD_ONLY=0
+for arg in "$@"; do
+  [[ "$arg" == "--add-only" ]] && ADD_ONLY=1
+done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKSPACE="$REPO_ROOT/workspace/vla"
@@ -20,7 +24,7 @@ OLD_DIR="$REPO_ROOT/workspace_old"
 # Format: "chXX file1.py file2.sh ..."
 CHAPTERS=(
   "ch01 read_robot_state.py ik_solver.py pd_controller.py"
-  "ch02 train_ppo.py curriculum_env.py"
+  "ch02 train_sac_her.py reward_ablation.py curriculum.py"
   "ch03 collect_demos.py eval_policy.py"
   "ch04 smolvla_finetune.py eval_smolvla.py"
   "ch05 physics_dr.py visual_dr.py eval_transfer.py"
@@ -30,7 +34,9 @@ CHAPTERS=(
 )
 
 # ── Backup existing workspace if non-empty ─────────────────────────────────
-if [ -d "$WORKSPACE" ] && [ -n "$(find "$WORKSPACE" -type f 2>/dev/null)" ]; then
+if [ "$ADD_ONLY" -eq 1 ]; then
+  echo "Add-only mode: creating missing files only."
+elif [ -d "$WORKSPACE" ] && [ -n "$(find "$WORKSPACE" -type f 2>/dev/null)" ]; then
   TS=$(date +%Y%m%d_%H%M%S)
   ZIP="$OLD_DIR/${TS}.zip"
 
