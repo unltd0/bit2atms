@@ -18,16 +18,12 @@ objects using camera transforms, write a controller that holds a pose, and solve
 angles that put the hand wherever you want. These four skills appear in every subsequent
 chapter.
 
-> **End-effector (EE)** — the physical tip of the robot arm: the hand, gripper, or tool
-> that actually touches objects. Everything upstream (shoulder, elbow, wrist joints) exists
-> only to position and orient this tip.
+> **End-effector (EE)** — the physical tip of the robot arm: the hand, gripper, or tool that actually touches objects. Everything upstream (shoulder, elbow, wrist joints) exists only to position and orient this tip.
 >
-> In code, "end-effector" usually refers to the **pose** of that tip — its position
-> `[x, y, z]` plus orientation in world space. When someone says "move the end-effector
-> to `[0.5, 0, 0.4]`" they mean: find joint angles that put the tip body at those
-> coordinates. Solving for those angles is called **inverse kinematics (IK)** — covered in Project D.
-> The reverse — given joint angles, compute where the tip ends up — is **forward kinematics (FK)**,
-> which is what `mj_forward()` does.
+> In code, "end-effector" usually refers to the **pose** of that tip — its `[x, y, z]` position plus orientation in world space.
+>
+> - **Forward kinematics (FK):** given joint angles → compute where the tip ends up. This is what `mj_forward()` does.
+> - **Inverse kinematics (IK):** given a target position → solve for the joint angles that put the tip there. Covered in Project D.
 
 **Install:** (run from the repo root)
 ```bash
