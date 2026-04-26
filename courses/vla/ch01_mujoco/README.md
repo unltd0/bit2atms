@@ -106,6 +106,12 @@ axes (X, Y, Z). Every link in a robot has one. It answers: *where is this body?*
 > robotics research. The Menagerie model (`franka_emika_panda`) is the official simulation
 > description from Google DeepMind.
 
+> **`qpos` vs `xpos` — the most common point of confusion:**
+> - `data.qpos` — joint-space: one number per joint, in radians (or meters for prismatic joints). It's the *input* — the configuration you set.
+> - `data.xpos` — Cartesian space: `[x, y, z]` in world coordinates for each **body** (a rigid link). It's the *output* — computed from `qpos` by forward kinematics.
+>
+> You never set `xpos` directly. You set `qpos`, call `mj_forward()`, and MuJoCo fills in `xpos`.
+
 MuJoCo gives you `data.xpos[body_id]` (the origin) and `data.xmat[body_id]` (a 3×3
 rotation matrix stored flat as 9 numbers — reshape to use it). These are computed by
 **forward kinematics** — chaining all the joint transforms from base to tip.
