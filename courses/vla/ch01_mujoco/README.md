@@ -25,7 +25,9 @@ chapter.
 > In code, "end-effector" usually refers to the **pose** of that tip — its position
 > `[x, y, z]` plus orientation in world space. When someone says "move the end-effector
 > to `[0.5, 0, 0.4]`" they mean: find joint angles that put the tip body at those
-> coordinates.
+> coordinates. Solving for those angles is called **inverse kinematics (IK)** — covered in Project D.
+> The reverse — given joint angles, compute where the tip ends up — is **forward kinematics (FK)**,
+> which is what `mj_forward()` does.
 
 **Install:** (run from the repo root)
 ```bash
