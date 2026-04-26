@@ -164,8 +164,7 @@ Only `qpos[0]` changed (base rotation, 0 → 45°). The EE swept 23 cm in the XY
 
 ## Project B — PD Controller: Tune the Gains
 
-**Problem:** You need the robot to hold a target joint configuration using `motor`
-actuators — which means you write the control loop yourself.
+**Problem:** You need the robot to hold a **target joint configuration** — a specific set of joint angles, like "shoulder at 30°, elbow at -45°" — and stay there despite gravity pulling it down. To do this you need a **control loop**: code that runs repeatedly, checks how far each joint is from its target, and applies a corrective torque to push it back. With `motor` actuators MuJoCo gives you raw torque control and nothing else — you write that loop yourself.
 
 **Approach:** Build a minimal 2-DOF (degrees of freedom = independently controllable joints)
 arm with motor actuators, implement a PD controller, run it with four gain combinations,
