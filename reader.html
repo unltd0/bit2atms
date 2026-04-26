@@ -1702,11 +1702,15 @@ renderer.code = function(code, lang){
   const displayLabel = title || (meta ? meta[0] : (key || 'Code'));
   const langClass    = meta ? meta[1] : 'lang-default';
 
-  // If title looks like a file path, emit a placeholder for async fetch
+  // If title looks like a file path, either fetch it (courses/) or render inline (workspace/)
   if(title && /\.\w+$/.test(title.split(/\s+/).pop())){
     const filePath = title.trim();
     const fileName = filePath.split('/').pop();
-    // Derive workspace path: courses/vla/chXX_foo/code/file.py → workspace/vla/chXX/file.py
+    // workspace/ paths are student scratchpad files — render inline code with path label
+    if(filePath.startsWith('workspace/')){
+      return buildCodeBlock(code, key, fileName, filePath);
+    }
+    // courses/ paths are committed files — fetch and display
     const wsPath = filePath.replace(/^courses\/([^/]+)\/([^/]+?)(?:_[^/]+)?\/(?:code\/)?([^/]+)$/, 'workspace/$1/$2/$3');
     return `<div class="code-file-placeholder" data-src="${filePath}" data-lang="${key}" data-label="${fileName}" data-wspath="${wsPath}"></div>`;
   }

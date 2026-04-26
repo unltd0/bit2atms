@@ -28,7 +28,7 @@ learning (starting with easy goals, graduating to hard ones).
 
 **Install:**
 ```bash
-pip install stable-baselines3[extra] gymnasium gymnasium-robotics
+pip install "stable-baselines3[extra]" gymnasium gymnasium-robotics
 ```
 
 **Working directory:** Create `workspace/vla/ch02/` for your files — this folder is your
@@ -62,7 +62,7 @@ observation shape, action range, reward structure. Blind training without this w
 
 ### RL concepts you need
 
-An RL environment has a simple contract (the **Gymnasium interface**):
+An RL environment has a simple contract (the **[Gymnasium](https://gymnasium.farama.org/) interface** — the standard library for RL environments in Python):
 
 ```python
 obs, info  = env.reset()             # start a new episode, get first observation
