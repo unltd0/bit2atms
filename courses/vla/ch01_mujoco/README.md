@@ -111,6 +111,13 @@ axes (X, Y, Z). Every link in a robot has one. It answers: *where is this body?*
 > - `data.xpos` — Cartesian space: `[x, y, z]` in world coordinates for each **body** (a rigid link). It's the *output* — computed from `qpos` by forward kinematics.
 >
 > You never set `xpos` directly. You set `qpos`, call `mj_forward()`, and MuJoCo fills in `xpos`.
+>
+> **Why can't you just command a Cartesian position?**
+> Motors are at the joints — there is no motor that moves a body to `[x, y, z]` directly.
+> The hardware only speaks joint angles. Going the other direction — "I want the hand at
+> this position, what joint angles achieve it?" — is the **inverse kinematics (IK)** problem,
+> and it's non-trivial: one Cartesian target can map to multiple joint solutions, or none.
+> That's what Project D solves.
 
 MuJoCo gives you `data.xpos[body_id]` (the origin) and `data.xmat[body_id]` (a 3×3
 rotation matrix stored flat as 9 numbers — reshape to use it). These are computed by
