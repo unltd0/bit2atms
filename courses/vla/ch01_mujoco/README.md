@@ -140,27 +140,26 @@ R   = data.xmat[body_id].reshape(3, 3)
 
 ### The code
 
-`read_robot_state.py` loads the Franka Panda, sets two joint configurations, prints the
-end-effector position for each, then opens the interactive viewer so you can see the arm
-in 3D.
+`read_robot_state.py` sets two joint configurations and prints the EE position for each — no physics simulation, just FK. The viewer opens at the end showing the final pose.
 
 ```python courses/vla/ch01_mujoco/code/read_robot_state.py
 ```
 
-**What to observe:** The terminal prints EE and body positions for the neutral pose then
-the rotated pose — that's **forward kinematics (FK)**. Same joints, different angles,
-different EE position.
+**What to observe in the terminal:**
+```
+Config 1  qpos[0]=0 rad      EE=[0.307  0.     0.59 ]
+Config 2  qpos[0]=0.785 rad  EE=[0.217  0.217  0.59 ]
 
-**What to expect in the viewer:** The arm launches in the rotated pose with no control
-signal and falls under gravity — that's expected. To explore poses: double-click a body
-to select it, then use the joint sliders in the right UI panel. Ctrl+drag on a selected
-body applies an external force perturbation (not joint control).
+EE moved by [-0.09   0.217  0.   ]  (0.235 m)
+One joint angle changed → EE moved. That's forward kinematics.
+```
+Only `qpos[0]` changed (base rotation, 0 → 45°). The EE swept 23 cm in the XY plane; Z stayed the same because a base rotation doesn't change height.
 
-**macOS viewer error?** MuJoCo's passive viewer requires `mjpython` on macOS. If you see a `RuntimeError` about `launch_passive`, re-run with `mjpython` instead of `python`. The script will also print a clear message telling you this. The FK output that printed before the error is the actual deliverable — viewer is optional.
+**Try it:** comment out the line marked `# <-- comment this out` and rerun — both configs are now identical, EE delta prints `[0. 0. 0.]`. Uncomment to restore the change.
 
-**Headless / no display?** Comment out the `with mujoco.viewer...` block at the bottom
-of the script. The EE and body position printouts from `demo_two_configurations` are the
-actual deliverable.
+**What to expect in the viewer:** the arm holds Config 2's pose. Use the joint sliders in the right panel to move it manually.
+
+**macOS viewer error?** Re-run with `mjpython` instead of `python`. The terminal output above is the actual deliverable — viewer is optional.
 
 ---
 

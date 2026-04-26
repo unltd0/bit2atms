@@ -1,65 +1,38 @@
-"""Load the Franka Panda, read joint states and body poses in two configurations."""
+"""FK demo: set joint angles, read end-effector position. No physics simulation."""
 import numpy as np
 import mujoco
-import mujoco.viewer
-import os
 
-# Resolve from cwd (repo root) — run this script from the repo root regardless of where you saved it.
+# Run from repo root: python courses/vla/ch01_mujoco/code/read_robot_state.py
 FRANKA_XML = "workspace/ext/mujoco_menagerie/franka_emika_panda/scene.xml"
 
-def print_robot_info(model: mujoco.MjModel) -> None:
-    print(f"Bodies: {model.nbody}  Joints: {model.njnt}  Actuators: {model.nu}")
-    print("\nJoint names and limits:")
-    for i in range(model.njnt):
-        name = model.joint(i).name
-        lo, hi = model.jnt_range[i]
-        print(f"  [{i}] {name:30s}  [{np.degrees(lo):.0f}°, {np.degrees(hi):.0f}°]")
+model = mujoco.MjModel.from_xml_path(FRANKA_XML)
+data  = mujoco.MjData(model)
+ee_id = model.body("hand").id
 
-def read_body_poses(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    """Print all body positions. Assumes mj_forward has already been called."""
-    print("\nBody positions (world frame):")
-    for i in range(1, model.nbody):
-        print(f"  {model.body(i).name:30s}  {np.round(data.xpos[i], 3)}")
+# Config 1 — neutral pose
+data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
+mujoco.mj_forward(model, data)          # FK: compute all body positions from qpos
+ee1 = data.xpos[ee_id].copy()
+print(f"Config 1  qpos[0]=0 rad      EE={np.round(ee1, 3)}")
 
-def demo_two_configurations(model: mujoco.MjModel, data: mujoco.MjData) -> None:
-    ee_id = model.body("hand").id
+# Config 2 — rotate base joint 45°, everything else identical
+# Comment out the next line → qpos stays as Config 1 → EE won't move
+data.qpos[0] = 0.785                    # <-- comment this out to see no change
+mujoco.mj_forward(model, data)
+ee2 = data.xpos[ee_id].copy()
+print(f"Config 2  qpos[0]=0.785 rad  EE={np.round(ee2, 3)}")
 
-    mujoco.mj_resetData(model, data)
-    # qpos[:7] = the 7 joint angles in radians, one per DOF (shoulder → wrist)
-    data.qpos[:7] = [0, -0.785, 0, -2.356, 0, 1.571, 0.785]
-    mujoco.mj_forward(model, data)
-    print(f"\nNeutral pose  — EE: {np.round(data.xpos[ee_id], 3)}")
-    read_body_poses(model, data)
+delta = ee2 - ee1
+print(f"\nEE moved by {np.round(delta, 3)}  ({np.linalg.norm(delta):.3f} m)")
+print("One joint angle changed → EE moved. That's forward kinematics.")
 
-    data.qpos[:7] = [0.785, -0.785, 0, -2.356, 0, 1.571, 0.785]
-    mujoco.mj_forward(model, data)
-    print(f"\nRotated pose  — EE: {np.round(data.xpos[ee_id], 3)}")
-    read_body_poses(model, data)
-
-    print("\nSame arm, joint 0 rotated 45° → different EE position. That's FK.")
-
-if __name__ == "__main__":
-    if not os.path.exists(FRANKA_XML):
-        print("Could not find Menagerie. Run from the repo root and clone it first:")
-        print("  git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie")
-        print("Then run:  python courses/vla/ch01_mujoco/code/read_robot_state.py")
-        raise SystemExit(1)
-
-    model = mujoco.MjModel.from_xml_path(FRANKA_XML)
-    data  = mujoco.MjData(model)
-    print_robot_info(model)
-    demo_two_configurations(model, data)
-
-    print("\nLaunching viewer. Double-click a body to select it, use right-panel sliders to move joints.")
-    print("(Skip the viewer block if running headless/SSH — the printed output above is the deliverable.)")
-    # macOS requires mjpython instead of python for the viewer.
-    # If you see a RuntimeError here, re-run with: mjpython workspace/vla/read_robot_state.py
-    try:
-        with mujoco.viewer.launch_passive(model, data) as viewer:
-            while viewer.is_running():
-                mujoco.mj_step(model, data)  # no ctrl set — arm falls under gravity; that's expected
-                viewer.sync()
-    except RuntimeError as e:
-        print(f"\nViewer unavailable: {e}")
-        print("On macOS, re-run with:  mjpython workspace/vla/read_robot_state.py")
-        print("The FK output above is the actual deliverable — viewer is optional.")
+# Viewer: shows the final pose. On macOS: mjpython courses/vla/ch01_mujoco/code/read_robot_state.py
+import mujoco.viewer
+try:
+    with mujoco.viewer.launch_passive(model, data) as viewer:
+        while viewer.is_running():
+            data.ctrl[:7] = data.qpos[:7]   # hold pose — counteracts gravity
+            mujoco.mj_step(model, data)
+            viewer.sync()
+except RuntimeError:
+    print("Viewer requires mjpython on macOS — printed output above is the deliverable.")
