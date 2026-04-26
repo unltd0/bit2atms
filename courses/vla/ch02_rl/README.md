@@ -120,7 +120,7 @@ def explore(env_id: str = "FetchReach-v4", n_episodes: int = 5) -> None:
     print(f"  action high: {env.action_space.high}")  # maximum value per action dim
 
     rewards_per_ep = []
-    for ep in range(n_episodes):
+    for ep in range(N_EPISODES):
         obs, _ = env.reset()   # start a fresh episode, get the first observation
         ep_reward = 0.0
         for step in range(50): # FetchReach episodes are 50 steps max
@@ -144,7 +144,7 @@ def explore(env_id: str = "FetchReach-v4", n_episodes: int = 5) -> None:
         print(f"Episode {ep+1}: total reward = {ep_reward:.1f}  "
               f"(success={info.get('is_success', False)})")
 
-    print(f"\nMean reward over {n_episodes} random episodes: {np.mean(rewards_per_ep):.2f}")
+    print(f"\nMean reward over {N_EPISODES} random episodes: {np.mean(rewards_per_ep):.2f}")
     # Expect ~-50 (failure every step). Success rate ≈ 0% with random actions.
     print("With random actions, success rate is ~0%. That's why we need RL.")
 
