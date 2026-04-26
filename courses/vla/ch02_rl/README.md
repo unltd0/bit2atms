@@ -52,7 +52,13 @@ there as you work through the projects.
 
 ## Project A — Train SAC with HER
 
-**Problem:** In RL, the agent takes random actions, gets rewards for doing the right thing, and trains a model to maximise those rewards — hoping it learns the correct behaviour. FetchReach-v4 is a MuJoCo sim of a Fetch robot arm whose only job is to move the gripper to a target point in space. The catch: it only gives reward when the gripper gets within 5 cm of the target — and **with truly random actions, that almost never happens**. The agent wanders forever without ever seeing a success.
+**Problem:** In RL, the agent takes random actions, gets rewards for doing the right thing, and trains a model to maximise those rewards — hoping it learns the correct behaviour. FetchReach-v4 is a MuJoCo sim of a [Fetch robot arm](https://robotics.farama.org/envs/fetch/reach/) whose only job is to move the gripper to a target point in space.
+
+![Fetch robot reaching for a target](https://robotics.farama.org/_images/reach.gif)
+
+*Fetch robot arm reaching for a randomly placed target — [gymnasium-robotics FetchReach-v4](https://robotics.farama.org/envs/fetch/reach/)*
+
+The catch: it only gives reward when the gripper gets within 5 cm of the target — and **with truly random actions, that almost never happens**. The agent wanders forever without ever seeing a success.
 
 **Approach:** Train SAC (Soft Actor-Critic) with Hindsight Experience Replay (HER), which
 turns failed attempts into useful training signal. Then train without HER and compare.
@@ -68,17 +74,25 @@ obs, reward, terminated, truncated, info = env.step(action)  # take one step
 
 - **obs** — `dict` with 3 keys: `observation` (10 robot state values), `desired_goal` (target x,y,z), `achieved_goal` (gripper x,y,z)
 - **action** — 4 floats in [-1, 1]: gripper velocity in x, y, z + open/close (open/close unused in reach)
-- **reward** — `0.0` if within 5 cm of target, `-1.0` otherwise (sparse)
+- **reward** — `0.0` if within 5 cm of target, `-1.0` otherwise — this is a *sparse* reward: the agent gets no signal about whether it's getting closer or farther, just pass/fail
 - **terminated** — `True` when goal reached
 - **truncated** — `True` when 50-step limit hit
 
-A **policy** is `action = policy(obs)`. RL learns this by maximizing cumulative reward.
+**obs** is a snapshot of the environment at that moment — where the gripper is, where the target is, joint states. It's called an *observation* rather than *state* because the agent may not see everything (a real robot can't directly sense its own internal torques, for example).
+
+The goal is to learn a **policy** — a function that maps what the robot sees to what it should do: `action = policy(obs)`. RL trains this by running many episodes and nudging the policy towards actions that led to more reward:
+
+```python
+action = policy(obs)                   # predict: what should I do given what I see?
+obs, reward, done, _, _ = env.step(action)  # execute: apply action, get new obs + reward
+model.learn(...)                       # improve: adjust policy to favour higher-reward actions
+```
+
+SAC and HER handle the `model.learn()` step — you don't implement it manually.
 
 ### SAC and HER
 
-**SAC** (Soft Actor-Critic) is an off-policy RL algorithm that learns from a replay buffer
-and maximizes both reward *and* entropy (encouraging exploration). It works well in
-continuous action spaces like robot joint control.
+**SAC** (Soft Actor-Critic) is the go-to algorithm for continuous robot control — the policy outputs continuous numbers (e.g. move gripper 0.3 cm in x), not discrete choices (left/right/up), and SAC is built for that. It's stable, sample-efficient, and works out of the box with Stable Baselines 3. SAC has useful internals (replay buffer, entropy regularization, actor-critic architecture) that won't matter for this course — [read more here](https://spinningup.openai.com/en/latest/algorithms/sac.html) if curious.
 
 **HER** (Hindsight Experience Replay) solves the sparse reward problem. Even when the agent
 fails to reach the goal, it *did* reach *somewhere*. HER relabels those failed trajectories
