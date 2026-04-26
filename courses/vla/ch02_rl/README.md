@@ -60,6 +60,20 @@ observation shape, action range, reward structure. Blind training without this w
 
 **Approach:** Load `FetchReach-v4`, run random rollouts, and print everything.
 
+> **What is FetchReach-v4?**
+> A *robot simulation environment* — a physics engine running inside Python that pretends
+> to be a real robot. No physical hardware needed. The sim models a Fetch robot arm: it has
+> joints, motors, gravity, and a gripper. A target point appears at a random position in the
+> air. Your job: move the gripper there.
+>
+> "v4" just means the fourth version of this environment — the API changed slightly over time,
+> v4 is the current one.
+>
+> The agent controls 4 numbers per step: gripper velocity in x, y, z, plus open/close
+> (irrelevant for reach). It gets reward `-1` every step it's not at the target, `0` when
+> within 5 cm. With random actions it almost never gets there — that's the whole point of
+> this project.
+
 ### RL concepts you need
 
 An RL environment has a simple contract (the **[Gymnasium](https://gymnasium.farama.org/) interface** — the standard library for RL environments in Python):
