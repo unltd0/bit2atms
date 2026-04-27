@@ -169,6 +169,44 @@ lerobot-train \
   --policy.push_to_hub=false
 ```
 
+<details>
+<summary><strong>Running on Google Colab (free A100)</strong></summary>
+
+1. Go to [colab.research.google.com](https://colab.research.google.com) → New notebook
+2. Runtime → Change runtime type → **A100 GPU**
+3. Paste and run this setup cell:
+
+```python
+!git clone https://github.com/huggingface/lerobot
+%cd lerobot
+!pip install -e ".[pusht,training]" -q
+```
+
+4. Then run training — same command, just prefix with `!`:
+
+```python
+!lerobot-train \
+  --policy.type=act \
+  --dataset.repo_id=lerobot/pusht \
+  --batch_size=64 \
+  --steps=80000 \
+  --output_dir=/content/act_pusht \
+  --policy.push_to_hub=false
+```
+
+5. When done, download the checkpoint:
+
+```python
+from google.colab import files
+import shutil
+shutil.make_archive('/content/act_pusht_ckpt', 'zip', '/content/act_pusht/checkpoints/080000')
+files.download('/content/act_pusht_ckpt.zip')
+```
+
+Unzip into `workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/` and run eval locally as normal.
+
+</details>
+
 ### Evaluate
 
 LeRobot ships `lerobot-eval` — the same pattern as training. Point it at the checkpoint, tell it the environment, and it prints a success rate.
