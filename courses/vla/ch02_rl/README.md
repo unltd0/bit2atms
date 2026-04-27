@@ -94,7 +94,13 @@ HER requires the environment to expose `achieved_goal` and `desired_goal` in the
 
 ### The code
 
-> 🟡 **Know** — know the structure: why there are two envs, what `EvalCallback` does, what the HER kwargs control. You don't need to know how SAC works under the hood.
+> 🟡 **Know**
+> - **Two envs** — one for training, one for evaluation (so eval doesn't corrupt training state)
+> - **`EvalCallback`** — pauses training every 5k steps, runs 20 episodes, prints success rate
+> - **`n_sampled_goal=4`** — each real transition gets relabelled with 4 fake goals
+> - **`goal_selection_strategy="future"`** — fake goals are picked from later in the same episode
+>
+> No need to know how SAC works under the hood.
 
 `EvalCallback` prints success rate every 5k steps — expect it to jump from 0% to 100% within ~15k steps. Models saved to `workspace/vla/ch02/models/`.
 
@@ -156,7 +162,11 @@ if __name__ == "__main__":
 
 Once training is done, use `visualise.py` to watch the policy run in a MuJoCo window. Pass `--model untrained` or `--model trained` to choose which one to run. `render_mode="human"` tells MuJoCo to open a live window and render each `env.step()` in real time.
 
-> 🟢 **Run** — just run both commands. Watch the untrained arm flail vs the trained arm reach. No need to read the code.
+> 🟢 **Run** — run both commands and watch the difference. Glance at the code for the load-and-run pattern:
+> - **`SAC.load(path)`** — loads a saved model from disk
+> - **`model.predict(obs, deterministic=True)`** — picks the best action at each step (no exploration)
+>
+> That's all you need to load and run any model trained with Stable Baselines3.
 
 ```bash
 # watch the untrained model flail
@@ -190,14 +200,14 @@ MODEL_PATHS = {
 def run(model_name: str) -> None:
     # render_mode="human" opens a live MuJoCo window — remove it to run headless
     env   = gym.make("FetchReach-v4", render_mode="human")
-    model = SAC.load(MODEL_PATHS[model_name], env=env)
+    model = SAC.load(MODEL_PATHS[model_name], env=env)  # load-and-run pattern: works for any SB3 model
 
     print(f"\n--- {model_name} policy ---")
     successes = 0
     for ep in range(N_EPISODES):
         obs, _ = env.reset()
         for _ in range(50):
-            action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs, deterministic=True)  # deterministic=True: pick best action, no exploration
             obs, _, terminated, truncated, info = env.step(action)
             if terminated or truncated:
                 break
