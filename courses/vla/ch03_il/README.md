@@ -1,7 +1,7 @@
 # Chapter 3 — Imitation Learning
 
-**Time:** 1–2 days
-**Hardware:** GPU 8 GB+
+**Time:** 1–2 days (GPU) · 2–3 days (Colab or Apple Silicon)
+**Hardware:** GPU 8 GB+ recommended · Apple Silicon works but training takes ~28h — use Colab
 **Prerequisites:** Chapter 1 (MuJoCo), Chapter 2 (RL basics)
 
 ---
@@ -31,7 +31,7 @@ Keep the end goal in mind: we're here to build robots that respond to vision and
 ```bash
 git clone https://github.com/huggingface/lerobot workspace/ext/lerobot
 cd workspace/ext/lerobot
-pip install -e ".[pusht]"
+pip install -e ".[pusht,training]"
 pip install -e ".[dataset_viz]"   # optional — for browsing the dataset
 ```
 
@@ -51,7 +51,7 @@ pip install -e ".[dataset_viz]"   # optional — for browsing the dataset
 
 | # | Project | What you build |
 |---|---------|---------------|
-| A | Train & Evaluate | Train ACT on 50 teleoperated demos; establish a success rate baseline |
+| A | Train & Evaluate | Train ACT on the pusht dataset; establish a success rate baseline |
 | B | Failure Analysis | Categorize what's going wrong; collect targeted demos; retrain |
 
 ---
@@ -60,7 +60,7 @@ pip install -e ".[dataset_viz]"   # optional — for browsing the dataset
 
 **Problem:** You have demonstrations. Now train a policy and measure how well it actually works.
 
-**Approach:** Use LeRobot's built-in training script — no training code to write. Then evaluate the checkpoint. Glance through the eval code to see the moving parts; you don't need to understand every line.
+**Approach:** Use LeRobot's built-in training script — no training code to write. Then evaluate the checkpoint using LeRobot's eval CLI.
 
 ### The environment: gym_pusht
 
@@ -124,7 +124,7 @@ ACT is the algorithm you'll use again in Ch4 as the baseline against SmolVLA, an
 
 **LeRobot** is HuggingFace's open-source robotics library. It packages the major IL algorithms (ACT, Diffusion Policy, SmolVLA), a standard dataset format, and tooling for training, evaluation, and real robot control — all in one repo. Think of it as the `transformers` library but for robot policies. We cloned it and installed it locally; `workspace/ext/lerobot` is that clone.
 
-LeRobot ships a single training script — `lerobot/scripts/train.py` — that handles any policy type. You pass which algorithm to use, which dataset to train on, and where to save the checkpoint. Everything else uses sensible defaults.
+LeRobot ships a single training entry point — `lerobot-train` — that handles any policy type. You pass which algorithm to use, which dataset to train on, and where to save the checkpoint. Everything else uses sensible defaults.
 
 Here we're using `--policy.type=act` on `lerobot/pusht` — the simplest possible invocation. The same script supports:
 
@@ -135,15 +135,38 @@ Here we're using `--policy.type=act` on `lerobot/pusht` — the simplest possibl
 
 You could train a policy on real SO-101 arm data with one flag change. That's what Ch7 does.
 
-> 🟢 **Run** — takes ~30 min on GPU. Loss should decrease steadily; plateau around 80k steps is normal.
+**How long will this take?**
 
+| Hardware | Steps | Time | Quality |
+|---|---|---|---|
+| CUDA GPU (8 GB+) | 80 000 | ~30 min | Full — use this for real results |
+| Apple Silicon MPS | 80 000 | ~28 hours | Full — but run on Colab instead |
+| Apple Silicon MPS | 700 | ~15 min | Pipeline test only — policy won't work well |
+
+**Recommended path:** Run the 700-step version locally to confirm the pipeline works, then do the full 80k run on [Google Colab](https://colab.research.google.com) (free A100, same command). Colab brings 80k steps down to ~30 min.
+
+> 🟢 **Run** — loss should decrease steadily; plateau around 80k steps is normal.
+
+**Quick local test (~15 min on MPS):**
 ```bash workspace/vla/ch03/train_act.sh
-python workspace/ext/lerobot/lerobot/scripts/train.py \
+lerobot-train \
   --policy.type=act \
   --dataset.repo_id=lerobot/pusht \
-  --training.batch_size=64 \
-  --training.steps=80000 \
-  --output_dir=workspace/vla/ch03/outputs/act_pusht
+  --batch_size=64 \
+  --steps=700 \
+  --output_dir=workspace/vla/ch03/outputs/act_pusht \
+  --policy.push_to_hub=false
+```
+
+**Full run (on Colab or CUDA GPU):**
+```bash
+lerobot-train \
+  --policy.type=act \
+  --dataset.repo_id=lerobot/pusht \
+  --batch_size=64 \
+  --steps=80000 \
+  --output_dir=workspace/vla/ch03/outputs/act_pusht \
+  --policy.push_to_hub=false
 ```
 
 ### Evaluate
@@ -154,15 +177,22 @@ LeRobot ships `lerobot-eval` — the same pattern as training. Point it at the c
 
 ```bash workspace/vla/ch03/eval_act.sh
 # Replace 080000 with your final checkpoint step if different
-python workspace/ext/lerobot/lerobot/scripts/lerobot_eval.py \
-  --policy.path=workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model \
+lerobot-eval \
+  --policy.type=act \
+  --policy.pretrained_path=workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model \
   --env.type=pusht \
   --eval.n_episodes=50 \
-  --eval.batch_size=10 \
-  --policy.device=cuda
+  --eval.batch_size=1 \
+  --policy.device=cuda   # or mps (Apple Silicon) or cpu
 ```
 
-**What to expect:** ACT typically reaches 50–80% on 50 demos in 80k steps. Below 40% — re-check the dataset (re-run `collect_demos.py` and look at the plots).
+**What to expect:** ACT typically reaches 50–80% on pusht in 80k steps. Below 40% — re-run training with a different seed and compare.
+
+Here's what a partially trained policy looks like (700 steps, ~15 min on MPS) — the disk finds the block but can't push it into the target:
+
+![ACT at 700 steps — disk finds the block but can't push it into the target](assets/act_700steps.gif)
+
+A fully trained policy (80k steps) pushes the T cleanly into the green region most of the time.
 
 ### What about Diffusion Policy?
 
@@ -173,27 +203,28 @@ It trains slower than ACT. In this course ACT is the practical default — it's 
 If you want to see it in action, 20k steps is enough to compare:
 
 ```bash workspace/vla/ch03/train_diffusion.sh
-python workspace/ext/lerobot/lerobot/scripts/train.py \
+lerobot-train \
   --policy.type=diffusion \
   --dataset.repo_id=lerobot/pusht \
-  --training.batch_size=64 \
-  --training.steps=20000 \
-  --output_dir=workspace/vla/ch03/outputs/diffusion_pusht
+  --batch_size=64 \
+  --steps=20000 \
+  --output_dir=workspace/vla/ch03/outputs/diffusion_pusht \
+  --policy.push_to_hub=false
 ```
 
-Then run the same eval script with `--policy.path=workspace/vla/ch03/outputs/diffusion_pusht/checkpoints/020000/pretrained_model` to compare.
+Then run the same eval script with `--policy.pretrained_path=workspace/vla/ch03/outputs/diffusion_pusht/checkpoints/020000/pretrained_model` to compare.
 
 ---
 
 ## Project B — Failure Analysis
 
-**Problem:** Your policy has a 70% success rate. The 30% failures are not random — they cluster into a few categories. Fixing the dominant one is more efficient than collecting more data indiscriminately.
+**Problem:** Your policy passes some trials and fails others. The failures are not random — they cluster into a few categories. Fixing the dominant one is more efficient than collecting more data indiscriminately.
 
 **Approach:** Run 20 trials, save failure frames, categorize them by hand.
 
 This is the most transferable skill in this chapter. In Ch7 you'll run the exact same loop on the real arm — staring at a robot that fails 30% of the time and asking: *what specifically is going wrong?*
 
-> 🔴 **Work** — after running this, open the saved images in `workspace/vla/ch03/failures/` and count how many failures fit each category. Then collect 20–30 targeted demos for the top category and retrain.
+> 🔴 **Work** — after running this, open the saved images in `workspace/vla/ch03/failures/` and count how many failures fit each category. Write down the dominant one. In Ch7 you'll close the loop for real — collecting targeted demos on the arm and retraining.
 
 ```python workspace/vla/ch03/failure_analysis.py
 """Run N trials, save failure frames as PNGs, print categorization guide."""
@@ -206,7 +237,7 @@ import gymnasium as gym
 import gym_pusht
 
 POLICY_TYPE = sys.argv[1] if len(sys.argv) > 1 else "act"
-POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "workspace/vla/ch03/outputs/act_pusht"
+POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model"
 N_TRIALS    = 20
 OUT_DIR     = "workspace/vla/ch03/failures"
 
@@ -221,7 +252,6 @@ FAILURE_CATEGORIES = [
 
 
 def load_policy(policy_type: str, policy_path: str, device: str):
-    # Same helper as eval_policy.py
     if policy_type == "act":
         from lerobot.policies.act.modeling_act import ACTPolicy
         return ACTPolicy.from_pretrained(policy_path).to(device)
@@ -269,7 +299,7 @@ def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 20) -> 
     print("\nCount failures by category:")
     for cat in FAILURE_CATEGORIES:
         print(f"  {cat}")
-    print("\nFix the top category first — collect 20–30 targeted demos, retrain, re-eval.")
+    print("\nNote the top category — in Ch7 you'll collect targeted demos for it on a real arm and retrain.")
 
 
 if __name__ == "__main__":
@@ -303,7 +333,7 @@ ACT and Diffusion Policy are task-specific: they have no language understanding 
 
 ## Common Mistakes
 
-- **Skipping dataset inspection:** Always run `collect_demos.py` and check the plots before training. Bad coverage causes failures that look mysterious but are obvious in the plots.
+- **Skipping dataset inspection:** Use `lerobot-dataset-viz` to browse episodes before training. Bad coverage causes failures that look mysterious but are obvious when you look at the data.
 
 - **Using CPU for training:** Hours become days. Use Colab (free A100) if no local GPU.
 
@@ -311,7 +341,7 @@ ACT and Diffusion Policy are task-specific: they have no language understanding 
 
 - **Treating all failures as equal:** 30% failure rate with 3 distinct modes is three separate problems. Fix the biggest one first.
 
-- **Image normalization mismatch:** `eval_policy.py` divides pixels by 255.0 before `select_action()`. Some LeRobot versions apply normalization internally — check if success rates look suspiciously low right out of training.
+- **Image normalization mismatch:** `failure_analysis.py` divides pixels by 255.0 before `select_action()`. Some LeRobot versions apply normalization internally — check if success rates look suspiciously low right out of training.
 
 ---
 
