@@ -156,7 +156,7 @@ if __name__ == "__main__":
 
 Once training is done, use `visualise.py` to watch the policy run in a MuJoCo window. Pass `--model untrained` or `--model trained` to choose which one to run. `render_mode="human"` tells MuJoCo to open a live window and render each `env.step()` in real time.
 
-> 🟢 **Run** — just run both commands. Watch the difference. No need to read the code.
+> 🟢 **Run** — just run both commands. Watch the untrained arm flail vs the trained arm reach. No need to read the code.
 
 ```bash
 # watch the untrained model flail

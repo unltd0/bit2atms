@@ -139,7 +139,7 @@ R   = data.xmat[body_id].reshape(3, 3)
 
 ### The code
 
-> 🟡 **Know** — know what `qpos` and `xpos` are, why `mj_forward()` is called, and what the output tells you. You don't need to follow every line — focus on the read pattern.
+> 🟢 **Run** — run it, read the terminal output, understand what `qpos` and `xpos` represent. That's enough.
 
 `read_robot_state.py` sets two joint configurations and prints the EE position for each — no physics simulation, just FK. The viewer opens at the end showing the final pose.
 
