@@ -62,7 +62,7 @@ As you work through each chapter, copy the code from the reader into the corresp
 |---|---------|------|
 | 1 | [MuJoCo & Robot Fundamentals](ch01_mujoco/README.md) | 1–2 days |
 | 2 | [Reinforcement Learning](ch02_rl/README.md) | 1–2 days |
-| 3 | [Imitation Learning](ch03_il/README.md) | 5–7 days |
+| 3 | [Imitation Learning](ch03_il/README.md) | 1–2 days |
 | 4 | [Vision-Language-Action Models](ch04_vla/README.md) | 4–5 days |
 | 5 | [Sim-to-Real Transfer](ch05_sim2real/README.md) | 4–5 days |
 | 6 | [ROS 2 & System Integration](ch06_ros2/README.md) | 3–4 days |
@@ -156,7 +156,7 @@ Time estimates per chapter are in the Chapters table above. This schedule assume
 | Week | Chapters | Approx. time |
 |------|---------|-------------|
 | 1 | Ch.1–2 (sim, RL) | 4–7 days |
-| 2 | Ch.3 (imitation learning) | 5–7 days |
+| 2 | Ch.3 (imitation learning) | 1–2 days |
 | 3 | Ch.4–5 (VLA, sim-to-real) | 8–10 days |
 | 4 | Ch.6–7 (ROS 2, hardware setup) | 4–6 days |
 | 5–8 | Ch.8 capstone | 2–4 weeks |
