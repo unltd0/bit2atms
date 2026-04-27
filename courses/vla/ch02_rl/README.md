@@ -242,9 +242,13 @@ if __name__ == "__main__":
 ![Untrained vs Trained policy](comparison.png)
 *Left: untrained — random actions, gripper wanders. Right: trained SAC+HER — gripper moves directly to the target.*
 
+**What you've got so far:** a robot arm that learned to reach a target from scratch — no hand-coded motion, no waypoints. The policy figured it out from reward signal alone, using SAC to learn and HER to turn failed episodes into useful training data. That's the core RL loop for manipulation.
+
 ---
 
 ## Project B — Reward Design Ablation
+
+### Reward designs compared
 
 **Problem:** HER requires the environment to support goal relabelling — not every custom task has that. When it doesn't, you're designing a reward function from scratch: sparse, dense, or something in between. The choice dramatically affects whether the agent learns at all. This project runs all three side by side on the same task so you have a concrete feel for the tradeoffs before you're staring at a blank reward function. (*Ablation* is an ML term for "remove one component and measure the effect" — that's all this is.)
 
@@ -255,6 +259,8 @@ if __name__ == "__main__":
 - **Sparse + HER:** relabels failed trajectories as successes for different goals. Best of both: clean objective, dense effective signal.
 
 The script trains all three and prints final success rates side by side.
+
+### The code
 
 > 🔴 **Work** — run it, look at the results, then change the `steps` in `run()` to `10_000` and see how the rankings shift. Try adding a fourth condition: dense + HER.
 
@@ -349,11 +355,15 @@ if __name__ == "__main__":
 
 ## Project C — Curriculum Learning
 
+### The idea
+
 **Problem:** Even SAC+HER can struggle when goals are too hard from the start. If the target is always far away and random exploration almost never gets close, there's still no learning signal early on.
 
 **Approach:** Start with goals very close to the agent (easy). Expand the goal range automatically once success rate crosses 80%. The agent builds skill incrementally instead of drowning in failure from step one.
 
 The script prints `[curriculum] goal range → X.XX` each time difficulty increases — you'll see it step up as the agent improves.
+
+### The code
 
 > 🔴 **Work** — run it, watch the goal range expand. Then try changing the threshold in `CurriculumCallback` from `0.8` to `0.5`. Or start with `goal_range = 0.5` instead of `0.1` — does it still converge?
 
