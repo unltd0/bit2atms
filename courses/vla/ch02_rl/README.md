@@ -100,11 +100,12 @@ HER also isn't always an option. It requires the environment to have a clear `ac
 
 > 🟡 **Know**
 > - **Two envs** — one for training, one for evaluation (so eval doesn't corrupt training state)
-> - **`EvalCallback`** — pauses training every 5k steps, runs 20 episodes, prints success rate
-> - **`n_sampled_goal=4`** — for each real step the agent took, HER creates 4 extra training examples by swapping in different goals. Say the gripper ended up at `[1.3, 0.8, 0.6]` — HER pretends that position *was* the goal, manufactures a success, and trains on it. 4 fake goals per real step means the agent gets 5× the training data for free.
-> - **`goal_selection_strategy="future"`** — the fake goals are positions the gripper actually visited *later in the same episode*. These are guaranteed reachable (the arm was already there), which makes the relabelled examples useful rather than random noise.
+> - **`EvalCallback`** — pauses training every 5k steps and runs 20 test episodes to measure success rate. Pure observation — doesn't affect training at all. Also saves the best model seen so far.
+> - **Episode vs step:** An *episode* is one full attempt — the arm starts, tries to reach the target, and ends after 50 *steps* or on success. A *step* is one simulation tick: observe → act → get reward. HER works on completed episodes.
+> - **`n_sampled_goal=4`** — after an episode finishes, HER goes back through every step and asks: where did the gripper actually end up *after* this step, at some later point in the same episode? It picks 4 such later positions and relabels this step as if each one *had been* the goal — manufacturing 4 successes from a failed episode. One real step becomes 5 training examples.
+> - **`goal_selection_strategy="future"`** — the 4 positions are sampled randomly from steps *after* the current one in the same episode. How far after doesn't matter — the policy just needs to learn "if the goal is X, move toward X," not how many steps it took to get there. What matters is that they're from the future, not the past — positions before the current step haven't been "reached yet" from the policy's perspective. Other options (`"episode"`, `"random"`) exist but `"future"` works best in practice.
 >
-> No need to know how SAC works under the hood.
+> Go through the code, run it, and make sure the above points click as you read each block. No need to know how SAC works under the hood.
 
 `EvalCallback` prints success rate every 5k steps — expect it to jump from 0% to 100% within ~15k steps. Models saved to `workspace/vla/ch02/models/`.
 
@@ -136,7 +137,7 @@ def train() -> None:
 
     model = SAC(
         "MultiInputPolicy", env,  # MultiInputPolicy handles dict observations (obs + goals)
-        replay_buffer_class=HerReplayBuffer,
+        replay_buffer_class=HerReplayBuffer,   # <-- this is where HER is plugged in
         replay_buffer_kwargs={
             "n_sampled_goal": 4,                   # relabel each transition with 4 fake goals
             "goal_selection_strategy": "future",   # pick goals from later in the same episode
@@ -149,7 +150,7 @@ def train() -> None:
 
     start = time.time()
     print(f"Training started at {time.strftime('%H:%M:%S')} — expect ~3–5 min on CPU")
-    model.learn(total_timesteps=TOTAL_STEPS, callback=eval_cb)
+    model.learn(total_timesteps=TOTAL_STEPS, callback=eval_cb)  # <-- the only line that actually trains
     print(f"Done — {(time.time()-start)/60:.1f} min. Model saved to {MODELS_DIR}/trained/")
 
     model.save(f"{MODELS_DIR}/trained/final_model")
