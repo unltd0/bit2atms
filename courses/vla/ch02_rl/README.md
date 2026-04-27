@@ -94,7 +94,7 @@ HER requires the environment to expose `achieved_goal` and `desired_goal` in the
 
 ### The code
 
-> 🟡 **Feel** — read through the structure and comments. Understand what each block does. You don't need to know how SAC works internally, but you should be able to explain why there are two envs, what `EvalCallback` does, and what the HER kwargs mean.
+> 🟡 **Know** — know the structure: why there are two envs, what `EvalCallback` does, what the HER kwargs control. You don't need to know how SAC works under the hood.
 
 `EvalCallback` prints success rate every 5k steps — expect it to jump from 0% to 100% within ~15k steps. Models saved to `workspace/vla/ch02/models/`.
 
@@ -156,7 +156,7 @@ if __name__ == "__main__":
 
 Once training is done, use `visualise.py` to watch the policy run in a MuJoCo window. Pass `--model untrained` or `--model trained` to choose which one to run. `render_mode="human"` tells MuJoCo to open a live window and render each `env.step()` in real time.
 
-> 🟢 **Know** — just run it. Watch the difference between untrained and trained. No need to read the code in detail.
+> 🟢 **Run** — just run both commands. Watch the difference. No need to read the code.
 
 ```bash
 # watch the untrained model flail
@@ -233,7 +233,7 @@ if __name__ == "__main__":
 
 The script trains all three and prints final success rates side by side.
 
-> 🔴 **Work** — run it, look at the results, then try changing the `steps` parameter in `run()` to `10_000` and see how the rankings change. Try adding a fourth condition: dense + HER. This is the kind of reward debugging you'll do on real tasks.
+> 🔴 **Work** — run it, look at the results, then change the `steps` in `run()` to `10_000` and see how the rankings shift. Try adding a fourth condition: dense + HER.
 
 ```python workspace/vla/ch02/reward_ablation.py
 """Compare sparse, dense, and HER rewards on a 2D reach task."""
@@ -332,7 +332,7 @@ if __name__ == "__main__":
 
 The script prints `[curriculum] goal range → X.XX` each time difficulty increases — you'll see it step up as the agent improves.
 
-> 🔴 **Work** — run it and watch the goal range expand. Then try changing the success threshold in `CurriculumCallback` from `0.8` to `0.5` and observe how it affects training. Then try starting with `goal_range = 0.5` instead of `0.1` — does it still converge?
+> 🔴 **Work** — run it, watch the goal range expand. Then try changing the threshold in `CurriculumCallback` from `0.8` to `0.5`. Or start with `goal_range = 0.5` instead of `0.1` — does it still converge?
 
 ```python workspace/vla/ch02/curriculum.py
 """Success-gated curriculum: expand goal range as success rate improves."""

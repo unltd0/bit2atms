@@ -139,7 +139,7 @@ R   = data.xmat[body_id].reshape(3, 3)
 
 ### The code
 
-> 🟡 **Feel** — read through with the comments. Understand what `qpos` and `xpos` are, why `mj_forward()` is called, and what the printed output means. You don't need to understand every line — focus on the FK read pattern.
+> 🟡 **Know** — know what `qpos` and `xpos` are, why `mj_forward()` is called, and what the output tells you. You don't need to follow every line — focus on the read pattern.
 
 `read_robot_state.py` sets two joint configurations and prints the EE position for each — no physics simulation, just FK. The viewer opens at the end showing the final pose.
 
@@ -219,7 +219,7 @@ torque = kp × (target_angle − current_angle) − kd × current_velocity
 
 ### The code
 
-> 🔴 **Work** — run it, look at the four panels, then change the gains yourself. Try `kp=500, kd=1` and `kp=10, kd=50`. Each change makes the PD formula's behaviour concrete. This is the kind of tuning you'll do on every real robot task.
+> 🔴 **Work** — run it, look at the four panels, then tweak the gains. Try `kp=500, kd=1` and `kp=10, kd=50`. Seeing the plot change under your edits is the whole point.
 
 ```python courses/vla/ch01_mujoco/code/pd_controller.py
 ```
@@ -302,7 +302,7 @@ singularities, and multiple simultaneous tasks. [Read more: Pink docs](https://s
 
 ### The code
 
-> 🟡 **Feel** — read the loop structure: Pink computes joint velocities, you copy them into MuJoCo, `mj_forward()` updates the viewer. Then do the experiment at the bottom — change the target position and watch what happens near the workspace edge. That's the one interaction that makes IK click.
+> 🟡 **Know** — follow the loop: Pink computes joint velocities, you copy them into MuJoCo, `mj_forward()` updates the viewer. No need to understand the Pink math — know the structure and then do the experiment at the bottom.
 
 ```python courses/vla/ch01_mujoco/code/ik_solver.py
 ```
