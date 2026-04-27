@@ -46,17 +46,19 @@ pip install -e ".[pusht]"
 
 | # | Project | What you build |
 |---|---------|---------------|
-| A | Collect & Inspect Demonstrations | 50 oracle demos in gym_pusht; visualize dataset quality |
+| A | Load & Inspect Demonstrations | Download 50 teleoperated demos from HuggingFace; visualize dataset quality |
 | B | Train ACT | Train ACT; establish success rate baseline |
 | C | Failure Analysis | Categorize failures; collect targeted demos; retrain |
 
 ---
 
-## Project A — Collect & Inspect Demonstrations
+## Project A — Load & Inspect Demonstrations
 
-**Problem:** IL needs demonstrations. And training on bad demos gives bad policies — so you need to understand what's in your dataset before you commit to a long training run.
+**Problem:** IL needs demonstrations. Training on bad demos gives bad policies — so you need to understand what's in your dataset before committing to a long training run.
 
-**Approach:** Use a scripted controller that reads exact simulator state (block position, angle) to collect 50 demos in `gym_pusht`, save them as a `LeRobotDataset`, then visualize the action distribution and trajectory coverage.
+**Approach:** Download 50 episodes from the official `lerobot/pusht` dataset (collected via human teleoperation), then visualize the action distribution and trajectory coverage.
+
+The quality of the demos sets the ceiling on what the policy can achieve. Garbage in, garbage out.
 
 ### What is gym_pusht?
 
@@ -66,130 +68,73 @@ pip install -e ".[pusht]"
 
 ### LeRobotDataset
 
-LeRobot has a standard dataset format for storing robot demonstrations — each episode is a sequence of (observation, action) pairs, one per timestep, saved to disk with metadata. The Python class `LeRobotDataset` is the interface for creating, loading, and iterating over it. ACT, Diffusion Policy, and SmolVLA (Ch4) all consume this format directly — so you create the dataset once and reuse it across algorithms.
+LeRobot has a standard dataset format for storing robot demonstrations — each episode is a sequence of (observation, action) pairs, one per timestep, saved to disk with metadata. The Python class `LeRobotDataset` is the interface for creating, loading, and iterating over it. ACT, Diffusion Policy, and SmolVLA (Ch4) all consume this format directly — so you load the dataset once and reuse it across algorithms.
 
-> 🟢 **Run** — glance the structure, then verify the printed episode and frame counts look right before moving on.
+`LeRobotDataset` is schema-flexible — each dataset defines what it stores per frame. For PushT:
+
+| Field | What it is | Shape |
+|---|---|---|
+| `observation.image` | Top-down RGB camera view of the arena — agent (blue disk), T-block (gray), target (green) | `(3, 96, 96)` — 3 color channels, 96×96 px |
+| `observation.state` | Agent's (x, y) position in the arena | `(2,)` |
+| `action` | Target position commanded to the agent — (x, y) in [0, 512] | `(2,)` |
+
+For a real arm in Ch7, the schema would have wrist camera images, joint angles, and gripper torques instead.
+
+Images can be arranged in memory two ways. Cameras and most image libraries output **HWC** — Height × Width × Channels, so a pixel's RGB values are grouped together. PyTorch expects **CHW** — Channels × Height × Width, where all red values come first, then all green, then all blue.
+
+> 🟢 **Run** — the script downloads the dataset, then generates three diagnostic plots saved to `dataset_inspection.png`. You don't need to follow every line — it's mostly plotting code. Expected output: `episodes: 50`, `frames: 5000–7000`. Check the plots against the example below.
 
 ```python workspace/vla/ch03/collect_demos.py
-"""Collect 50 oracle demonstrations in gym_pusht and save as a LeRobotDataset."""
-import numpy as np
-import gymnasium as gym
-import gym_pusht
-from lerobot.datasets import LeRobotDataset
-
-N_DEMOS  = 50
-REPO_ID  = "local/pusht_demos"
-SAVE_DIR = "./data/pusht_demos"
-TASK     = "push the T block into the target area"
-
-
-def oracle_action(state: np.ndarray) -> np.ndarray:
-    """Two-phase scripted policy: approach block, then push toward goal.
-    state = [agent_x, agent_y, block_x, block_y, block_angle]
-    """
-    agent_pos  = state[:2]
-    block_pos  = state[2:4]
-    target_pos = np.array([256.0, 256.0])
-
-    to_block = block_pos - agent_pos
-    if np.linalg.norm(to_block) > 15:
-        return np.clip(to_block * 0.05, -1, 1)
-
-    to_goal = target_pos - block_pos
-    return np.clip(to_goal * 0.03, -1, 1)
-
-
-def collect(n_demos: int, save_dir: str) -> None:
-    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
-
-    dataset = LeRobotDataset.create(
-        repo_id=REPO_ID,
-        fps=10,
-        root=save_dir,
-        features={
-            "observation.image": {"shape": (3, 96, 96), "dtype": "image"},  # CHW
-            "observation.state": {"shape": (2,), "dtype": "float32"},
-            "action":            {"shape": (2,), "dtype": "float32"},
-        },
-    )
-
-    for ep in range(n_demos):
-        obs, _ = env.reset()
-        done   = False
-        frames = []
-        while not done:
-            u     = env.unwrapped
-            state = np.array([*u.agent.position, *u.block.position, u.block.angle % (2 * np.pi)])
-            action = oracle_action(state)
-            frames.append((obs, action))
-            obs, _, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
-
-        for obs, action in frames:
-            dataset.add_frame({
-                "observation.image": obs["pixels"].transpose(2, 0, 1),  # HWC → CHW
-                "observation.state": obs["agent_pos"],
-                "action": action,
-                "task":   TASK,
-            })
-        dataset.save_episode()
-        if (ep + 1) % 10 == 0:
-            print(f"Collected {ep + 1}/{n_demos} demos")
-
-    dataset.finalize()
-    env.close()
-    print(f"\nSaved {save_dir}  |  episodes: {dataset.num_episodes}  frames: {dataset.num_frames}")
-
-
-if __name__ == "__main__":
-    collect(N_DEMOS, SAVE_DIR)
-```
-
-Now inspect what you collected. Bad demos — clustered actions, stuck episodes, low diversity — cause training to fail in ways that are hard to debug after the fact.
-
-> 🟡 **Know** — read the plots before training. If actions cluster tightly or episode lengths spike, your oracle has a bug.
-
-```python workspace/vla/ch03/inspect_dataset.py
-"""Visualize a LeRobotDataset: action distribution, agent coverage, episode lengths."""
-import numpy as np
+"""Download 50 episodes from lerobot/pusht and visualize dataset quality."""
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 from lerobot.datasets import LeRobotDataset
 
-SAVE_DIR = "./data/pusht_demos"
+# The official lerobot/pusht dataset — 206 teleoperated demonstrations.
+# We use the first 50 episodes to keep training fast.
+# First run downloads ~200 MB to ~/.cache/huggingface/. Subsequent runs use the cache.
+HF_REPO_ID = "lerobot/pusht"
+N_EPISODES  = 50
+OUT_FILE    = "workspace/vla/ch03/dataset_inspection.png"
 
+dataset = LeRobotDataset(HF_REPO_ID, episodes=list(range(N_EPISODES)))
+print(f"episodes: {dataset.num_episodes}  frames: {dataset.num_frames}")
 
-def inspect(root: str) -> None:
-    dataset = LeRobotDataset(repo_id="local/pusht_demos", root=root)
-    print(f"Episodes: {dataset.num_episodes}  |  Frames: {dataset.num_frames}")
+# Extract actions and agent positions across all frames
+actions    = np.array([dataset[i]["action"].numpy() for i in range(len(dataset))])
+states     = np.array([dataset[i]["observation.state"].numpy() for i in range(len(dataset))])
+ep_lengths = dataset.hf_dataset.to_pandas().groupby("episode_index").size().tolist()
 
-    actions = np.array([dataset[i]["action"].numpy() for i in range(len(dataset))])
-    states  = np.array([dataset[i]["observation.state"].numpy() for i in range(len(dataset))])
-    ep_lengths = (
-        dataset.hf_dataset.to_pandas()
-        .groupby("episode_index").size().tolist()
-    )
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-    axes[0].hist2d(actions[:, 0], actions[:, 1], bins=40)
-    axes[0].set_title("Action distribution (vx, vy)")
+# Plot 1: where in action space the demonstrator moved the agent
+axes[0].hist2d(actions[:, 0], actions[:, 1], bins=40)
+axes[0].set_title("Action distribution (x, y)")
 
-    axes[1].scatter(states[:, 0], states[:, 1], s=1, alpha=0.3)
-    axes[1].set_title("Agent position coverage")
+# Plot 2: which parts of the arena the agent visited
+axes[1].scatter(states[:, 0], states[:, 1], s=1, alpha=0.3)
+axes[1].set_title("Agent position coverage")
 
-    axes[2].hist(ep_lengths, bins=20)
-    axes[2].set_title("Episode length distribution")
+# Plot 3: how long each episode took — humans succeed faster on some trials
+axes[2].hist(ep_lengths, bins=20)
+axes[2].set_title("Episode length distribution")
 
-    plt.tight_layout()
-    plt.savefig("dataset_inspection.png")
-    print("Saved dataset_inspection.png")
-    print(f"Median episode length: {np.median(ep_lengths):.0f} steps")
-
-
-if __name__ == "__main__":
-    inspect(SAVE_DIR)
+plt.tight_layout()
+plt.savefig(OUT_FILE)
+print(f"Saved {OUT_FILE}")
+print(f"Median episode length: {np.median(ep_lengths):.0f} steps")
 ```
 
-**What to look for:** Actions should spread across the 2D space, not cluster in one corner. Episode lengths should be roughly consistent — big outliers mean the oracle got stuck. Fix either issue before training.
+Here's what a healthy dataset looks like — from the 50 episodes we just loaded:
+
+![Dataset inspection plots — action distribution, agent coverage, episode lengths](assets/dataset_inspection.png)
+
+**What to look for:**
+- **Action distribution** — spread across the arena, not clustered. Clustering means the demonstrator barely moved.
+- **Agent coverage** — the agent visited most of the 512×512 space. Gaps mean some task states are never demonstrated — the policy will struggle there.
+- **Episode lengths** — variable. All identical means something is wrong (truncation, or a deterministic controller that always takes the same path).
 
 ---
 
@@ -207,7 +152,7 @@ if __name__ == "__main__":
 
 ACT is the algorithm you'll use again in Ch4 as the baseline against SmolVLA, and it's the default starting point for real tasks in Ch7. Learn it well here.
 
-> The training scripts run from inside `workspace/ext/lerobot/`, so paths to your data and output use `../../vla/ch03/` to reach your workspace. Keep that in mind if you move files.
+> The training scripts run from inside `workspace/ext/lerobot/`. The dataset is loaded directly from the HuggingFace Hub (cached after first run). Only `output_dir` uses a local path.
 
 > 🟢 **Run** — takes ~30 min on GPU. Watch loss decrease steadily; plateau by 80k steps is expected.
 
@@ -215,8 +160,7 @@ ACT is the algorithm you'll use again in Ch4 as the baseline against SmolVLA, an
 cd workspace/ext/lerobot
 python lerobot/scripts/train.py \
   --policy.type=act \
-  --dataset.repo_id=local/pusht_demos \
-  --dataset.root=../../vla/ch03/data/pusht_demos \
+  --dataset.repo_id=lerobot/pusht \
   --training.batch_size=64 \
   --training.steps=80000 \
   --output_dir=../../vla/ch03/outputs/act_pusht
@@ -233,7 +177,7 @@ import gymnasium as gym
 import gym_pusht
 
 POLICY_TYPE = sys.argv[1] if len(sys.argv) > 1 else "act"   # "act" or "diffusion"
-POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "./outputs/act_pusht"
+POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "workspace/vla/ch03/outputs/act_pusht"
 N_TRIALS    = 50
 
 
@@ -261,12 +205,16 @@ def evaluate(policy_type: str, policy_path: str, n_trials: int = 50) -> float:
         done   = False
         while not done:
             with torch.no_grad():
+                # Format observation to match what the policy expects:
+                # image: float tensor [1, 3, H, W] normalized to [0, 1]
+                # state: float tensor [1, 2] agent (x, y)
                 action = policy.select_action({
                     "observation.image": torch.tensor(obs["pixels"]).permute(2, 0, 1).unsqueeze(0).to(device) / 255.0,
                     "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).to(device),
                 })
             obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
             done = term or trunc
+
         successes += int(info.get("is_success", False))
 
     env.close()
@@ -281,7 +229,7 @@ if __name__ == "__main__":
 
 Run from `workspace/vla/ch03/`:
 ```bash
-python eval_policy.py act ./outputs/act_pusht
+python eval_policy.py act workspace/vla/ch03/outputs/act_pusht
 ```
 
 **What to expect:** ACT typically reaches 50–80% on 50 demos in 80k steps. Below 40% — go back and check dataset quality (Project A).
@@ -298,14 +246,13 @@ If you want to see it in action, the same training script works with `--policy.t
 cd workspace/ext/lerobot
 python lerobot/scripts/train.py \
   --policy.type=diffusion \
-  --dataset.repo_id=local/pusht_demos \
-  --dataset.root=../../vla/ch03/data/pusht_demos \
+  --dataset.repo_id=lerobot/pusht \
   --training.batch_size=64 \
   --training.steps=20000 \
   --output_dir=../../vla/ch03/outputs/diffusion_pusht
 ```
 
-Then run `eval_policy.py diffusion ./outputs/diffusion_pusht` to compare numbers. Don't let this detour you from Project C — it's optional.
+Then run `eval_policy.py diffusion workspace/vla/ch03/outputs/diffusion_pusht` to compare numbers. Don't let this detour you from Project C — it's optional.
 
 More demos always help — but there are diminishing returns past ~100 for PushT. On a real task (Ch7), the knee of that curve is what tells you when to stop collecting and start debugging.
 
@@ -332,10 +279,11 @@ import gymnasium as gym
 import gym_pusht
 
 POLICY_TYPE = sys.argv[1] if len(sys.argv) > 1 else "act"
-POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "./outputs/act_pusht"
+POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "workspace/vla/ch03/outputs/act_pusht"
 N_TRIALS    = 100
-OUT_DIR     = "./failures"
+OUT_DIR     = "workspace/vla/ch03/failures"
 
+# Categories to manually assign when reviewing saved frames
 FAILURE_CATEGORIES = [
     "A: never reached the block",
     "B: reached block but couldn't push it",
@@ -362,14 +310,16 @@ def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 100) ->
     policy = load_policy(policy_type, policy_path, device)
     policy.eval()
 
+    # render_mode="rgb_array" so we can capture frames for saving
     env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
     os.makedirs(OUT_DIR, exist_ok=True)
 
     n_failures = 0
     for trial in range(n_trials):
         obs, _ = env.reset()
-        frames = [env.render()]
+        frames = [env.render()]  # capture the initial frame
         done   = False
+
         while not done:
             with torch.no_grad():
                 action = policy.select_action({
@@ -381,7 +331,7 @@ def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 100) ->
             done = term or trunc
 
         if not info.get("is_success", False):
-            # Save first, middle, last frame of the failure
+            # Save start, mid, end frames so you can see where the episode went wrong
             for label, frame in [("start", frames[0]), ("mid", frames[len(frames)//2]), ("end", frames[-1])]:
                 plt.imsave(f"{OUT_DIR}/trial{trial:03d}_{label}.png", frame)
             n_failures += 1
@@ -425,6 +375,8 @@ ACT and Diffusion Policy are task-specific: they have no language understanding 
 ---
 
 ## Common Mistakes
+
+- **dtype mismatch on `add_frame()`:** Gymnasium environments return float64 arrays by default. `LeRobotDataset` enforces the dtype you declared in the schema — pass `.astype(np.float32)` on `observation.state` and `action` or you'll get a `ValueError` immediately.
 
 - **Skipping dataset inspection:** Always run `inspect_dataset.py` before training. Bad coverage causes failures that look mysterious but are obvious in the plots.
 
