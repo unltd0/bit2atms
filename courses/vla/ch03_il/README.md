@@ -1,7 +1,7 @@
 # Chapter 3 — Imitation Learning
 
-**Time:** 3–4 days
-**Hardware:** GPU 8 GB+ (CPU is very slow for ACT/Diffusion training — use Colab if needed)
+**Time:** 5–7 days
+**Hardware:** GPU 8 GB+
 **Prerequisites:** Chapter 1 (MuJoCo), Chapter 2 (RL basics)
 
 ---
@@ -30,13 +30,15 @@ cd workspace/ext/lerobot
 pip install -e ".[pusht]"
 ```
 
+> CPU training is very slow for ACT and Diffusion Policy. Apple Silicon (M1/M2/M3) works via PyTorch MPS and is a reasonable option. For full speed, use a CUDA GPU or [Google Colab](https://colab.research.google.com) (free A100 tier).
+
 **Working directory:** `workspace/vla/ch03/` — copy each code block into the corresponding file as you work through the projects.
 
 **Skip if you can answer:**
 1. What is distributional shift, and why does behavioral cloning fail because of it?
 2. What problem does ACT's action chunking solve?
 3. Your policy gets 60% success. You collect 50 more demos. What do you expect — and what would you do instead?
-4. Your policy works in training conditions but fails when you move the camera 5 cm. Why?
+4. Your policy trains to low loss but achieves 20% success at eval. What do you check first?
 
 ---
 
@@ -45,7 +47,7 @@ pip install -e ".[pusht]"
 | # | Project | What you build |
 |---|---------|---------------|
 | A | Collect & Inspect Demonstrations | 50 oracle demos in gym_pusht; visualize dataset quality |
-| B | Train ACT and Diffusion Policy | Train both; compare success rates head-to-head |
+| B | Train ACT | Train ACT; establish success rate baseline |
 | C | Failure Analysis | Categorize failures; collect targeted demos; retrain |
 
 ---
@@ -54,17 +56,19 @@ pip install -e ".[pusht]"
 
 **Problem:** IL needs demonstrations. And training on bad demos gives bad policies — so you need to understand what's in your dataset before you commit to a long training run.
 
-**Approach:** Use a scripted oracle to collect 50 demos in `gym_pusht`, save them as a `LeRobotDataset`, then visualize the action distribution and trajectory coverage.
+**Approach:** Use a scripted controller that reads exact simulator state (block position, angle) to collect 50 demos in `gym_pusht`, save them as a `LeRobotDataset`, then visualize the action distribution and trajectory coverage.
 
 ### What is gym_pusht?
 
 `gym_pusht` is a 2D push-T task: a disk (the end-effector proxy) must push a T-shaped block into a target region. It's fast to simulate, visually clear, and widely used for IL benchmarks. The same LeRobot dataset format and training pipeline you use here works on real robot tasks in Ch7 — only the environment changes.
 
+![PushT task — blue disk pushes gray T-block into the green target region](assets/pusht.gif)
+
 ### LeRobotDataset
 
-LeRobot stores demonstrations as a `LeRobotDataset` — episodes of (observation, action) pairs at each timestep. ACT, Diffusion Policy, and SmolVLA (Ch4) all consume this format directly.
+LeRobot has a standard dataset format for storing robot demonstrations — each episode is a sequence of (observation, action) pairs, one per timestep, saved to disk with metadata. The Python class `LeRobotDataset` is the interface for creating, loading, and iterating over it. ACT, Diffusion Policy, and SmolVLA (Ch4) all consume this format directly — so you create the dataset once and reuse it across algorithms.
 
-🔴 **Work** — run this, then verify the printed episode and frame counts look right before moving on.
+> 🟢 **Run** — glance the structure, then verify the printed episode and frame counts look right before moving on.
 
 ```python workspace/vla/ch03/collect_demos.py
 """Collect 50 oracle demonstrations in gym_pusht and save as a LeRobotDataset."""
@@ -143,7 +147,7 @@ if __name__ == "__main__":
 
 Now inspect what you collected. Bad demos — clustered actions, stuck episodes, low diversity — cause training to fail in ways that are hard to debug after the fact.
 
-🟡 **Know** — read the plots before training. If actions cluster tightly or episode lengths spike, your oracle has a bug.
+> 🟡 **Know** — read the plots before training. If actions cluster tightly or episode lengths spike, your oracle has a bug.
 
 ```python workspace/vla/ch03/inspect_dataset.py
 """Visualize a LeRobotDataset: action distribution, agent coverage, episode lengths."""
@@ -189,25 +193,23 @@ if __name__ == "__main__":
 
 ---
 
-## Project B — Train ACT and Diffusion Policy
+## Project B — Train ACT
 
-**Problem:** Which algorithm should you use? The answer depends on your task, and the only way to know is to run both.
+**Problem:** You have 50 demos. Now train a policy and see how well it actually works.
 
-**Approach:** Train ACT and Diffusion Policy on the same dataset with the same eval protocol. Compare success rates and training time.
+**Approach:** Train ACT to completion, evaluate it, and use the success rate as your baseline for Project C.
 
 ### What ACT does
 
-**Behavioral cloning (BC)** predicts the next action given the current observation — supervised learning on demos. The problem: at test time, small prediction errors push the robot into states it never saw in training, causing compounding drift (**distributional shift**).
+**Behavioral cloning (BC)** predicts the next action given the current observation — supervised learning on demos. The problem: small prediction errors at test time push the robot into states it never saw in training, causing compounding drift (**distributional shift**).
 
 **ACT** fixes this by predicting a *chunk* of future actions (e.g., 100 steps) at once, then executing them open-loop for a short window before re-predicting. Fewer policy queries = fewer opportunities for errors to compound. [ACT paper](https://arxiv.org/abs/2304.13705)
 
-### What Diffusion Policy does
+ACT is the algorithm you'll use again in Ch4 as the baseline against SmolVLA, and it's the default starting point for real tasks in Ch7. Learn it well here.
 
-Diffusion Policy models the action distribution as a **denoising process**: it learns to iteratively denoise random noise into valid actions, conditioned on the observation. This handles **multi-modal** tasks naturally — when there are multiple valid ways to solve something (approach from left or right), BC and ACT average the modes and produce invalid actions. Diffusion Policy captures both. It trains and runs slower than ACT but often produces higher-quality policies on complex tasks. [Diffusion Policy paper](https://arxiv.org/abs/2303.04137)
+> The training scripts run from inside `workspace/ext/lerobot/`, so paths to your data and output use `../../vla/ch03/` to reach your workspace. Keep that in mind if you move files.
 
-**Train ACT:**
-
-🟢 **Run** — takes ~30 min on GPU. Watch loss decrease steadily; plateau by 80k steps is expected.
+> 🟢 **Run** — takes ~30 min on GPU. Watch loss decrease steadily; plateau by 80k steps is expected.
 
 ```bash workspace/vla/ch03/train_act.sh
 cd workspace/ext/lerobot
@@ -220,24 +222,7 @@ python lerobot/scripts/train.py \
   --output_dir=../../vla/ch03/outputs/act_pusht
 ```
 
-**Train Diffusion Policy:**
-
-🟢 **Run** — takes ~1–2 hrs on GPU for 80k steps.
-
-```bash workspace/vla/ch03/train_diffusion.sh
-cd workspace/ext/lerobot
-python lerobot/scripts/train.py \
-  --policy.type=diffusion \
-  --dataset.repo_id=local/pusht_demos \
-  --dataset.root=../../vla/ch03/data/pusht_demos \
-  --training.batch_size=64 \
-  --training.steps=80000 \
-  --output_dir=../../vla/ch03/outputs/diffusion_pusht
-```
-
-**Evaluate both:**
-
-🔴 **Work** — run this for each checkpoint, record both success rates, and note which algorithm won and why you think it did.
+> 🔴 **Work** — run eval, record your success rate, and note where it fails. This number is your Project C baseline.
 
 ```python workspace/vla/ch03/eval_policy.py
 """Evaluate a trained LeRobot policy over N trials. Pass policy type and path as args."""
@@ -294,15 +279,35 @@ if __name__ == "__main__":
     evaluate(POLICY_TYPE, POLICY_PATH, N_TRIALS)
 ```
 
-Run it twice:
+Run from `workspace/vla/ch03/`:
 ```bash
 python eval_policy.py act ./outputs/act_pusht
-python eval_policy.py diffusion ./outputs/diffusion_pusht
 ```
 
-**What to expect:** ACT typically reaches 50–80% on 50 demos in 80k steps. Diffusion Policy is slower but often scores higher on tasks with varied approach angles. If both are below 40%, go back and check dataset quality (Project A).
+**What to expect:** ACT typically reaches 50–80% on 50 demos in 80k steps. Below 40% — go back and check dataset quality (Project A).
 
-More demos always help — but there are diminishing returns past ~100 demos for PushT. On a real task (Ch7), the knee of that curve is what tells you when to stop collecting and start debugging.
+### What about Diffusion Policy?
+
+The other dominant IL algorithm is **Diffusion Policy** — it models the action distribution as a denoising process, which handles **multi-modal** tasks naturally. When there are multiple valid ways to solve something (approach from left or right), behavioral cloning averages the modes and produces invalid in-between actions. Diffusion Policy captures the full distribution. [Diffusion Policy paper](https://arxiv.org/abs/2303.04137)
+
+It trains and runs slower than ACT. In this course, ACT is the practical default — it's what Ch4 and Ch7 build on. But if you hit a real task where the robot has several valid approach strategies and ACT keeps producing hesitant, averaged-out motions, that's the signal to reach for Diffusion Policy.
+
+If you want to see it in action, the same training script works with `--policy.type=diffusion` and 20k steps is enough to compare:
+
+```bash workspace/vla/ch03/train_diffusion.sh
+cd workspace/ext/lerobot
+python lerobot/scripts/train.py \
+  --policy.type=diffusion \
+  --dataset.repo_id=local/pusht_demos \
+  --dataset.root=../../vla/ch03/data/pusht_demos \
+  --training.batch_size=64 \
+  --training.steps=20000 \
+  --output_dir=../../vla/ch03/outputs/diffusion_pusht
+```
+
+Then run `eval_policy.py diffusion ./outputs/diffusion_pusht` to compare numbers. Don't let this detour you from Project C — it's optional.
+
+More demos always help — but there are diminishing returns past ~100 for PushT. On a real task (Ch7), the knee of that curve is what tells you when to stop collecting and start debugging.
 
 ---
 
@@ -314,7 +319,7 @@ More demos always help — but there are diminishing returns past ~100 demos for
 
 This is the most transferable skill in this chapter. In Ch7 you'll run the exact same loop on the real arm.
 
-🔴 **Work** — after running this, watch the saved failures and fill in your own category counts. Then collect 20–30 targeted demos for the top category and retrain.
+> 🔴 **Work** — after running this, watch the saved failures and fill in your own category counts. Then collect 20–30 targeted demos for the top category and retrain.
 
 ```python workspace/vla/ch03/failure_analysis.py
 """Run N trials, save failure frames as PNGs, print categorization guide."""
@@ -322,6 +327,7 @@ import sys
 import os
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 import gymnasium as gym
 import gym_pusht
 
@@ -340,6 +346,7 @@ FAILURE_CATEGORIES = [
 
 
 def load_policy(policy_type: str, policy_path: str, device: str):
+    # Same helper as eval_policy.py
     if policy_type == "act":
         from lerobot.policies.act.modeling_act import ACTPolicy
         return ACTPolicy.from_pretrained(policy_path).to(device)
@@ -376,7 +383,6 @@ def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 100) ->
         if not info.get("is_success", False):
             # Save first, middle, last frame of the failure
             for label, frame in [("start", frames[0]), ("mid", frames[len(frames)//2]), ("end", frames[-1])]:
-                import matplotlib.pyplot as plt
                 plt.imsave(f"{OUT_DIR}/trial{trial:03d}_{label}.png", frame)
             n_failures += 1
 
@@ -395,13 +401,7 @@ if __name__ == "__main__":
 
 **What to observe:** Most failures cluster into 1–2 categories. Targeted demos for those categories typically improve success rate more than doubling the random dataset size. If you can't identify a pattern, your success rate is too low — go back and debug dataset quality first.
 
----
-
-## Where this leads
-
-ACT and Diffusion Policy are task-specific: collect demos, train, deploy. They have no language understanding and no prior knowledge of what "pick up" or "red ball" means.
-
-In Ch4 you'll add both — by fine-tuning **SmolVLA**, a 450M-parameter model pretrained on millions of robot demonstrations. Same LeRobot dataset format, same eval loop, dramatically fewer demos needed.
+ACT and Diffusion Policy are task-specific: they have no language understanding and no prior knowledge of what "pick up" or "red ball" means. In Ch4 you'll add both by fine-tuning **SmolVLA** — same LeRobot dataset format, same eval loop, dramatically fewer demos needed.
 
 ---
 

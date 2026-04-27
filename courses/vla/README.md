@@ -93,8 +93,7 @@ Train SAC+HER on a robotic reach task. Understand the RL loop, sparse rewards, a
 ---
 
 ### Chapter 3 — Imitation Learning
-Collect demonstrations, train ACT and Diffusion Policy, compare them head-to-head, and do
-failure analysis. Builds the collect → train → eval → debug loop used in every chapter after.
+Collect demonstrations, train ACT, do failure analysis. Builds the collect → train → eval → debug loop used in every chapter after. Diffusion Policy covered as optional context for multimodal tasks.
 
 **Install:**
 ```bash
@@ -102,7 +101,7 @@ git clone https://github.com/huggingface/lerobot workspace/ext/lerobot && cd wor
 pip install -e ".[pusht]"
 ```
 
-**Projects:** Collect & inspect demos · Train ACT + Diffusion Policy · Failure analysis
+**Projects:** Collect & inspect demos · Train ACT · Failure analysis
 
 ---
 
