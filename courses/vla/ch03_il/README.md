@@ -140,12 +140,12 @@ You could train a policy on real SO-101 arm data with one flag change. That's wh
 | Hardware | Steps | Time | Quality |
 |---|---|---|---|
 | Colab A100 (Pro) | 80 000 | ~30 min | Full — fastest option |
-| Colab T4 (free) | 80 000 | ~1–2 hours | Full — good enough |
+| Colab T4 (free) | 80 000 | ~9 hours | Full — slow but free; leave it running |
 | Local CUDA GPU (8 GB+) | 80 000 | ~30 min | Full |
 | Apple Silicon MPS | 80 000 | ~28 hours | Full — use Colab instead |
 | Apple Silicon MPS | 700 | ~15 min | Pipeline test only — policy won't work well |
 
-**Recommended path:** Run the 700-step version locally to confirm the pipeline works, then do the full 80k run on [Google Colab](https://colab.research.google.com) (free T4, same command). T4 brings 80k steps down to 1–2 hours.
+**Recommended path:** Run the 700-step version locally to confirm the pipeline works, then do the full 80k run on [Google Colab](https://colab.research.google.com) (free T4). T4 takes ~9 hours — start it, leave it running, come back.
 
 > 🟢 **Run** — loss should decrease steadily; plateau around 80k steps is normal.
 
@@ -176,6 +176,7 @@ lerobot-train \
 
 1. Go to [colab.research.google.com](https://colab.research.google.com) → New notebook
 2. Runtime → Change runtime type → **T4 GPU** (free tier) or A100 (Colab Pro)
+   > Free Colab sessions disconnect after ~12 hours of inactivity. T4 takes ~9 hours — keep the tab open.
 3. Paste and run this setup cell:
 
 ```python
