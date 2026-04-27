@@ -1,3 +1,5 @@
+> **TODO: Review post Ch3 closure** — Ch3 was restructured (6 projects → 3; Data Scaling cut; Collect+Inspect merged; ACT+Diffusion merged into one project). Review Ch4 Project D (Data Efficiency comparison vs ACT from scratch) for redundancy or tightening.
+
 # Chapter 4 — Vision-Language-Action Models
 
 **Time:** 4–5 days

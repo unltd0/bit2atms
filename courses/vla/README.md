@@ -92,9 +92,9 @@ Train SAC+HER on a robotic reach task. Understand the RL loop, sparse rewards, a
 
 ---
 
-### Chapter 3 — Imitation Learning ← most important
-Collect demonstrations, train ACT and Diffusion Policy, compare them, and do data scaling
-and failure analysis. This is the core skill for robot manipulation.
+### Chapter 3 — Imitation Learning
+Collect demonstrations, train ACT and Diffusion Policy, compare them head-to-head, and do
+failure analysis. Builds the collect → train → eval → debug loop used in every chapter after.
 
 **Install:**
 ```bash
@@ -102,7 +102,7 @@ git clone https://github.com/huggingface/lerobot workspace/ext/lerobot && cd wor
 pip install -e ".[pusht]"
 ```
 
-**Projects:** Collect demos · Inspect dataset · Train ACT · Train Diffusion Policy · Data scaling · Failure analysis
+**Projects:** Collect & inspect demos · Train ACT + Diffusion Policy · Failure analysis
 
 ---
 

@@ -263,7 +263,7 @@ The policy you trained has one job: reach the target. It has no concept of *what
 
 These aren't fixable by tuning SAC or adding HER. They're structural. The field responded with two ideas:
 
-- **Imitation learning** (Chapter 3) — instead of reward, learn directly from human demonstrations. A human teleoperate the robot for 20 minutes; the policy learns to copy. No reward engineering, far fewer examples, policies that look more natural.
+- **Imitation learning** (Chapter 3) — instead of reward, learn directly from demonstrations. In sim, a scripted oracle generates them automatically. On a real robot (Ch7), a human teleoperates the arm for 20–30 minutes. Either way: no reward engineering, far fewer examples, and the collect → train → eval → debug loop that carries through every chapter after this.
 - **Vision-Language-Action models** (Chapter 4) — pretrain on massive vision-language data so the robot already understands what objects and instructions mean. Fine-tune on a handful of robot demos. Say "pick up the mug" and it generalizes — because it already knows what mugs are and what picking up means.
 
 RL is still used — for fine-tuning VLAs and sim-to-real transfer. But for general manipulation, the starting point is now imitation, not reward.

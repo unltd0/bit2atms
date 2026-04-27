@@ -4,6 +4,28 @@ Use this when reviewing or generating content for the VLA course.
 
 ---
 
+## Course Goal
+
+The destination: run a natural language command like `"pick up the red ball and place it in the bowl"` and have a **real robot arm execute it** — not by writing motion code, but by fine-tuning a Vision-Language-Action model on a small set of demonstrations and deploying it on hardware.
+
+Every chapter exists to get the learner there without getting lost.
+
+**Chapter arc:**
+
+| Ch | Role |
+|----|------|
+| 1–2 | Sim foundations — MuJoCo, RL, the environment interface |
+| 3 | **Core skill** — imitation learning (ACT, Diffusion Policy, failure analysis). Most important chapter. |
+| 4 | VLA — fine-tune SmolVLA on a custom task; leverage what Ch3 built |
+| 5 | Sim-to-real hardening — domain randomization, robustness |
+| 6 | ROS 2 integration — connect policy to hardware |
+| 7 | Real hardware — deploy on SO-101, iterate on real failures |
+| 8 | Capstone — open-vocabulary pick-and-place and beyond |
+
+**Reviewing a chapter:** ask whether it prepares the learner for Ch7's real-robot workflow. That is the right lens — not IL/RL/VLA completeness.
+
+---
+
 ## Target Audience
 
 Python-literate engineers or researchers who are **new to robotics and Physical AI**.
