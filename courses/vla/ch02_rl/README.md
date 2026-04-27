@@ -161,7 +161,15 @@ if __name__ == "__main__":
     train()
 ```
 
-**What to observe:** Success rate jumps from 0% to 100% within ~15k steps (~2 min on CPU). If it plateaus below 50%, check that `gym.register_envs(gymnasium_robotics)` is called before `gym.make()`.
+**What to observe:** Watch the success rate climb — that's the only number that matters. Episode reward will be negative throughout (FetchReach gives `-1` every step the goal isn't reached, `0` on success — so a full 50-step failure scores `-50`). The `+/-` is the standard deviation across the 20 eval episodes.
+
+```
+Eval num_timesteps=5000   episode_reward=-50.00 +/- 0.00   Success rate: 0.00%
+Eval num_timesteps=10000  episode_reward=-27.40 +/- 19.63  Success rate: 40.00%
+Eval num_timesteps=15000  episode_reward=-1.50  +/- 0.67   Success rate: 96.00%
+```
+
+At 5k steps: all 20 episodes fail identically — reward `-50`, zero variance. At 10k: some succeed early, some don't — scores vary. By 15k: almost all succeed. If success rate plateaus below 50%, check that `gym.register_envs(gymnasium_robotics)` is called before `gym.make()`.
 
 ### Visualise the trained policy
 
@@ -196,7 +204,7 @@ from stable_baselines3 import SAC
 gym.register_envs(gymnasium_robotics)
 
 MODELS_DIR = "workspace/vla/ch02/models"
-N_EPISODES = 5
+N_EPISODES = 10
 MODEL_PATHS = {
     "untrained": f"{MODELS_DIR}/untrained/model",
     "trained":   f"{MODELS_DIR}/trained/best_model",
