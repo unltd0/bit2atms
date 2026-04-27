@@ -149,6 +149,20 @@ You could train a policy on real SO-101 arm data with one flag change. That's wh
 
 > 🟢 **Run** — loss should decrease steadily; plateau around 80k steps is normal.
 
+Every 200 steps lerobot prints a log line:
+```
+step:200 smpl:13K ep:103 epch:0.50 loss:5.628 grdn:88.153 lr:1.0e-05 updt_s:0.379
+step:1K  smpl:64K ep:514 epch:2.50 loss:1.130 grdn:24.368 lr:1.0e-05 updt_s:0.435
+step:5K  smpl:320K ep:3K epch:12.5 loss:0.260 grdn:8.033  lr:1.0e-05 updt_s:0.432
+```
+
+- `loss` — the one to watch; should drop fast early then flatten. Typical trajectory: 5.0 → 1.0 → 0.3 → 0.15
+- `grdn` — gradient norm; high early, settles as training stabilizes
+- `epch` — how many times the dataset has been seen; ACT needs many passes
+- `updt_s` — seconds per update step; tells you if training is bottlenecked
+
+If loss stops decreasing before step 10k or spikes back up, something is wrong — re-check the install and re-run.
+
 **Quick local test (~15 min on MPS):**
 ```bash workspace/vla/ch03/train_act.sh
 lerobot-train \
