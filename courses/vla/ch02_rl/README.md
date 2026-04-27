@@ -212,11 +212,8 @@ if __name__ == "__main__":
     run(args.model)
 ```
 
-![Untrained policy](untrained.png)
-*Untrained policy: random actions, gripper wanders nowhere near the target*
-
-![Trained policy](trained.png)
-*Trained SAC+HER: gripper moves directly to the target*
+![Untrained vs Trained policy](comparison.png)
+*Left: untrained — random actions, gripper wanders. Right: trained SAC+HER — gripper moves directly to the target.*
 
 ---
 
