@@ -92,13 +92,17 @@ Even when the agent fails to reach `desired_goal`, it *did* reach `achieved_goal
 
 HER requires the environment to expose `achieved_goal` and `desired_goal` in the observation, plus a `compute_reward()` method so it can recompute rewards for the relabelled goals. FetchReach has these built in. For a custom task you may not have that structure — in which case you're back to designing a reward function from scratch.
 
+**What if you didn't use HER?** With plain SAC and a sparse reward, the agent almost never gets a +1 — early on, random actions virtually never land within 5 cm of the target by chance. With no reward signal, there's nothing to learn from. The agent doesn't just train slower — it essentially doesn't train at all on this task. You'd need a dense reward (e.g. distance to goal at every step) to make plain SAC work, but then you're hand-crafting the reward function.
+
+HER also isn't always an option. It requires the environment to have a clear `achieved_goal` — a position or state you can point to and say "the agent ended up here." For tasks like "pick and place a specific object" or "open a door," defining what counts as `achieved_goal` at each step isn't straightforward. In those cases you're back to hand-crafting a reward: penalise distance, reward grasp contact, add bonuses for partial progress. Reward design is a core skill in robot RL — Project B shows you concretely what the choice costs you.
+
 ### The code
 
 > 🟡 **Know**
 > - **Two envs** — one for training, one for evaluation (so eval doesn't corrupt training state)
 > - **`EvalCallback`** — pauses training every 5k steps, runs 20 episodes, prints success rate
-> - **`n_sampled_goal=4`** — each real transition gets relabelled with 4 fake goals
-> - **`goal_selection_strategy="future"`** — fake goals are picked from later in the same episode
+> - **`n_sampled_goal=4`** — for each real step the agent took, HER creates 4 extra training examples by swapping in different goals. Say the gripper ended up at `[1.3, 0.8, 0.6]` — HER pretends that position *was* the goal, manufactures a success, and trains on it. 4 fake goals per real step means the agent gets 5× the training data for free.
+> - **`goal_selection_strategy="future"`** — the fake goals are positions the gripper actually visited *later in the same episode*. These are guaranteed reachable (the arm was already there), which makes the relabelled examples useful rather than random noise.
 >
 > No need to know how SAC works under the hood.
 
