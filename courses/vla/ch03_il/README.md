@@ -163,6 +163,30 @@ step:5K  smpl:320K ep:3K epch:12.5 loss:0.260 grdn:8.033  lr:1.0e-05 updt_s:0.43
 
 If loss stops decreasing before step 10k or spikes back up, something is wrong — re-check the install and re-run.
 
+**Frames, steps, episodes, epochs — and why ACT needs so many passes**
+
+These four terms appear constantly in the logs. Here's how they relate for this dataset:
+
+| Term | What it is | This dataset |
+|---|---|---|
+| **Frame** | One timestep — one (image, state, action) tuple | 25,650 total frames |
+| **Episode** | One full demo from start to success/timeout | 206 episodes, ~125 frames each |
+| **Step** | One gradient update — processes `batch_size` frames | you set this: 80,000 steps |
+| **Epoch** | One full pass through all frames | ~400 steps = 1 epoch here |
+
+So at the log lines you saw:
+
+```
+step:1K   epch:2.5   → each demo seen ~2–3 times    loss:1.130
+step:5K   epch:12    → each demo seen ~12 times      loss:0.260
+step:20K  epch:50    → each demo seen ~50 times      loss:~0.15
+step:80K  epch:200   → each demo seen ~200 times     loss:~0.10
+```
+
+**Why does ACT need 200 passes through the data?** ACT predicts a *chunk* of 100 future actions at once — much harder than predicting one step. The policy needs to see each situation many times, from slightly different starting states, before its chunk predictions are precise enough to actually complete the push. Low loss at epoch 2 means "roughly imitating the motion." Low loss at epoch 200 means "precise enough to succeed most of the time."
+
+This is why `pc_success` stays at 0% for the first few thousand steps even as loss drops — the motions are improving but not yet precise enough to cross the success threshold.
+
 **Quick local test (~15 min on MPS):**
 ```bash workspace/vla/ch03/train_act.sh
 lerobot-train \
