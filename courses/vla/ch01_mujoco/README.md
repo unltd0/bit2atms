@@ -219,7 +219,12 @@ torque = kp × (target_angle − current_angle) − kd × current_velocity
 
 ### The code
 
-> 🔴 **Work** — run it, look at the four panels, then tweak the gains. Try `kp=500, kd=1` and `kp=10, kd=50`. Seeing the plot change under your edits is the whole point.
+> 🔴 **Work** — run it, look at the four panels, then tweak the gains and rerun.
+> - **`kp` (proportional)** — higher = pushes harder toward target; too high → oscillates
+> - **`kd` (derivative)** — higher = brakes faster; damps the oscillation from high `kp`
+> - Try `kp=500, kd=1` (aggressive, wobbly) and `kp=10, kd=50` (sluggish, overdamped)
+>
+> Seeing the plot change under your edits is the whole point.
 
 ```python courses/vla/ch01_mujoco/code/pd_controller.py
 ```
@@ -302,7 +307,12 @@ singularities, and multiple simultaneous tasks. [Read more: Pink docs](https://s
 
 ### The code
 
-> 🟡 **Know** — follow the loop: Pink computes joint velocities, you copy them into MuJoCo, `mj_forward()` updates the viewer. No need to understand the Pink math — know the structure and then do the experiment at the bottom.
+> 🟡 **Know** — follow the loop structure, then do the experiment at the bottom.
+> - **Pink** computes joint velocities to move the EE toward the target
+> - **You** copy those velocities into `data.qvel` and call `mj_forward()` to update the arm pose
+> - **The viewer** reflects the new pose each iteration
+>
+> No need to understand the Pink math — know what goes in and what comes out.
 
 ```python courses/vla/ch01_mujoco/code/ik_solver.py
 ```
