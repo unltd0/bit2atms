@@ -50,7 +50,7 @@ As you work through each chapter, copy the code from the reader into the corresp
 | # | Chapter | Time |
 |---|---------|------|
 | 1 | [MuJoCo & Robot Fundamentals](ch01_mujoco/README.md) | 1–2 days |
-| 2 | [Reinforcement Learning](ch02_rl/README.md) | 3–5 days |
+| 2 | [Reinforcement Learning](ch02_rl/README.md) | 1–2 days |
 | 3 | [Imitation Learning](ch03_il/README.md) | 5–7 days |
 | 4 | [Vision-Language-Action Models](ch04_vla/README.md) | 4–5 days |
 | 5 | [Sim-to-Real Transfer](ch05_sim2real/README.md) | 4–5 days |
@@ -73,8 +73,7 @@ controller, and solve IK with Pink. These four skills are used in every subseque
 ---
 
 ### Chapter 2 — Reinforcement Learning
-Train SAC with HER on a robotic reach task. Explore reward shaping and curriculum learning.
-RL intuition transfers to IL debugging and reward design in custom tasks.
+Train SAC+HER on a robotic reach task. Understand the RL loop, sparse rewards, and HER. Closes with why RL hits its limits on real manipulation — and what that motivates in Chapter 3 and 4.
 
 **Install:** `pip install stable-baselines3[extra] gymnasium gymnasium-robotics`
 

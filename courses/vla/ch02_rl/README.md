@@ -1,6 +1,6 @@
 # Chapter 2 — Reinforcement Learning
 
-**Time:** 3–5 days
+**Time:** 1–2 days
 **Hardware:** GPU helpful (CPU works, training is slower)
 **Prerequisites:** Chapter 1 (MuJoCo, FK, IK)
 
@@ -23,8 +23,7 @@ This chapter uses **Stable Baselines 3** (a library of ready-to-use RL algorithm
 call `SAC(...)` and it handles all the math) and the `gymnasium-robotics` FetchReach
 environment — a simulated robot arm whose only job is to move its hand to a target point.
 
-You'll train a reaching policy, compare how different reward designs affect learning speed,
-and implement curriculum learning (starting with easy goals, graduating to hard ones).
+You'll train a reaching policy from scratch, understand why sparse rewards are hard, and see exactly where RL hits its limits — which sets up why imitation learning and VLAs exist.
 
 **Install:**
 ```bash
@@ -46,8 +45,6 @@ there as you work through the projects.
 | # | Project | What you build |
 |---|---------|---------------|
 | A | Train SAC with HER | Train a reaching policy and see it succeed |
-| B | Reward Design Ablation | Measure how sparse vs. dense vs. HER rewards affect learning speed |
-| C | Curriculum Learning | Stage training by distance; gate stages on success rate |
 
 ---
 
@@ -246,209 +243,30 @@ if __name__ == "__main__":
 
 ---
 
-## Project B — Reward Design Ablation
+## Where RL falls short — and why VLAs exist
 
-### Reward designs compared
+You just trained a robot arm to reach a target from scratch using only reward signal. That's impressive for a single task. But it exposes three problems that RL hasn't solved cleanly, and that motivate everything in the chapters ahead.
 
-**Problem:** HER requires the environment to support goal relabelling — not every custom task has that. When it doesn't, you're designing a reward function from scratch: sparse, dense, or something in between. The choice dramatically affects whether the agent learns at all. This project runs all three side by side on the same task so you have a concrete feel for the tradeoffs before you're staring at a blank reward function. (*Ablation* is an ML term for "remove one component and measure the effect" — that's all this is.)
+**1. Reward is hard to define for real tasks.**
 
-**Approach:** Build a minimal 2D version of the reach task — simpler and faster to run than FetchReach, so the comparison is quick. Train SAC on three reward designs and compare success rates:
+FetchReach has a clean reward: gripper within 5 cm of a point → success. Now imagine training a robot to "pick up the red mug and place it in the drawer." How do you score that? +1 when the mug is in the drawer — but then the agent gets zero signal for the first 50,000 episodes because it never accidentally gets the mug in the drawer. You need intermediate rewards: +0.3 for grasping, +0.6 for lifting, +0.8 for moving toward the drawer. But now you're hand-crafting a dense reward function, and if you get it slightly wrong — say the grasp bonus is too high — the robot learns to repeatedly pick up and drop the mug without ever trying the drawer. HER helps, but only when you can clearly define `achieved_goal` at each step. For pick-and-place, what is `achieved_goal` mid-episode? It's not obvious.
 
-- **Sparse:** `0` when goal reached, `-1` every other step. Clean signal — but the agent rarely stumbles on success, so it rarely learns.
-- **Dense:** `−distance` every step. Always informative — the agent always knows if it's getting closer. Can teach the wrong behaviour if distance isn't a perfect proxy for the real objective.
-- **Sparse + HER:** relabels failed trajectories as successes for different goals. Best of both: clean objective, dense effective signal.
+**2. RL needs thousands of episodes — per task, per scene.**
 
-The script trains all three and prints final success rates side by side.
+FetchReach trained in ~15k steps, ~2 minutes. That's a fixed target position, fixed robot, fixed camera angle, no objects to grasp. Now vary any one of those: different mug shapes, cluttered tables, different lighting. RL has to re-explore from scratch for each variation. Training a robot to reliably pick up *one* object in *one* scene can take millions of steps in simulation. Humans learn to pick up a new object in one or two tries — because they already know what "picking up" means from prior experience. RL has no such prior.
 
-### The code
+**3. RL policies don't understand language.**
 
-> 🔴 **Work** — run it, look at the results, then change the `steps` in `run()` to `10_000` and see how the rankings shift. Try adding a fourth condition: dense + HER.
-
-```python workspace/vla/ch02/reward_ablation.py
-"""Compare sparse, dense, and HER rewards on a 2D reach task."""
-import numpy as np
-import gymnasium as gym
-from gymnasium import spaces
-from stable_baselines3 import SAC, HerReplayBuffer
-
-class Reach2D(gym.Env):
-    """
-    Minimal 2D reach: agent moves a 2D point to a random goal.
-    Simpler than FetchReach — same reward structure, runs in seconds.
-    """
-
-    def __init__(self, reward_type: str = "sparse"):
-        super().__init__()
-        self.reward_type = reward_type
-        # HER requires a dict observation space with these exact keys
-        self.observation_space = spaces.Dict({
-            "observation":   spaces.Box(-1, 1, (2,), np.float32),
-            "desired_goal":  spaces.Box(-1, 1, (2,), np.float32),
-            "achieved_goal": spaces.Box(-1, 1, (2,), np.float32),
-        })
-        self.action_space = spaces.Box(-0.1, 0.1, (2,), np.float32)
-        self.pos  = np.zeros(2, dtype=np.float32)
-        self.goal = np.zeros(2, dtype=np.float32)
-
-    def reset(self, *, seed=None, options=None):
-        super().reset(seed=seed)
-        self.pos  = self.np_random.uniform(-0.5, 0.5, 2).astype(np.float32)
-        self.goal = self.np_random.uniform(-0.5, 0.5, 2).astype(np.float32)
-        return self._obs(), {}
-
-    def step(self, action):
-        self.pos = np.clip(self.pos + action, -1, 1)
-        dist     = float(np.linalg.norm(self.pos - self.goal))
-        success  = dist < 0.05
-        reward   = -dist if self.reward_type == "dense" else (0.0 if success else -1.0)
-        return self._obs(), reward, success, False, {"is_success": success}
-
-    def _obs(self):
-        return {"observation":   self.pos.copy(),
-                "desired_goal":  self.goal.copy(),
-                "achieved_goal": self.pos.copy()}
-
-    def compute_reward(self, achieved, desired, info):
-        # HER calls this internally to recompute rewards for relabelled goals
-        dist = np.linalg.norm(achieved - desired, axis=-1)
-        if self.reward_type == "dense":
-            return -dist
-        return np.where(dist < 0.05, 0.0, -1.0).astype(np.float32)
-
-def run(reward_type: str, use_her: bool, steps: int = 50_000) -> float:
-    env    = Reach2D(reward_type=reward_type)
-    kwargs = {}
-    if use_her:
-        kwargs = {"replay_buffer_class": HerReplayBuffer,
-                  "replay_buffer_kwargs": {"n_sampled_goal": 4,
-                                           "goal_selection_strategy": "future"}}
-    model = SAC("MultiInputPolicy", env, verbose=0, **kwargs)
-    model.learn(steps)
-
-    # Evaluate: run 100 episodes with the trained policy, count successes
-    successes = 0
-    for _ in range(100):
-        obs, _ = env.reset()
-        for _ in range(50):
-            action, _ = model.predict(obs, deterministic=True)
-            obs, _, term, trunc, info = env.step(action)
-            if term or trunc:
-                successes += info.get("is_success", False)
-                break
-    return successes / 100
-
-if __name__ == "__main__":
-    print("Running reward ablation — takes a few minutes...")
-    results = {
-        "sparse":     run("sparse", use_her=False),
-        "dense":      run("dense",  use_her=False),
-        "sparse+HER": run("sparse", use_her=True),
-    }
-    print("\nResults:")
-    for name, sr in results.items():
-        print(f"  {name:15s}  success rate: {sr:.0%}")
-```
-
-**What to observe:** Dense and HER both outperform plain sparse. HER wins because it keeps the reward clean (sparse) while solving the learning signal problem — which is why it's the default for manipulation.
+The policy you trained has one job: reach the target. It has no concept of *what* the target is — just its coordinates. You cannot tell this policy "pick up the cup" or "move the pen to the left" and have it understand. Every new task is a new training run with a new reward function. There's no way to specify tasks in natural language and expect the policy to generalize. A kitchen robot would need a separate policy for every verb-object combination it might encounter.
 
 ---
 
-## Project C — Curriculum Learning
+These aren't fixable by tuning SAC or adding HER. They're structural. The field responded with two ideas:
 
-### The idea
+- **Imitation learning** (Chapter 3) — instead of reward, learn directly from human demonstrations. A human teleoperate the robot for 20 minutes; the policy learns to copy. No reward engineering, far fewer examples, policies that look more natural.
+- **Vision-Language-Action models** (Chapter 4) — pretrain on massive vision-language data so the robot already understands what objects and instructions mean. Fine-tune on a handful of robot demos. Say "pick up the mug" and it generalizes — because it already knows what mugs are and what picking up means.
 
-**Problem:** Even SAC+HER can struggle when goals are too hard from the start. If the target is always far away and random exploration almost never gets close, there's still no learning signal early on.
-
-**Approach:** Start with goals very close to the agent (easy). Expand the goal range automatically once success rate crosses 80%. The agent builds skill incrementally instead of drowning in failure from step one.
-
-The script prints `[curriculum] goal range → X.XX` each time difficulty increases — you'll see it step up as the agent improves.
-
-### The code
-
-> 🔴 **Work** — run it, watch the goal range expand. Then try changing the threshold in `CurriculumCallback` from `0.8` to `0.5`. Or start with `goal_range = 0.5` instead of `0.1` — does it still converge?
-
-```python workspace/vla/ch02/curriculum.py
-"""Success-gated curriculum: expand goal range as success rate improves."""
-import numpy as np
-import gymnasium as gym
-from gymnasium import spaces
-from stable_baselines3 import SAC, HerReplayBuffer
-from stable_baselines3.common.callbacks import BaseCallback
-
-class CurriculumReach(gym.Env):
-    """2D reach with adjustable goal range — same as Reach2D but difficulty is dynamic."""
-
-    def __init__(self):
-        super().__init__()
-        self.goal_range = 0.1  # start easy: goals within 0.1 units of origin
-        self.observation_space = spaces.Dict({
-            "observation":   spaces.Box(-1, 1, (2,), np.float32),
-            "desired_goal":  spaces.Box(-1, 1, (2,), np.float32),
-            "achieved_goal": spaces.Box(-1, 1, (2,), np.float32),
-        })
-        self.action_space = spaces.Box(-0.1, 0.1, (2,), np.float32)
-        self.pos  = np.zeros(2, dtype=np.float32)
-        self.goal = np.zeros(2, dtype=np.float32)
-        self.recent_successes: list[bool] = []
-
-    def reset(self, *, seed=None, options=None):
-        super().reset(seed=seed)
-        self.pos  = np.zeros(2, dtype=np.float32)
-        offset    = self.np_random.uniform(-self.goal_range, self.goal_range, 2)
-        self.goal = np.clip(offset.astype(np.float32), -1, 1)
-        return self._obs(), {}
-
-    def step(self, action):
-        self.pos = np.clip(self.pos + action, -1, 1)
-        dist     = float(np.linalg.norm(self.pos - self.goal))
-        success  = dist < 0.05
-        # track last 200 steps to compute a rolling success rate
-        self.recent_successes.append(success)
-        if len(self.recent_successes) > 200:
-            self.recent_successes.pop(0)
-        return self._obs(), (0.0 if success else -1.0), success, False, {"is_success": success}
-
-    def _obs(self):
-        return {"observation":   self.pos.copy(),
-                "desired_goal":  self.goal.copy(),
-                "achieved_goal": self.pos.copy()}
-
-    def compute_reward(self, achieved, desired, info):
-        dist = np.linalg.norm(achieved - desired, axis=-1)
-        return np.where(dist < 0.05, 0.0, -1.0).astype(np.float32)
-
-    def success_rate(self) -> float:
-        if not self.recent_successes:
-            return 0.0
-        return sum(self.recent_successes) / len(self.recent_successes)
-
-class CurriculumCallback(BaseCallback):
-    """Called by SB3 after every training step. Expands goal range when agent is ready."""
-
-    def __init__(self, env: CurriculumReach, max_range: float = 0.8):
-        super().__init__()
-        self.env       = env
-        self.max_range = max_range
-
-    def _on_step(self) -> bool:
-        if self.env.success_rate() > 0.8 and self.env.goal_range < self.max_range:
-            self.env.goal_range = min(self.env.goal_range * 1.5, self.max_range)
-            print(f"  [curriculum] goal range → {self.env.goal_range:.2f}")
-        return True  # return False to stop training early
-
-if __name__ == "__main__":
-    env   = CurriculumReach()
-    cb    = CurriculumCallback(env)
-    model = SAC(
-        "MultiInputPolicy", env, verbose=1,
-        replay_buffer_class=HerReplayBuffer,
-        replay_buffer_kwargs={"n_sampled_goal": 4, "goal_selection_strategy": "future"},
-    )
-    model.learn(total_timesteps=100_000, callback=cb)
-    print(f"\nFinal goal range: {env.goal_range:.2f}")
-```
-
-**What to observe:** Goal range expands in steps as success rate crosses 80%. Without curriculum, the same agent on full range typically converges much slower or not at all.
+RL is still used — for fine-tuning VLAs and sim-to-real transfer. But for general manipulation, the starting point is now imitation, not reward.
 
 ---
 
@@ -471,10 +289,8 @@ if __name__ == "__main__":
    **Answer:** Check reward scale (mean reward should be ~-1, not -100), verify the goal
    is included in the observation, and try adding HER if not already using it.
 
-5. Why start curriculum with easy goals rather than the full task?
-   **Answer:** With hard goals and sparse rewards, early exploration almost never succeeds.
-   Easy goals guarantee early successes, giving the agent a gradient signal to build on
-   before difficulty increases.
+5. Name two structural reasons RL struggles with real manipulation tasks.
+   **Answer:** Reward design is hard for rich tasks (no clean `achieved_goal`, hand-crafted rewards produce unexpected behaviour). And RL needs thousands of episodes per task variation — objects, scenes, lighting all require retraining from scratch.
 
 ---
 
