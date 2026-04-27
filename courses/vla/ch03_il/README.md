@@ -1,7 +1,7 @@
 # Chapter 3 — Imitation Learning
 
 **Time:** 1–2 days (GPU) · 2–3 days (Colab or Apple Silicon)
-**Hardware:** GPU 8 GB+ recommended · Apple Silicon works but training takes ~28h — use Colab
+**Hardware:** GPU 8 GB+ recommended · Apple Silicon works but training takes ~14h — use Colab
 **Prerequisites:** Chapter 1 (MuJoCo), Chapter 2 (RL basics)
 
 ---
@@ -142,7 +142,7 @@ You could train a policy on real SO-101 arm data with one flag change. That's wh
 | Colab A100 (Pro) | 80 000 | ~30 min | Full — fastest option |
 | Colab T4 (free) | 80 000 | ~9 hours | Full — slow but free; leave it running |
 | Local CUDA GPU (8 GB+) | 80 000 | ~30 min | Full |
-| Apple Silicon MPS | 80 000 | ~28 hours | Full — use Colab instead |
+| Apple Silicon MPS | 80 000 | ~14 hours | Full — use Colab instead |
 | Apple Silicon MPS | 700 | ~15 min | Pipeline test only — policy won't work well |
 
 **Recommended path:** Run the 700-step version locally to confirm the pipeline works, then do the full 80k run on [Google Colab](https://colab.research.google.com) (free T4). T4 takes ~9 hours — start it, leave it running, come back.
