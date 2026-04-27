@@ -1,7 +1,18 @@
 # Vision-Language-Action — Curriculum Guide
 
-Go from zero to building real robot manipulation systems. Focus is on *applying* modern ML,
-not deriving it.
+## The goal
+
+By the end of this course, you'll be able to run a command like:
+
+```
+"pick up the red ball and place it in the bowl"
+```
+
+— and have a real robot arm execute it. Not by writing motion code. Not by hard-coding waypoints. By fine-tuning a Vision-Language-Action model on a small set of demonstrations, then deploying it on hardware.
+
+VLAs are models that take a camera image and a natural language instruction as input, and output robot joint actions directly. They're pretrained on large datasets of robot demonstrations and internet-scale vision-language data — so they already understand what "pick up" means, what a ball looks like, and roughly how arms move. Your job is to fine-tune them for your specific robot and task, evaluate whether they work, and debug when they don't.
+
+That's the destination. The chapters before it build the foundations you'll need to get there without getting lost.
 
 **Who this is for:** Python-literate, basic ML intuition, no robotics background needed.
 **Time:** 4–8 weeks at 2–4 hours/day. Chapters 1–5 are laptop-only.
