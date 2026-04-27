@@ -35,3 +35,7 @@ workspace/ext/
 
 # Workspace backups created by scripts/reset_workspace.sh
 workspace_old/
+
+# Training outputs (checkpoints, eval videos)
+outputs/
+workspace/vla/*/outputs/
