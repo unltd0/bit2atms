@@ -28,7 +28,7 @@ and implement curriculum learning (starting with easy goals, graduating to hard 
 
 **Install:**
 ```bash
-pip install "stable-baselines3[extra]" gymnasium gymnasium-robotics
+pip install "stable-baselines3[extra]" gymnasium gymnasium-robotics pillow
 ```
 
 **Working directory:** `workspace/vla/ch02/` — copy each code block into a `.py` file
@@ -84,7 +84,13 @@ The goal is to learn a **policy**: `action = policy(obs)`. RL trains this by run
 
 **SAC** (Soft Actor-Critic) is the go-to algorithm for continuous robot control — the policy outputs continuous numbers (e.g. move gripper 0.3 cm in x), not discrete choices (left/right/up), and SAC is built for that. It's stable, sample-efficient, and works out of the box with Stable Baselines 3. SAC has useful internals (replay buffer, entropy regularization, actor-critic architecture) that won't matter for this course — [read more here](https://spinningup.openai.com/en/latest/algorithms/sac.html) if curious.
 
-**HER** (Hindsight Experience Replay) solves the sparse reward problem. Even when the agent fails to reach the goal, it *did* reach *somewhere*. HER relabels those failed trajectories as if that somewhere *was* the goal — suddenly you have useful learning signal from every episode, not just the rare successes. [Read more: HER paper](https://arxiv.org/abs/1707.01495)
+**HER** (Hindsight Experience Replay) solves the sparse reward problem. To understand it, recall what's in the observation:
+- `desired_goal` — the target position as `[x, y, z]` in metres (e.g. `[1.34, 0.82, 0.61]`)
+- `achieved_goal` — the gripper's current position, same format `[x, y, z]`
+
+Even when the agent fails to reach `desired_goal`, it *did* reach `achieved_goal` — somewhere. HER takes that failed trajectory and relabels it: pretend `achieved_goal` *was* the goal all along. Now that episode counts as a success for a different goal, giving the agent useful learning signal. Do this for enough failed episodes and the agent learns to reach things — even before it ever reaches the real target. [Read more: HER paper](https://arxiv.org/abs/1707.01495)
+
+HER requires the environment to expose `achieved_goal` and `desired_goal` in the observation, plus a `compute_reward()` method so it can recompute rewards for the relabelled goals. FetchReach has these built in. For a custom task you may not have that structure — in which case you're back to designing a reward function from scratch.
 
 ### The code
 
@@ -92,21 +98,55 @@ Train SAC+HER on FetchReach for 200k steps. `EvalCallback` prints success rate e
 
 ```python workspace/vla/ch02/train_sac_her.py
 """Train SAC+HER on FetchReach-v4 and report success rate."""
+import time
 import numpy as np
 from stable_baselines3 import SAC, HerReplayBuffer
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
 import gymnasium as gym
 import gymnasium_robotics
 
 gym.register_envs(gymnasium_robotics)
 
-TOTAL_STEPS = 200_000
-ENV_ID      = "FetchReach-v4"
+TOTAL_STEPS    = 200_000
+ENV_ID         = "FetchReach-v4"
+MODELS_DIR     = "workspace/vla/ch02/models"
+EARLY_STOP_N   = 3      # stop after this many consecutive evals at 100% success
+                        # for harder tasks, extra training after peak can consolidate the policy — not needed here
 
 def make_env() -> gym.Env:
     return gym.make(ENV_ID)
 
-def train(save_path: str) -> None:
+class EarlyStopOnPerfect(BaseCallback):
+    """Stop training once success rate hits 100% for EARLY_STOP_N consecutive evals."""
+
+    def __init__(self, eval_cb: "EvalCallback"):
+        super().__init__()
+        self.eval_cb        = eval_cb
+        self.perfect_streak = 0
+        self.start_time     = time.time()
+
+    def _on_step(self) -> bool:
+        # evaluations_results is updated by EvalCallback after each eval
+        results = getattr(self.eval_cb, "evaluations_results", None)
+        if results and len(results) > 0:
+            latest_success = float(np.mean(self.eval_cb.evaluations_results[-1]) == 0.0)
+            # SB3 stores mean reward, not success rate — check last logged success rate directly
+            if hasattr(self.eval_cb, 'last_mean_reward'):
+                pass  # fallback: rely on streak counting below
+        # count consecutive perfect evals from the callback's internal success log
+        if hasattr(self.eval_cb, '_is_success_buffer') and self.eval_cb._is_success_buffer:
+            if np.mean(self.eval_cb._is_success_buffer) >= 1.0:
+                self.perfect_streak += 1
+                if self.perfect_streak >= EARLY_STOP_N:
+                    elapsed = (time.time() - self.start_time) / 60
+                    print(f"\n[early stop] 100% success for {EARLY_STOP_N} evals — stopping. "
+                          f"({elapsed:.1f} min, {self.num_timesteps} steps)")
+                    return False  # stops training
+            else:
+                self.perfect_streak = 0
+        return True
+
+def train() -> None:
     env      = make_env()
     eval_env = make_env()  # separate env so evaluation doesn't interfere with training state
 
@@ -114,11 +154,12 @@ def train(save_path: str) -> None:
     # prints mean success rate, and saves the best model seen so far.
     eval_cb = EvalCallback(
         eval_env,
-        best_model_save_path=save_path,
+        best_model_save_path=f"{MODELS_DIR}/trained",
         eval_freq=5_000,       # print progress every 5000 steps
         n_eval_episodes=20,    # average over 20 episodes for a stable success rate
         verbose=1,             # prints success rate so training doesn't feel stuck
     )
+    early_stop = EarlyStopOnPerfect(eval_cb)
 
     model = SAC(
         "MultiInputPolicy", env,  # MultiInputPolicy handles dict observations (obs + goals)
@@ -130,16 +171,25 @@ def train(save_path: str) -> None:
         verbose=0,
     )
 
-    model.learn(total_timesteps=TOTAL_STEPS, callback=eval_cb)
-    model.save(f"{save_path}/final_model")
+    # Save an untrained model snapshot before any learning — used by visualise.py
+    model.save(f"{MODELS_DIR}/untrained/model")
+    print(f"Untrained model saved to {MODELS_DIR}/untrained/")
+
+    start = time.time()
+    print(f"\nTraining started at {time.strftime('%H:%M:%S')}")
+    model.learn(total_timesteps=TOTAL_STEPS, callback=[eval_cb, early_stop])
+    elapsed = time.time() - start
+    print(f"\nTraining finished at {time.strftime('%H:%M:%S')} — total time: {elapsed/60:.1f} min")
+
+    model.save(f"{MODELS_DIR}/trained/final_model")
     env.close()
     eval_env.close()
-    print(f"\nTraining done. Best model saved to {save_path}/")
+    print(f"Trained model saved to {MODELS_DIR}/trained/")
 
 if __name__ == "__main__":
     # Expect ~5 min on GPU, ~20–40 min on CPU
     # Watch success_mean in the logs — it should climb from ~0% to >90%
-    train(save_path="workspace/vla/ch02/models/sac_her")
+    train()
 ```
 
 **No GPU?** Reduce `TOTAL_STEPS = 50_000` and expect lower final success rate.
@@ -150,43 +200,113 @@ and paste the script there.
 
 ### Visualise the trained policy
 
-Once training is done, load the saved model and watch it run in MuJoCo. `render_mode="human"` opens a live window showing the robot arm moving.
+Once training is done, use `visualise.py` to watch the policy run in a MuJoCo window. Pass `--model untrained` or `--model trained` to choose which one to run. `render_mode="human"` tells MuJoCo to open a live window and render each `env.step()` in real time.
+
+```bash
+# watch the untrained model flail
+python workspace/vla/ch02/visualise.py --model untrained
+
+# watch the trained model reach the target
+python workspace/vla/ch02/visualise.py --model trained
+```
 
 ```python workspace/vla/ch02/visualise.py
-"""Load the trained SAC+HER model and watch it run in MuJoCo."""
+"""Watch or screenshot untrained vs trained SAC+HER on FetchReach-v4.
+
+Usage:
+  python visualise.py --model untrained   # live MuJoCo window, untrained policy
+  python visualise.py --model trained     # live MuJoCo window, trained policy
+  python visualise.py --screenshot        # save untrained.png and trained.png
+"""
+import argparse
+import numpy as np
 import gymnasium as gym
 import gymnasium_robotics
+from PIL import Image
 from stable_baselines3 import SAC
 
 gym.register_envs(gymnasium_robotics)
 
-MODEL_PATH = "workspace/vla/ch02/models/sac_her/best_model"
-N_EPISODES = 5
+MODELS_DIR = "workspace/vla/ch02/models"
+N_EPISODES  = 5
 
-env = gym.make("FetchReach-v4", render_mode="human")
-model = SAC.load(MODEL_PATH, env=env)
+def load_model(name: str) -> SAC:
+    paths = {
+        "untrained": f"{MODELS_DIR}/untrained/model",
+        "trained":   f"{MODELS_DIR}/trained/best_model",
+    }
+    env = gym.make("FetchReach-v4")
+    model = SAC.load(paths[name], env=env)
+    env.close()
+    return model
 
-for ep in range(N_EPISODES):
+def run(model: SAC, render_mode: str, label: str) -> None:
+    env = gym.make("FetchReach-v4", render_mode=render_mode)
+    successes = 0
+    print(f"\n--- {label} ---")
+    for ep in range(N_EPISODES):
+        obs, _ = env.reset()
+        for _ in range(50):
+            action, _ = model.predict(obs, deterministic=True)
+            obs, _, terminated, truncated, info = env.step(action)
+            if terminated or truncated:
+                successes += info.get("is_success", False)
+                break
+        print(f"  Episode {ep+1}: {'SUCCESS' if info.get('is_success') else 'fail'}")
+    print(f"Success rate: {successes}/{N_EPISODES}")
+    env.close()
+
+def screenshot(model: SAC, label: str, out_path: str) -> None:
+    """Render one mid-episode frame headlessly and save as PNG."""
+    env = gym.make("FetchReach-v4", render_mode="rgb_array")
     obs, _ = env.reset()
-    total_reward = 0.0
-    for _ in range(50):
+    for _ in range(25):  # step halfway through an episode for an interesting frame
         action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, _ = env.step(action)
-        total_reward += reward
+        obs, _, terminated, truncated, _ = env.step(action)
         if terminated or truncated:
             break
-    print(f"Episode {ep+1}: total reward = {total_reward:.1f}")
+    frame = env.render()  # returns (H, W, 3) numpy array
+    Image.fromarray(frame).save(out_path)
+    print(f"Saved {out_path}")
+    env.close()
 
-env.close()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", choices=["untrained", "trained"],
+                        help="Which model to run in a live MuJoCo window")
+    parser.add_argument("--screenshot", action="store_true",
+                        help="Save untrained.png and trained.png headlessly")
+    # to save screenshots: python visualise.py --screenshot
+    args = parser.parse_args()
+
+    if args.screenshot:
+        import shutil, os
+        for name in ("untrained", "trained"):
+            out = f"workspace/vla/ch02/{name}.png"
+            screenshot(load_model(name), name, out)
+            # copy into the course folder so the reader shows it without running training
+            course_dir = "courses/vla/ch02_rl"
+            os.makedirs(course_dir, exist_ok=True)
+            shutil.copy(out, f"{course_dir}/{name}.png")
+            print(f"Copied to {course_dir}/{name}.png")
+    elif args.model:
+        run(load_model(args.model), render_mode="human",
+            label=f"{args.model} policy")
+    else:
+        parser.print_help()
 ```
 
-You should see the Fetch arm moving its gripper to the target marker. If the policy trained well, it reaches it most of the time.
+![Untrained policy](untrained.png)
+*Untrained policy: random actions, gripper wanders nowhere near the target*
+
+![Trained policy](trained.png)
+*Trained SAC+HER: gripper moves directly to the target*
 
 ---
 
 ## Project B — Reward Design Ablation
 
-**Problem:** FetchReach's reward is sparse — pass/fail only. But there are other ways to design rewards, and the choice dramatically affects how fast (or whether) an agent learns. Understanding this is essential before you design rewards for any custom robot task.
+**Problem:** HER requires the environment to support goal relabelling — not every custom task has that. When it doesn't, you're designing a reward function from scratch: sparse, dense, or something in between. The choice dramatically affects whether the agent learns at all. This project runs all three side by side on the same task so you have a concrete feel for the tradeoffs before you're staring at a blank reward function. (*Ablation* is an ML term for "remove one component and measure the effect" — that's all this is.)
 
 **Approach:** Build a minimal 2D version of the reach task — simpler and faster to run than FetchReach, so the comparison is quick. Train SAC on three reward designs and compare success rates:
 
