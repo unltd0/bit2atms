@@ -220,14 +220,35 @@ LeRobot ships `lerobot-eval` — the same pattern as training. Point it at the c
 # Replace 080000 with your final checkpoint step if different
 lerobot-eval \
   --policy.type=act \
-  --policy.pretrained_path=workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model \
+  --policy.pretrained_path=./workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model \
   --env.type=pusht \
   --eval.n_episodes=50 \
   --eval.batch_size=1 \
   --policy.device=cuda   # or mps (Apple Silicon) or cpu
 ```
 
-**What to expect:** ACT typically reaches 50–80% on pusht in 80k steps. Below 40% — re-run training with a different seed and compare.
+**Reading the output:** The one number that matters is `pc_success` — the fraction of episodes where the T reached the target region.
+
+```
+Overall Aggregated Metrics:
+{'pc_success': 0.62, 'avg_sum_reward': 84.3, 'avg_max_reward': 0.71, 'n_episodes': 50, ...}
+```
+
+- `pc_success: 0.62` → 62% of episodes succeeded — this is your success rate
+- `avg_max_reward` → how close the block got to the target on average (0.0–1.0); tracks progress even when `pc_success` is still 0
+- `n_episodes` → number of trials run
+- Video files are saved to `outputs/eval/` — open them to see what the policy actually did
+
+**What to expect at each checkpoint** (80k total training steps):
+
+| Checkpoint | Training steps | `pc_success` | What you'll see |
+|---|---|---|---|
+| `000700` | 700 | ~0% | Disk moves toward block but can't push it |
+| `020000` | 20k | 10–30% | Starting to push — imprecise, often misses target |
+| `040000` | 40k | 30–55% | Pushing more reliably, still fails on awkward starts |
+| `080000` | 80k | 50–80% | Target range — evaluate this for Project B |
+
+Below 40% at 80k steps — re-run training with `--seed=42` (or any different seed) and compare.
 
 Here's what a partially trained policy looks like (700 steps, ~15 min on MPS) — the disk finds the block but can't push it into the target:
 
