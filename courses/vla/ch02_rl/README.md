@@ -99,104 +99,56 @@ Train SAC+HER on FetchReach for 200k steps. `EvalCallback` prints success rate e
 ```python workspace/vla/ch02/train_sac_her.py
 """Train SAC+HER on FetchReach-v4 and report success rate."""
 import time
-import numpy as np
 from stable_baselines3 import SAC, HerReplayBuffer
-from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
+from stable_baselines3.common.callbacks import EvalCallback
 import gymnasium as gym
 import gymnasium_robotics
 
 gym.register_envs(gymnasium_robotics)
 
-TOTAL_STEPS    = 200_000
-ENV_ID         = "FetchReach-v4"
-MODELS_DIR     = "workspace/vla/ch02/models"
-EARLY_STOP_N   = 3      # stop after this many consecutive evals at 100% success
-                        # for harder tasks, extra training after peak can consolidate the policy — not needed here
-
-def make_env() -> gym.Env:
-    return gym.make(ENV_ID)
-
-class EarlyStopOnPerfect(BaseCallback):
-    """Stop training once success rate hits 100% for EARLY_STOP_N consecutive evals."""
-
-    def __init__(self, eval_cb: "EvalCallback"):
-        super().__init__()
-        self.eval_cb        = eval_cb
-        self.perfect_streak = 0
-        self.start_time     = time.time()
-
-    def _on_step(self) -> bool:
-        # evaluations_results is updated by EvalCallback after each eval
-        results = getattr(self.eval_cb, "evaluations_results", None)
-        if results and len(results) > 0:
-            latest_success = float(np.mean(self.eval_cb.evaluations_results[-1]) == 0.0)
-            # SB3 stores mean reward, not success rate — check last logged success rate directly
-            if hasattr(self.eval_cb, 'last_mean_reward'):
-                pass  # fallback: rely on streak counting below
-        # count consecutive perfect evals from the callback's internal success log
-        if hasattr(self.eval_cb, '_is_success_buffer') and self.eval_cb._is_success_buffer:
-            if np.mean(self.eval_cb._is_success_buffer) >= 1.0:
-                self.perfect_streak += 1
-                if self.perfect_streak >= EARLY_STOP_N:
-                    elapsed = (time.time() - self.start_time) / 60
-                    print(f"\n[early stop] 100% success for {EARLY_STOP_N} evals — stopping. "
-                          f"({elapsed:.1f} min, {self.num_timesteps} steps)")
-                    return False  # stops training
-            else:
-                self.perfect_streak = 0
-        return True
+TOTAL_STEPS = 25_000   # FetchReach typically hits 100% success by ~15k steps — 25k gives a safe buffer
+ENV_ID      = "FetchReach-v4"
+MODELS_DIR  = "workspace/vla/ch02/models"
 
 def train() -> None:
-    env      = make_env()
-    eval_env = make_env()  # separate env so evaluation doesn't interfere with training state
+    env      = gym.make(ENV_ID)
+    eval_env = gym.make(ENV_ID)  # separate env so evaluation doesn't interfere with training state
 
-    # EvalCallback runs the current policy every eval_freq steps on eval_env,
-    # prints mean success rate, and saves the best model seen so far.
     eval_cb = EvalCallback(
         eval_env,
         best_model_save_path=f"{MODELS_DIR}/trained",
-        eval_freq=5_000,       # print progress every 5000 steps
-        n_eval_episodes=20,    # average over 20 episodes for a stable success rate
-        verbose=1,             # prints success rate so training doesn't feel stuck
+        eval_freq=5_000,     # evaluate every 5000 steps — watch success rate climb from ~0% to 100%
+        n_eval_episodes=20,  # average over 20 episodes for a stable number
+        verbose=1,
     )
-    early_stop = EarlyStopOnPerfect(eval_cb)
 
     model = SAC(
         "MultiInputPolicy", env,  # MultiInputPolicy handles dict observations (obs + goals)
         replay_buffer_class=HerReplayBuffer,
         replay_buffer_kwargs={
-            "n_sampled_goal": 4,                    # relabel each transition with 4 fake goals
-            "goal_selection_strategy": "future",    # pick relabel goals from later in the episode
+            "n_sampled_goal": 4,                   # relabel each transition with 4 fake goals
+            "goal_selection_strategy": "future",   # pick goals from later in the same episode
         },
         verbose=0,
     )
 
-    # Save an untrained model snapshot before any learning — used by visualise.py
+    # Save untrained snapshot before learning starts — used by visualise.py
     model.save(f"{MODELS_DIR}/untrained/model")
-    print(f"Untrained model saved to {MODELS_DIR}/untrained/")
 
     start = time.time()
-    print(f"\nTraining started at {time.strftime('%H:%M:%S')}")
-    model.learn(total_timesteps=TOTAL_STEPS, callback=[eval_cb, early_stop])
-    elapsed = time.time() - start
-    print(f"\nTraining finished at {time.strftime('%H:%M:%S')} — total time: {elapsed/60:.1f} min")
+    print(f"Training started at {time.strftime('%H:%M:%S')} — expect ~3–5 min on CPU")
+    model.learn(total_timesteps=TOTAL_STEPS, callback=eval_cb)
+    print(f"Done — {(time.time()-start)/60:.1f} min. Model saved to {MODELS_DIR}/trained/")
 
     model.save(f"{MODELS_DIR}/trained/final_model")
     env.close()
     eval_env.close()
-    print(f"Trained model saved to {MODELS_DIR}/trained/")
 
 if __name__ == "__main__":
-    # Expect ~5 min on GPU, ~20–40 min on CPU
-    # Watch success_mean in the logs — it should climb from ~0% to >90%
     train()
 ```
 
-**No GPU?** Reduce `TOTAL_STEPS = 50_000` and expect lower final success rate.
-For a free GPU: open [Google Colab](https://colab.research.google.com), set runtime to GPU,
-and paste the script there.
-
-**What to observe:** Success rate starts near 0% and climbs to >90% within 50k steps. If it plateaus below 50%, check that `gym.register_envs(gymnasium_robotics)` is called before `gym.make()`.
+**What to observe:** Success rate jumps from 0% to 100% within ~15k steps (~2 min on CPU). If it plateaus below 50%, check that `gym.register_envs(gymnasium_robotics)` is called before `gym.make()`.
 
 ### Visualise the trained policy
 
@@ -211,89 +163,53 @@ python workspace/vla/ch02/visualise.py --model trained
 ```
 
 ```python workspace/vla/ch02/visualise.py
-"""Watch or screenshot untrained vs trained SAC+HER on FetchReach-v4.
+"""Watch untrained vs trained SAC+HER on FetchReach-v4 in a live MuJoCo window.
 
 Usage:
-  python visualise.py --model untrained   # live MuJoCo window, untrained policy
-  python visualise.py --model trained     # live MuJoCo window, trained policy
-  python visualise.py --screenshot        # save untrained.png and trained.png
+  python visualise.py --model untrained
+  python visualise.py --model trained
 """
 import argparse
-import numpy as np
 import gymnasium as gym
 import gymnasium_robotics
-from PIL import Image
 from stable_baselines3 import SAC
 
 gym.register_envs(gymnasium_robotics)
 
 MODELS_DIR = "workspace/vla/ch02/models"
-N_EPISODES  = 5
+N_EPISODES = 5
+MODEL_PATHS = {
+    "untrained": f"{MODELS_DIR}/untrained/model",
+    "trained":   f"{MODELS_DIR}/trained/best_model",
+}
 
-def load_model(name: str) -> SAC:
-    paths = {
-        "untrained": f"{MODELS_DIR}/untrained/model",
-        "trained":   f"{MODELS_DIR}/trained/best_model",
-    }
-    env = gym.make("FetchReach-v4")
-    model = SAC.load(paths[name], env=env)
-    env.close()
-    return model
+def run(model_name: str) -> None:
+    # render_mode="human" opens a live MuJoCo window — remove it to run headless
+    env   = gym.make("FetchReach-v4", render_mode="human")
+    model = SAC.load(MODEL_PATHS[model_name], env=env)
 
-def run(model: SAC, render_mode: str, label: str) -> None:
-    env = gym.make("FetchReach-v4", render_mode=render_mode)
+    print(f"\n--- {model_name} policy ---")
     successes = 0
-    print(f"\n--- {label} ---")
     for ep in range(N_EPISODES):
         obs, _ = env.reset()
         for _ in range(50):
             action, _ = model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, info = env.step(action)
             if terminated or truncated:
-                successes += info.get("is_success", False)
                 break
-        print(f"  Episode {ep+1}: {'SUCCESS' if info.get('is_success') else 'fail'}")
-    print(f"Success rate: {successes}/{N_EPISODES}")
-    env.close()
+        success = info.get("is_success", False)
+        successes += success
+        print(f"  Episode {ep+1}: {'SUCCESS' if success else 'fail'}")
 
-def screenshot(model: SAC, label: str, out_path: str) -> None:
-    """Render one mid-episode frame headlessly and save as PNG."""
-    env = gym.make("FetchReach-v4", render_mode="rgb_array")
-    obs, _ = env.reset()
-    for _ in range(25):  # step halfway through an episode for an interesting frame
-        action, _ = model.predict(obs, deterministic=True)
-        obs, _, terminated, truncated, _ = env.step(action)
-        if terminated or truncated:
-            break
-    frame = env.render()  # returns (H, W, 3) numpy array
-    Image.fromarray(frame).save(out_path)
-    print(f"Saved {out_path}")
+    print(f"Success rate: {successes}/{N_EPISODES}")
     env.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=["untrained", "trained"],
-                        help="Which model to run in a live MuJoCo window")
-    parser.add_argument("--screenshot", action="store_true",
-                        help="Save untrained.png and trained.png headlessly")
-    # to save screenshots: python visualise.py --screenshot
+    parser.add_argument("--model", choices=["untrained", "trained"], required=True)
+    # to save screenshots instead: python visualise.py --model trained --screenshot
     args = parser.parse_args()
-
-    if args.screenshot:
-        import shutil, os
-        for name in ("untrained", "trained"):
-            out = f"workspace/vla/ch02/{name}.png"
-            screenshot(load_model(name), name, out)
-            # copy into the course folder so the reader shows it without running training
-            course_dir = "courses/vla/ch02_rl"
-            os.makedirs(course_dir, exist_ok=True)
-            shutil.copy(out, f"{course_dir}/{name}.png")
-            print(f"Copied to {course_dir}/{name}.png")
-    elif args.model:
-        run(load_model(args.model), render_mode="human",
-            label=f"{args.model} policy")
-    else:
-        parser.print_help()
+    run(args.model)
 ```
 
 ![Untrained policy](untrained.png)
