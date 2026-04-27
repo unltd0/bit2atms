@@ -131,6 +131,11 @@ Introduce concepts inline as needed. Brief theory digressions OK — link out fo
 - Error messages must include a troubleshooting hint
 - Check `torch.cuda.is_available()` wherever GPU is relevant
 - File paths: `workspace/vla/chXX/filename.py`
+- **Depth markers:** tag every code block with one of three markers on the line immediately before the fence:
+  - `🟢 **Know** — just run it, see what happens.` (orientation code; learner doesn't need to modify it)
+  - `🟡 **Feel** — read through and understand the flow.` (important pattern; learner should follow the logic)
+  - `🔴 **Work** — make changes and observe the impact.` (core skill; learner must write or modify this)
+  - One marker per code block. No legend section — the label is self-explanatory inline.
 
 ---
 
