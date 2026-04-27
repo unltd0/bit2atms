@@ -288,6 +288,8 @@ Overall Aggregated Metrics:
 
 Below 40% at 80k steps — re-run training with `--seed=42` (or any different seed) and compare.
 
+**Why 80k steps?** It's the standard benchmark number used in the LeRobot repo and ACT paper for pusht — not derived from math. In practice `pc_success` may plateau earlier (40–60k) or still be climbing at 80k depending on your seed. Watch the intermediate evals: if success rate hasn't moved between 60k and 80k, you're done; if it's still rising, try 100k.
+
 Here's what a partially trained policy looks like (700 steps, ~15 min on MPS) — the disk finds the block but can't push it into the target:
 
 ![ACT at 700 steps — disk finds the block but can't push it into the target](assets/act_700steps.gif)
