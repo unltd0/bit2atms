@@ -180,7 +180,8 @@ input → transform → output
 ```
 
 Rules:
-- Number top-level steps 1, 2, 3... Sub-steps use 1.1, 1.2, 2.1...
+- **Numbers reflect execution order, not physical position in the file.** A typical Python script executes: (1) module-level globals, (2) `if __name__ == "__main__"` entry point, (3) the first function called from there, and so on. Even if `__main__` is at the bottom of the file, it is step 2 — not step 9. Don't number by line order; number by the order a reader would trace through a debugger.
+- Number top-level steps 1, 2, 3... in the order they execute. Sub-steps use 1.1, 1.2, 2.1...
 - At branch points (if/elif), label each branch: `# 2.1 ACT path`, `# 2.2 Diffusion path`
 - Always annotate data types and shapes at the point of transformation:
   `# obs["pixels"] → np.array (96,96,3) uint8 → tensor (1,3,96,96) float [0,1]`

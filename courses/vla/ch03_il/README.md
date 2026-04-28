@@ -52,7 +52,7 @@ pip install -e ".[dataset_viz]"   # optional — for browsing the dataset
 | # | Project | What you build |
 |---|---------|---------------|
 | A | Train & Evaluate | Train ACT on the pusht dataset; establish a success rate baseline |
-| B | Failure Analysis | Categorize what's going wrong; collect targeted demos; retrain |
+| B | Failure Analysis | Categorize what's going wrong; identify the dominant failure mode |
 
 ---
 
@@ -284,13 +284,15 @@ Overall Aggregated Metrics:
 | `000700` | 700 | 0% | ~0.17 | Disk moves toward block, can't push |
 | `020000` | 20k | 0% | ~0.25 | Starting to push — block moves but not aligned |
 | `060000` | 60k | 0% | ~0.33 | Block getting close — 33% avg coverage, need 95% to succeed |
-| `080000` | 80k | 10–60% | ~0.5+ | First successes — highly seed-dependent |
+| `080000` | 80k | 0% (MPS) / 10–60% (CUDA) | ~0.40 | MPS: still learning; CUDA: first successes appear |
 
-**Why does `pc_success` stay 0% so long?** The pusht success threshold is 95% coverage — the T-block must be almost perfectly aligned with the target. `avg_max_reward` tracks how close you're getting (0.0–1.0 = 0–95% coverage). Watch this number, not just `pc_success` — a policy improving from 0.17 → 0.33 → 0.5 is learning even if success rate is still 0%.
+**Why does `pc_success` stay 0% so long?** The pusht success threshold is 95% coverage — the T-block must be almost perfectly aligned with the target. `avg_max_reward` tracks how close you're getting (0.0–1.0 = 0–95% coverage). Watch this number, not just `pc_success` — a policy improving from 0.17 → 0.33 → 0.40 is learning even if success rate is still 0%.
+
+**Apple Silicon note:** MPS training at 80k typically reaches `avg_max_reward` ~0.40 but `pc_success` stays 0%. This isn't a bug — MPS has lower gradient precision than CUDA float32, so the policy converges more slowly. Options: run to 120k+ steps, or use Colab for the full run (T4 hits 10–60% success at 80k).
 
 Below 30% `avg_max_reward` at 80k steps — re-run training with `--seed=42` (or any different seed) and compare.
 
-**Why 80k steps?** It's the standard benchmark number used in the LeRobot repo and ACT paper for pusht — not derived from math. In practice `pc_success` may plateau earlier (40–60k) or still be climbing at 80k depending on your seed. Watch the intermediate evals: if success rate hasn't moved between 60k and 80k, you're done; if it's still rising, try 100k.
+**Why 80k steps?** It's the standard benchmark number used in the LeRobot repo and ACT paper for pusht — not derived from math. In practice `pc_success` may plateau earlier (40–60k on CUDA) or still be climbing at 80k depending on hardware and seed. Watch the intermediate evals: if success rate hasn't moved between 60k and 80k, try 100k–120k.
 
 Here's what a partially trained policy looks like (700 steps, ~15 min on MPS) — the disk finds the block but can't push it into the target:
 
@@ -300,7 +302,7 @@ At 60k steps the policy is clearly pushing the block into the target region — 
 
 ![ACT at 60k steps — block reaches the target but not fully aligned](assets/act_60ksteps.gif)
 
-A fully trained policy (80k steps) gets that final alignment right most of the time.
+A CUDA-trained policy at 80k steps gets that final alignment right 10–60% of the time. On MPS it takes longer — 100k+ steps.
 
 ### What about Diffusion Policy?
 
@@ -335,7 +337,7 @@ This is the most transferable skill in this chapter. In Ch7 you'll run the exact
 > 🔴 **Work** — copy the code below into `workspace/vla/ch03/failure_analysis.py`, then run:
 > ```bash
 > python workspace/vla/ch03/failure_analysis.py act \
->   ./workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model
+>   ./workspace/vla/ch03/outputs/act_pusht_full/checkpoints/080000/pretrained_model
 > ```
 > Open the saved images in `workspace/vla/ch03/failures/` and count how many failures fit each category. Write down the dominant one. In Ch7 you'll close the loop for real — collecting targeted demos on the arm and retraining.
 
@@ -358,24 +360,24 @@ if failed → save frames[0], frames[mid], frames[-1] as PNGs
 """Run N trials, save failure frames as PNGs, print categorization guide."""
 import sys
 import os
+import pathlib
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import gymnasium as gym
 import gym_pusht
 
-# 1. Configuration — Python reads these globals before anything else runs.
+# 1. Globals — read first when the module loads, before any function runs.
 #    argv[1] = policy type ("act" or "diffusion"), passed from the run command
 #    argv[2] = path to the pretrained_model directory, passed from the run command
 #    N_TRIALS and OUT_DIR are fixed — change them here if needed.
-#    Execution actually starts at __main__ (step 9, bottom of file) → calls analyze_failures().
 POLICY_TYPE = sys.argv[1] if len(sys.argv) > 1 else "act"
 POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model"
 N_TRIALS    = 20
 OUT_DIR     = "workspace/vla/ch03/failures"
 
-# 2. These are the categories you'll manually assign when reviewing saved PNGs.
-#    You don't run code to categorize — you look at the images and count by hand.
+# Categories you'll manually assign when reviewing saved PNGs.
+# Not a step — just a constant used in step 6.
 FAILURE_CATEGORIES = [
     "A: never reached the block",
     "B: reached block but couldn't push it",
@@ -385,9 +387,9 @@ FAILURE_CATEGORIES = [
 ]
 
 
-# 3. Load the trained policy from a checkpoint directory.
-#    Returns a policy object with a .select_action() method.
+# Called from step 3 (inside analyze_failures) — returns policy object with .select_action()
 def load_policy(policy_type: str, policy_path: str, device: str):
+    policy_path = str(pathlib.Path(policy_path).resolve())  # absolute path avoids HF repo-id validation
     # 3.1 ACT path — loads ACTPolicy, which predicts action chunks
     if policy_type == "act":
         from lerobot.policies.act.modeling_act import ACTPolicy
@@ -401,7 +403,7 @@ def load_policy(policy_type: str, policy_path: str, device: str):
 
 
 def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 20) -> None:
-    # 4. Setup — load policy and create environment
+    # 3. Setup — load policy and create environment (called from __main__ at step 2)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     policy = load_policy(policy_type, policy_path, device)
     policy.eval()  # disable dropout — inference mode
@@ -415,34 +417,34 @@ def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 20) -> 
 
     n_failures = 0
 
-    # 5. Run N_TRIALS episodes
+    # 4. Run N_TRIALS episodes
     for trial in range(n_trials):
         obs, _ = env.reset()          # random start position each trial
         frames = [env.render()]       # list of np.array (H, W, 3) — one per step
         done   = False
 
-        # 6. Run one episode step by step until done
+        # 5. Run one episode step by step until done
         while not done:
             with torch.no_grad():     # no gradients needed at inference
-                # 6.1 Build the observation dict the policy expects:
-                #   "observation.image": tensor shape (1, 3, 96, 96), float in [0, 1]
-                #     - obs["pixels"] is (96,96,3) uint8 → permute to (3,96,96) → add batch dim → normalize
-                #   "observation.state": tensor shape (1, 2), float
-                #     - obs["agent_pos"] is (2,) → add batch dim
+                # 5.1 Build the observation dict the policy expects:
+                #   "observation.image": tensor shape (1, 3, 96, 96), float32 in [0, 1]
+                #     - obs["pixels"] is (96,96,3) uint8 → permute (3,96,96) → float32 → batch dim → /255
+                #   "observation.state": tensor shape (1, 2), float32
+                #     - obs["agent_pos"] is (2,) float64 → float32 → add batch dim (.float() avoids dtype mismatch)
                 action = policy.select_action({
-                    "observation.image": torch.tensor(obs["pixels"]).permute(2, 0, 1).unsqueeze(0).to(device) / 255.0,
-                    "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).to(device),
+                    "observation.image": torch.tensor(obs["pixels"]).permute(2, 0, 1).unsqueeze(0).float().to(device) / 255.0,
+                    "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).float().to(device),
                 })
                 # action is tensor shape (1, 2) — target (x, y) for the disk, in [0, 512]
 
-            # 6.2 Step the environment with the action
+            # 5.2 Step the environment with the action
             #   action.cpu().numpy()[0] → np.array shape (2,) — remove batch dim
             #   returns: new obs, reward (float), terminated (bool), truncated (bool), info (dict)
             obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
             frames.append(env.render())
             done = term or trunc      # term = success/physics end; trunc = 300-step timeout
 
-        # 7. If the episode failed, save three frames for manual review
+        # 6. If the episode failed, save three frames for manual review
         #    info["is_success"] = True only if T-block had >95% coverage at termination
         if not info.get("is_success", False):
             for label, frame in [
@@ -456,7 +458,7 @@ def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 20) -> 
 
     env.close()
 
-    # 8. Print summary — this is your input for manual categorization
+    # 7. Print summary — this is your input for manual categorization
     print(f"\n{n_failures} failures out of {n_trials} trials ({n_failures/n_trials:.0%} failure rate)")
     print(f"Failure frames saved to {OUT_DIR}/")
     print("\nCount failures by category:")
@@ -465,13 +467,31 @@ def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 20) -> 
     print("\nNote the top category — in Ch7 you'll collect targeted demos for it on a real arm and retrain.")
 
 
-# 9. Actual entry point — Python runs this block first when you execute the script.
-#    Picks up POLICY_TYPE and POLICY_PATH from step 1, passes them into analyze_failures().
+# 2. Entry point — execution starts here, after globals are read.
+#    Picks up POLICY_TYPE and POLICY_PATH from step 1, calls analyze_failures() → step 3.
 if __name__ == "__main__":
     analyze_failures(POLICY_TYPE, POLICY_PATH, N_TRIALS)
 ```
 
 **What to observe:** Most failures cluster into 1–2 categories. Targeted demos for those categories typically improve success rate more than doubling the random dataset size. If you can't identify a pattern, your success rate is too low — re-check dataset quality first.
+
+Here are the failure patterns you're likely to see at 60k steps (before training fully converges):
+
+> **Note:** You can absolutely use a vision model (GPT-4o, Claude) to batch-categorize these images — just pass it the start/mid/end strip and ask which category fits. But do a manual pass on a handful first. You'll develop intuition for what the policy is actually doing that no prompt can give you.
+
+**A — disk never reaches the block.** The disk (blue dot) moves to a fixed location and stops, or drifts off-screen. The T-block never moves. The policy hasn't learned to navigate to this starting configuration — it's underrepresented in the training demos.
+
+![Failure A: disk goes off-screen top-left, T-block and target never touched](assets/failure_a_never_reached.png)
+
+**B — disk gets stuck against the block.** The disk reaches the block and makes contact, then freezes in place — mid and end frames look identical. The policy learned to approach but not to push. Usually happens when the contact angle wasn't well covered in training.
+
+![Failure B: disk contacts block at start, frozen in same position mid and end](assets/failure_b_stuck.png)
+
+**C — pushed in the wrong direction.** The disk pushes the block, but away from the target rather than toward it. At start the block is overlapping the target (a promising position) but the policy applies a push that slides it upward and off. Wrong push direction for this block orientation.
+
+![Failure C: block starts near target, gets pushed upward and away](assets/failure_c_wrong_direction.png)
+
+On CUDA/Colab at 80k steps the policy succeeds 10–60% of the time (seed-dependent). On MPS, `avg_max_reward` reaches ~0.40 but `pc_success` stays 0% — the policy is learning but needs more steps to cross the 95% threshold. Either way, the failure patterns above are what you'll see, and A and C are the categories most worth targeting with extra demos.
 
 ACT and Diffusion Policy are task-specific: they have no language understanding and no concept of "red ball" or "pick up". In Ch4 you'll add both by fine-tuning **SmolVLA** — same LeRobot dataset format, same eval loop, dramatically fewer demos needed.
 
@@ -505,8 +525,6 @@ ACT and Diffusion Policy are task-specific: they have no language understanding 
 - **Evaluating on a fixed random seed:** High success on one seed can mask overfitting to initial conditions. Always vary seeds across trials.
 
 - **Treating all failures as equal:** 30% failure rate with 3 distinct modes is three separate problems. Fix the biggest one first.
-
-- **Image normalization mismatch:** `failure_analysis.py` divides pixels by 255.0 before `select_action()`. Some LeRobot versions apply normalization internally — check if success rates look suspiciously low right out of training.
 
 ---
 
