@@ -26,7 +26,7 @@ CHAPTERS=(
   "ch01 read_robot_state.py ik_solver.py pd_controller.py"
   "ch02 train_sac_her.py visualise.py reward_ablation.py curriculum.py"
   "ch03 train_act.sh train_diffusion.sh eval_act.sh failure_analysis.py"
-  "ch04 smolvla_finetune.py eval_smolvla.py"
+  "ch04 run_inference.py interact_so101.py probe_language.py finetune_smolvla.sh compare_zeroshot_finetuned.py"
   "ch05 physics_dr.py visual_dr.py eval_transfer.py"
   "ch06 fk_subscriber.py ik_service.py"
   "ch07 teleoperate.sh calibrate.sh collect_demos.sh train_real.sh deploy.sh failure_log.py"
