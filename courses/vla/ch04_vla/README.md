@@ -55,13 +55,21 @@ pip install -e ".[smolvla]"
 
 ## Project A — Interactive Sim
 
-**Problem:** You need to understand what a VLA does before you can use one on real hardware.
-The best way to build that intuition is to interact with it — type an instruction and watch
-what happens.
+**Problem:** A **VLA** (Vision-Language-Action model) takes three things in and produces robot actions out:
 
-**Approach:** Load a SmolVLA checkpoint fine-tuned on real SO-101 pick-and-place data. Set up
-two virtual cameras in a MuJoCo SO-101 scene. Each sim step: render both cameras → feed to
-policy → apply the output joint targets → step the sim → repeat.
+| Input | Where it comes from |
+|-------|--------------------|
+| **Vision** — camera images | Simulated by MuJoCo, or real photos from a robot's cameras |
+| **Language** — what you want to happen | You type it: "pick up the red block" |
+| **State** — where the robot currently is | Joint angles read from the simulator |
+
+| Output | What it means |
+|--------|---------------|
+| **Action** — joint targets | Tells each motor how much to turn this step |
+
+The best way to build intuition for how a VLA works is to see all three inputs and the output in one interactive loop: simulate camera views → type an instruction → watch the arm move.
+
+**Approach:** Load a SmolVLA checkpoint fine-tuned on real SO-101 pick-and-place data. Set up two virtual cameras in a MuJoCo SO-101 scene. Each sim step: render both cameras → feed to policy → apply the output joint targets → step the sim → repeat.
 
 ### What a VLA is
 
@@ -128,7 +136,7 @@ The menagerie must be cloned into `workspace/ext/`:
 git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
 ```
 
-```python workspace/vla/ch04/interact_so101.py
+```python courses/vla/ch04_vla/code/interact_so101.py
 """
 Interactive SmolVLA + SO-101 MuJoCo sim.
 
@@ -339,7 +347,7 @@ in which direction?
 > 🟡 **Know** — read the structure; run `interact_so101.py` with each group and note the
 > joint position printout after each run.
 
-```python workspace/vla/ch04/probe_language.py
+```python courses/vla/ch04_vla/code/probe_language.py
 """
 Probe SmolVLA language conditioning on the SO-101 MuJoCo sim.
 Runs each instruction for 50 steps and prints final joint positions.
@@ -461,7 +469,7 @@ free T4 (16 GB) works with `--batch_size=16`. MPS and CPU will OOM.
 
 > 🟢 **Run** — kick off fine-tuning (~60–90 min on a T4); inspect the loss curve.
 
-```bash workspace/vla/ch04/finetune_smolvla.sh
+```bash courses/vla/ch04_vla/code/finetune_smolvla.sh
 cd workspace/ext/lerobot
 
 uv run --extra smolvla --extra training --extra dataset \
