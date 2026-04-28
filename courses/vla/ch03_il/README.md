@@ -364,10 +364,11 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 import gym_pusht
 
-# 1. Entry point — execution starts here when you run the script (see __main__ at bottom).
+# 1. Configuration — Python reads these globals before anything else runs.
 #    argv[1] = policy type ("act" or "diffusion"), passed from the run command
 #    argv[2] = path to the pretrained_model directory, passed from the run command
-#    N_TRIALS and OUT_DIR are fixed — change them here if needed
+#    N_TRIALS and OUT_DIR are fixed — change them here if needed.
+#    Execution actually starts at __main__ (step 9, bottom of file) → calls analyze_failures().
 POLICY_TYPE = sys.argv[1] if len(sys.argv) > 1 else "act"
 POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model"
 N_TRIALS    = 20
