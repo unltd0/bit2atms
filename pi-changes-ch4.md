@@ -7,6 +7,15 @@
 - `reader.html` — Clickable filename copy on code blocks (+15 lines)
 - `scripts/reset_workspace.sh` — Updated ch04 workspace file list
 
+### Committed (0438e3b) — `ch4: add reference code folder + VLA framing rewrite`
+- `courses/vla/ch04_vla/code/interact_so101.py` — Interactive SO-101 sim with manual tokenization (171 lines)
+- `courses/vla/ch04_vla/code/probe_language.py` — Language probe script (123 lines)
+- `courses/vla/ch04_vla/code/finetune_smolvla.sh` — Fine-tuning pipeline (20 lines)
+- README: all code block paths fixed (`workspace/vla/ch04/` → `courses/vla/ch04_vla/code/`)
+- README: VLA framing rewritten with clear Vision+Language→Action input/output tables
+- README: removed filler about "no training, no collecting demos"
+- `pi-changes-ch4.md` — This file (change log & handoff notes)
+
 ### Pending (not yet committed)
 See "What needs to be done next" below.
 
@@ -107,49 +116,30 @@ lang_mask       = enc["attention_mask"].bool()
 
 ## What Needs to Be Done Next
 
-### 5. VLA framing rewrite (Project A opening)
-Replaced the one-line "Problem" paragraph with a clear pedagogical explanation:
-- **VLA = Vision + Language → Action** — explained via two tables (inputs / outputs)
-- Concrete mapping: camera images → vision, typed instruction → language, joint targets → action
-- Natural transition into the approach and then the technical "What a VLA is" subsection
-- Removed duplicate "Approach:" paragraph that was left over from the edit
+### All planned changes committed ✅
+Two commits:
+- `b0f4e72` — README rewrite + reader UX fix + reset script update
+- `0438e3b` — code/ folder + path fixes + VLA framing rewrite
 
-### 1. Commit the code/ folder and README path updates
-```bash
-git add courses/vla/ch04_vla/code/
-# Verify README references are correct:
-grep -n "courses/vla/ch04_vla/code" courses/vla/ch04_vla/README.md
-git commit -m "ch4: add reference code folder + fix code block paths"
-```
+### Optional cleanup (not urgent)
+The following workspace files are gitignored and don't affect the repo:
+- `workspace/vla/ch04/run_inference.py` — old gym_pusht version, uses broken `"task"` API
+- `workspace/vla/ch04/eval_smolvla.py` — empty placeholder
+- `workspace/vla/ch04/smolvla_finetune.py` — empty placeholder
+- `workspace/vla/ch04/compare_zeroshot_finetuned.py` — empty placeholder
 
-### 2. Update reset_workspace.sh to include course code files?
-Currently `reset_workspace.sh` only creates workspace placeholders. The course code is in the committed repo so students get it automatically. No change needed here — but verify the ch04 line still lists workspace-only files (not course code).
-
-Current: `"ch04 run_inference.py interact_so101.py probe_language.py finetune_smolvla.sh"`
-This is fine — these are student scratchpad names that get created empty. Students copy from `courses/vla/ch04_vla/code/` into workspace as needed.
-
-### 3. Clean up leftover workspace files (optional)
-The following are empty or unused:
-- `workspace/vla/ch04/run_inference.py` (2.3KB old gym_pusht version)
-- `workspace/vla/ch04/eval_smolvla.py` (empty)
-- `workspace/vla/ch04/smolvla_finetune.py` (empty)
-- `workspace/vla/ch04/compare_zeroshot_finetuned.py` (empty)
-
-These are gitignored so they don't affect the repo. Can be cleaned up with:
+Can be removed with:
 ```bash
 rm workspace/vla/ch04/run_inference.py workspace/vla/ch04/eval_smolvla.py workspace/vla/ch04/smolvla_finetune.py workspace/vla/ch04/compare_zeroshot_finetuned.py
 ```
 
-### 4. Verify the reader renders correctly locally
+### Verify locally (optional)
 ```bash
 python3 -m http.server 8080 &
 # Open http://localhost:8080/reader.html#ch04
-# Check that all three code blocks render from courses/vla/ch04_vla/code/
-# Check that clicking the filename copies it to clipboard
+# Check all three code blocks render from courses/vla/ch04_vla/code/
+# Check clickable filename copy works
 ```
-
-### 5. Consider: should `run_inference.py` be kept?
-The old gym_pusht version is still in workspace but not referenced by the new README. It's a useful reference for understanding the SmolVLA API before the SO-101 approach, but it's also confusing since it uses `"task"` which doesn't work with this checkpoint. Recommendation: remove it or rename to `run_inference_gym_pusht.py` and add a note that it demonstrates the old approach.
 
 ---
 
