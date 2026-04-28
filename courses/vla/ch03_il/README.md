@@ -334,6 +334,21 @@ This is the most transferable skill in this chapter. In Ch7 you'll run the exact
 
 > 🔴 **Work** — after running this, open the saved images in `workspace/vla/ch03/failures/` and count how many failures fit each category. Write down the dominant one. In Ch7 you'll close the loop for real — collecting targeted demos on the arm and retraining.
 
+**What this script does:** Runs `N_TRIALS` episodes of the policy in the environment. For each episode it records every frame. If the episode fails (T-block didn't reach 95% coverage), it saves three snapshots — start, mid, end — so you can see *where* the episode went wrong. Successes are ignored. At the end it prints the failure rate and prompts you to categorize by hand.
+
+The data flow through one episode:
+```
+env.reset() → obs (image + agent_pos)
+    ↓
+policy.select_action(obs) → action [x, y]   # where to move the disk next
+    ↓
+env.step(action) → new obs, reward, done, info
+    ↓
+repeat until done (success or 300-step timeout)
+    ↓
+if failed → save frames[0], frames[mid], frames[-1] as PNGs
+```
+
 ```python workspace/vla/ch03/failure_analysis.py
 """Run N trials, save failure frames as PNGs, print categorization guide."""
 import sys
@@ -344,12 +359,15 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 import gym_pusht
 
+# 1. Configuration — edit these or pass as CLI args:
+#    python failure_analysis.py act ./path/to/checkpoint
 POLICY_TYPE = sys.argv[1] if len(sys.argv) > 1 else "act"
 POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model"
 N_TRIALS    = 20
 OUT_DIR     = "workspace/vla/ch03/failures"
 
-# Categories to manually assign when reviewing saved frames
+# 2. These are the categories you'll manually assign when reviewing saved PNGs.
+#    You don't run code to categorize — you look at the images and count by hand.
 FAILURE_CATEGORIES = [
     "A: never reached the block",
     "B: reached block but couldn't push it",
@@ -359,10 +377,14 @@ FAILURE_CATEGORIES = [
 ]
 
 
+# 3. Load the trained policy from a checkpoint directory.
+#    Returns a policy object with a .select_action() method.
 def load_policy(policy_type: str, policy_path: str, device: str):
+    # 3.1 ACT path — loads ACTPolicy, which predicts action chunks
     if policy_type == "act":
         from lerobot.policies.act.modeling_act import ACTPolicy
         return ACTPolicy.from_pretrained(policy_path).to(device)
+    # 3.2 Diffusion path — same interface, different internals
     elif policy_type == "diffusion":
         from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy
         return DiffusionPolicy.from_pretrained(policy_path).to(device)
@@ -371,37 +393,62 @@ def load_policy(policy_type: str, policy_path: str, device: str):
 
 
 def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 20) -> None:
+    # 4. Setup — load policy and create environment
     device = "cuda" if torch.cuda.is_available() else "cpu"
     policy = load_policy(policy_type, policy_path, device)
-    policy.eval()
+    policy.eval()  # disable dropout — inference mode
 
-    # render_mode="rgb_array" so we can capture frames for saving
+    # obs_type="pixels_agent_pos" means obs will have two keys:
+    #   obs["pixels"]    → np.array shape (96, 96, 3), uint8, RGB image
+    #   obs["agent_pos"] → np.array shape (2,), float, (x, y) position of the disk
+    # render_mode="rgb_array" lets us call env.render() to get a frame as np.array
     env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
     os.makedirs(OUT_DIR, exist_ok=True)
 
     n_failures = 0
+
+    # 5. Run N_TRIALS episodes
     for trial in range(n_trials):
-        obs, _ = env.reset()
-        frames = [env.render()]  # capture the initial frame
+        obs, _ = env.reset()          # random start position each trial
+        frames = [env.render()]       # list of np.array (H, W, 3) — one per step
         done   = False
 
+        # 6. Run one episode step by step until done
         while not done:
-            with torch.no_grad():
+            with torch.no_grad():     # no gradients needed at inference
+                # 6.1 Build the observation dict the policy expects:
+                #   "observation.image": tensor shape (1, 3, 96, 96), float in [0, 1]
+                #     - obs["pixels"] is (96,96,3) uint8 → permute to (3,96,96) → add batch dim → normalize
+                #   "observation.state": tensor shape (1, 2), float
+                #     - obs["agent_pos"] is (2,) → add batch dim
                 action = policy.select_action({
                     "observation.image": torch.tensor(obs["pixels"]).permute(2, 0, 1).unsqueeze(0).to(device) / 255.0,
                     "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).to(device),
                 })
+                # action is tensor shape (1, 2) — target (x, y) for the disk, in [0, 512]
+
+            # 6.2 Step the environment with the action
+            #   action.cpu().numpy()[0] → np.array shape (2,) — remove batch dim
+            #   returns: new obs, reward (float), terminated (bool), truncated (bool), info (dict)
             obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
             frames.append(env.render())
-            done = term or trunc
+            done = term or trunc      # term = success/physics end; trunc = 300-step timeout
 
+        # 7. If the episode failed, save three frames for manual review
+        #    info["is_success"] = True only if T-block had >95% coverage at termination
         if not info.get("is_success", False):
-            # Save start, mid, end frames so you can see where the episode went wrong
-            for label, frame in [("start", frames[0]), ("mid", frames[len(frames)//2]), ("end", frames[-1])]:
+            for label, frame in [
+                ("start", frames[0]),
+                ("mid",   frames[len(frames) // 2]),
+                ("end",   frames[-1]),
+            ]:
+                # filename: trial003_end.png — sortable, easy to review in Finder
                 plt.imsave(f"{OUT_DIR}/trial{trial:03d}_{label}.png", frame)
             n_failures += 1
 
     env.close()
+
+    # 8. Print summary — this is your input for manual categorization
     print(f"\n{n_failures} failures out of {n_trials} trials ({n_failures/n_trials:.0%} failure rate)")
     print(f"Failure frames saved to {OUT_DIR}/")
     print("\nCount failures by category:")

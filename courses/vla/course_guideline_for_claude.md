@@ -161,6 +161,34 @@ Introduce concepts inline as needed. Brief theory digressions OK — link out fo
 
 ---
 
+## Code walkthrough comments (for 🔴 Work blocks)
+
+For any `🔴 **Work**` code block, add a prose "what this does" paragraph before the code, then inline numbered walkthrough comments inside. Use this style:
+
+**Before the code block** — one short paragraph explaining the overall flow and the key data moving through it. Include a data flow diagram if helpful:
+```
+input → transform → output
+```
+
+**Inside the code** — numbered comments that guide the reader through the critical path:
+```python
+# 1. Setup — what we're initializing and why
+# 2. Main loop — what repeats and what changes each iteration
+#   # 2.1 Branch A — what condition triggers this, what it does
+#   # 2.2 Branch B — what condition triggers this, what it does
+# 3. Output — what we produce and what format it's in
+```
+
+Rules:
+- Number top-level steps 1, 2, 3... Sub-steps use 1.1, 1.2, 2.1...
+- At branch points (if/elif), label each branch: `# 2.1 ACT path`, `# 2.2 Diffusion path`
+- Always annotate data types and shapes at the point of transformation:
+  `# obs["pixels"] → np.array (96,96,3) uint8 → tensor (1,3,96,96) float [0,1]`
+- Comment the *why* not the *what*: `# disable dropout — inference mode` not `# call eval()`
+- Don't comment every line — only the ones that would confuse a reader unfamiliar with the library
+
+---
+
 ## Exclude
 
 - ML theory derivations (backprop, loss landscapes, etc.)
