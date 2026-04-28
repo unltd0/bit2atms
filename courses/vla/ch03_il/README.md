@@ -279,14 +279,16 @@ Overall Aggregated Metrics:
 
 **What to expect at each checkpoint** (80k total training steps):
 
-| Checkpoint | Training steps | `pc_success` | What you'll see |
-|---|---|---|---|
-| `000700` | 700 | ~0% | Disk moves toward block but can't push it |
-| `020000` | 20k | 10–30% | Starting to push — imprecise, often misses target |
-| `040000` | 40k | 30–55% | Pushing more reliably, still fails on awkward starts |
-| `080000` | 80k | 50–80% | Target range — evaluate this for Project B |
+| Checkpoint | Training steps | `pc_success` | `avg_max_reward` | What you'll see |
+|---|---|---|---|---|
+| `000700` | 700 | 0% | ~0.17 | Disk moves toward block, can't push |
+| `020000` | 20k | 0% | ~0.25 | Starting to push — block moves but not aligned |
+| `060000` | 60k | 0% | ~0.33 | Block getting close — 33% avg coverage, need 95% to succeed |
+| `080000` | 80k | 10–60% | ~0.5+ | First successes — highly seed-dependent |
 
-Below 40% at 80k steps — re-run training with `--seed=42` (or any different seed) and compare.
+**Why does `pc_success` stay 0% so long?** The pusht success threshold is 95% coverage — the T-block must be almost perfectly aligned with the target. `avg_max_reward` tracks how close you're getting (0.0–1.0 = 0–95% coverage). Watch this number, not just `pc_success` — a policy improving from 0.17 → 0.33 → 0.5 is learning even if success rate is still 0%.
+
+Below 30% `avg_max_reward` at 80k steps — re-run training with `--seed=42` (or any different seed) and compare.
 
 **Why 80k steps?** It's the standard benchmark number used in the LeRobot repo and ACT paper for pusht — not derived from math. In practice `pc_success` may plateau earlier (40–60k) or still be climbing at 80k depending on your seed. Watch the intermediate evals: if success rate hasn't moved between 60k and 80k, you're done; if it's still rising, try 100k.
 
