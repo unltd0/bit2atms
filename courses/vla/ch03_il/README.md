@@ -364,8 +364,10 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 import gym_pusht
 
-# 1. Configuration — edit these or pass as CLI args:
-#    python failure_analysis.py act ./path/to/checkpoint
+# 1. Entry point — execution starts here when you run the script (see __main__ at bottom).
+#    argv[1] = policy type ("act" or "diffusion"), passed from the run command
+#    argv[2] = path to the pretrained_model directory, passed from the run command
+#    N_TRIALS and OUT_DIR are fixed — change them here if needed
 POLICY_TYPE = sys.argv[1] if len(sys.argv) > 1 else "act"
 POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model"
 N_TRIALS    = 20
@@ -462,6 +464,8 @@ def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 20) -> 
     print("\nNote the top category — in Ch7 you'll collect targeted demos for it on a real arm and retrain.")
 
 
+# 9. Actual entry point — Python runs this block first when you execute the script.
+#    Picks up POLICY_TYPE and POLICY_PATH from step 1, passes them into analyze_failures().
 if __name__ == "__main__":
     analyze_failures(POLICY_TYPE, POLICY_PATH, N_TRIALS)
 ```
