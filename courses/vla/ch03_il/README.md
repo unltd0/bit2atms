@@ -499,20 +499,20 @@ ACT and Diffusion Policy are task-specific: they have no language understanding 
 
 ## Self-Check
 
-1. What is distributional shift, and why does it make behavioral cloning fail?
-   **Answer:** BC trains only on states from demonstrations. Small errors at test time push the robot into unseen states — the policy makes worse decisions there, causing further drift. Errors compound.
+1. Your 80k-step ACT policy shows `avg_max_reward ≈ 0.40` but `pc_success = 0%`. Is training broken?
+   **Answer:** No. `pc_success` requires >95% T-block coverage — a strict threshold. `avg_max_reward` at 0.40 means the policy is learning real behavior; it just hasn't crossed that bar yet. On CUDA, 80k typically reaches 10–60% success. On Apple Silicon (MPS), 0% at 80k is normal — train longer or use Colab.
 
-2. What problem does ACT's action chunking solve?
-   **Answer:** Querying the policy at every step compounds prediction errors. Chunking predicts a block of future actions at once and executes them open-loop briefly — fewer queries, fewer compounding steps.
+2. Why does ACT predict a chunk of actions instead of one at a time?
+   **Answer:** Querying the policy every step compounds errors — each small mistake feeds into the next prediction. Predicting a block and executing it briefly reduces how often the policy sees its own errors.
 
-3. When would you prefer Diffusion Policy over ACT?
-   **Answer:** When the task has multi-modal behavior — multiple valid approaches (e.g., grasp from left or right). ACT averages over modes and produces invalid in-between actions. Diffusion Policy captures the full distribution.
+3. You ran failure analysis and found 60% of failures are category C (pushed block past target). What do you do next?
+   **Answer:** Collect 20–30 demos specifically of recovering from over-pushes and re-targeting. Retrain. Random demos won't help — they dilute signal for the specific gap.
 
-4. Your policy trains to low loss but achieves 20% success at eval. What do you check first?
-   **Answer:** Dataset quality — inconsistent demos mean low loss doesn't guarantee good behavior. Then check that eval conditions match training: obs normalization, image size, action scale.
+4. The policy was trained on `pixels_agent_pos`. At eval, you accidentally pass raw pixel values in `[0, 255]` instead of `[0, 1]`. What happens?
+   **Answer:** The policy sees inputs it was never trained on — everything is scaled 255× wrong. It will produce garbage actions. Always divide by `255.0` before passing to the policy.
 
-5. You have 70% success rate and want 90%. What's more efficient — more random demos or failure analysis?
-   **Answer:** Failure analysis. Identify the dominant failure mode and collect 20–30 targeted demos for it. Random data has diminishing returns at this scale.
+5. ACT and Diffusion Policy both score similarly on PushT. Why might you still pick Diffusion Policy for a different task?
+   **Answer:** If the task has multiple valid ways to succeed (grasp from either side, two approach angles), ACT averages over them and may output invalid in-between actions. Diffusion Policy captures the full distribution.
 
 ---
 
