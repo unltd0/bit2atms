@@ -332,7 +332,12 @@ Then run the same eval script with `--policy.pretrained_path=workspace/vla/ch03/
 
 This is the most transferable skill in this chapter. In Ch7 you'll run the exact same loop on the real arm — staring at a robot that fails 30% of the time and asking: *what specifically is going wrong?*
 
-> 🔴 **Work** — after running this, open the saved images in `workspace/vla/ch03/failures/` and count how many failures fit each category. Write down the dominant one. In Ch7 you'll close the loop for real — collecting targeted demos on the arm and retraining.
+> 🔴 **Work** — copy the code below into `workspace/vla/ch03/failure_analysis.py`, then run:
+> ```bash
+> python workspace/vla/ch03/failure_analysis.py act \
+>   ./workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model
+> ```
+> Open the saved images in `workspace/vla/ch03/failures/` and count how many failures fit each category. Write down the dominant one. In Ch7 you'll close the loop for real — collecting targeted demos on the arm and retraining.
 
 **What this script does:** Runs `N_TRIALS` episodes of the policy in the environment. For each episode it records every frame. If the episode fails (T-block didn't reach 95% coverage), it saves three snapshots — start, mid, end — so you can see *where* the episode went wrong. Successes are ignored. At the end it prints the failure rate and prompts you to categorize by hand.
 
