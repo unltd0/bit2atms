@@ -296,7 +296,11 @@ Here's what a partially trained policy looks like (700 steps, ~15 min on MPS) �
 
 ![ACT at 700 steps — disk finds the block but can't push it into the target](assets/act_700steps.gif)
 
-A fully trained policy (80k steps) pushes the T cleanly into the green region most of the time.
+At 60k steps the policy is clearly pushing the block into the target region — but not the 95% alignment needed to count as success:
+
+![ACT at 60k steps — block reaches the target but not fully aligned](assets/act_60ksteps.gif)
+
+A fully trained policy (80k steps) gets that final alignment right most of the time.
 
 ### What about Diffusion Policy?
 
