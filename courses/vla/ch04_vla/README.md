@@ -1,9 +1,7 @@
-> **TODO: Review post Ch3 closure** — Ch3 was restructured (6 projects → 3; Data Scaling cut; Collect+Inspect merged; ACT+Diffusion merged into one project). Review Ch4 Project D (Data Efficiency comparison vs ACT from scratch) for redundancy or tightening.
-
 # Chapter 4 — Vision-Language-Action Models
 
-**Time:** 4–5 days
-**Hardware:** GPU 16 GB+ for fine-tuning (Colab A100 works; inference runs on 8 GB)
+**Time:** 3–4 days
+**Hardware:** GPU required for fine-tuning (T4 16 GB works; inference runs on any GPU or CPU)
 **Prerequisites:** Chapter 3 (Imitation Learning, LeRobot)
 
 ---
@@ -11,17 +9,24 @@
 ## What are we here for
 
 ACT and Diffusion Policy are trained per-task: collect demos, train, deploy. They have no
-prior knowledge of the world. A **Vision-Language-Action (VLA) model** is different — it's
-a large pretrained model that has seen millions of robot demonstrations across hundreds of
-tasks and robots. You give it a language instruction and an image; it outputs robot actions.
+prior knowledge of the world — no concept of "red ball" or "pick up." A **Vision-Language-Action (VLA) model** is different. It's a large pretrained model that has seen millions of robot demonstrations across hundreds of tasks and robots. You give it a language instruction and an image; it outputs robot actions.
 
 The practical payoff: instead of collecting 200 demos and training from scratch, you can
 fine-tune a pretrained VLA on 20–50 demos and get better generalization. This chapter uses
 **SmolVLA** — a 450M-parameter VLA from HuggingFace that's small enough to fine-tune on a
 single A100.
 
-You'll run inference, probe how language conditioning works, fine-tune on a custom task,
-and measure how many demos fine-tuning actually needs.
+You'll run inference, probe how language conditioning works, and fine-tune on the same pusht
+task from Ch3 to see the gap between zero-shot and fine-tuned.
+
+**Hardware by project:**
+
+| Project | What runs | Where |
+|---------|-----------|-------|
+| A — Inference | SmolVLA forward pass (450M params) | CPU or MPS works; slow but functional. CUDA recommended. |
+| B — Language probe | Same as A, repeated across instructions | CPU or MPS works |
+| C — Fine-tuning | Full backward pass, 50k steps | **CUDA required.** Colab free T4 (16 GB) works at batch_size=16. MPS and CPU will OOM or take days. |
+| C — Eval | Inference only | CPU or MPS works |
 
 **Install:** (inside the LeRobot repo)
 ```bash
@@ -35,7 +40,6 @@ pip install -e ".[smolvla,pusht]"
 1. What does a VLA take as input and produce as output?
 2. Why fine-tune a pretrained VLA rather than train ACT from scratch on the same data?
 3. You fine-tune SmolVLA on "pick up the red cube." It fails on "grab the red block." Why?
-4. What is the Open X-Embodiment dataset and why does it matter for VLAs?
 
 ---
 
@@ -45,8 +49,7 @@ pip install -e ".[smolvla,pusht]"
 |---|---------|---------------|
 | A | Run SmolVLA Inference | Load SmolVLA, run zero-shot on gym_pusht with language instructions |
 | B | Probe Language Conditioning | Same environment, different phrasings — measure behavioral change |
-| C | Fine-tune SmolVLA | Fine-tune on a custom task; compare zero-shot vs. fine-tuned success rate |
-| D | Data Efficiency | How many demos does fine-tuning need vs. ACT from scratch? |
+| C | Fine-tune SmolVLA | Fine-tune on pusht demos; compare zero-shot vs. fine-tuned success rate |
 
 ---
 
@@ -67,7 +70,11 @@ A VLA has three parts:
 
 SmolVLA is built on SmolVLM-256M (vision-language model) with an action decoder head.
 It was pretrained on the Open X-Embodiment dataset — ~1M robot demonstrations from
-22 robot types across 50+ institutions.
+22 robot types across 50+ institutions. That pretraining is why it can generalize: it has
+seen thousands of "push object to target" tasks on real robots, even if it's never seen
+gym_pusht specifically.
+
+> 🟢 **Run** — load SmolVLA and check zero-shot success across three instruction phrasings.
 
 ```python workspace/vla/ch04/run_inference.py
 """Run SmolVLA zero-shot inference in gym_pusht. Observe action quality."""
@@ -92,8 +99,8 @@ def run_episode(policy: SmolVLAPolicy, env: gym.Env,
         with torch.no_grad():
             action = policy.select_action({
                 "observation.image": torch.tensor(obs["pixels"]).permute(2, 0, 1)
-                                     .unsqueeze(0).to(device) / 255.0,
-                "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).to(device),
+                                     .unsqueeze(0).float().to(device) / 255.0,
+                "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).float().to(device),
                 "task": [instruction],
             })
         obs, _, terminated, truncated, info = env.step(action.cpu().numpy()[0])
@@ -105,7 +112,6 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    # Check the SmolVLA blog post for the current Hub model ID — it may differ from below
     policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base").to(device)
     policy.eval()
 
@@ -118,29 +124,32 @@ if __name__ == "__main__":
     env.close()
 ```
 
-**What to observe:** Zero-shot success rate is likely low on gym_pusht (SmolVLA wasn't
-pretrained on this exact env). But the policy should produce *plausible* motions — it
-understands "push" and "block." That's the value of pretraining.
+**What to observe:** Zero-shot success rate is likely low on gym_pusht — SmolVLA wasn't
+pretrained on this exact env. But the policy should produce *plausible* motions — it
+understands "push" and "block" from pretraining. That's what pretraining buys you: a
+reasonable prior even on unseen environments. Fine-tuning closes the rest of the gap.
 
 ---
 
 ## Project B — Probe Language Conditioning
 
 **Problem:** Does the language instruction actually change the policy's behavior, or is it
-just passed through and ignored?
+passed through and ignored?
 
-**Approach:** Run the same environment with semantically different and similar instructions,
-and measure whether the policy behavior (trajectory shape, success rate) changes.
+**Approach:** Run the same environment with semantically different and similar instructions
+and measure whether behavior changes. On gym_pusht zero-shot the differences may be subtle
+— the model is already out of distribution. The point is to see *whether* language has any
+effect before fine-tuning pins the connection.
+
+> 🟡 **Know** — read the structure and instruction groups; run it and note which group shows the most variation.
 
 ```python workspace/vla/ch04/probe_language.py
 """Test how sensitive SmolVLA is to instruction phrasing."""
-import numpy as np
 import gymnasium as gym
 import gym_pusht
 import torch
 from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
-# Groups: semantically equivalent phrasings vs. semantically different tasks
 INSTRUCTION_GROUPS = {
     "correct task (paraphrases)": [
         "push the T block into the target area",
@@ -159,7 +168,8 @@ INSTRUCTION_GROUPS = {
     ],
 }
 
-def eval_instruction(policy, env, instruction: str, n_trials: int = 10) -> float:
+def eval_instruction(policy: SmolVLAPolicy, env: gym.Env,
+                     instruction: str, n_trials: int = 10) -> float:
     successes = 0
     device = next(policy.parameters()).device
     for _ in range(n_trials):
@@ -167,8 +177,8 @@ def eval_instruction(policy, env, instruction: str, n_trials: int = 10) -> float
         for _ in range(200):
             with torch.no_grad():
                 action = policy.select_action({
-                    "observation.image": torch.tensor(obs["pixels"]).permute(2,0,1).unsqueeze(0).to(device) / 255.0,
-                    "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).to(device),
+                    "observation.image": torch.tensor(obs["pixels"]).permute(2,0,1).unsqueeze(0).float().to(device) / 255.0,
+                    "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).float().to(device),
                     "task": [instruction],
                 })
             obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
@@ -192,143 +202,149 @@ if __name__ == "__main__":
     env.close()
 ```
 
-**What to observe:** Paraphrases of the correct task should give similar success rates.
-Completely wrong instructions should produce different (lower) success rates. If
-they're all the same, the model is ignoring language — a sign it needs fine-tuning.
+**What to observe:** If paraphrases of the correct task cluster together and wrong-task
+instructions differ, language conditioning is working. If all groups give the same rate,
+the model is ignoring language on this env — which is fine, it's out of distribution.
+After fine-tuning (Project C), re-run this and compare: fine-tuning should sharpen the
+language signal.
 
 ---
 
 ## Project C — Fine-tune SmolVLA
 
-**Problem:** Zero-shot SmolVLA doesn't perform well on your specific task. Fine-tune it
-on your demonstration data and measure the improvement.
+**Problem:** Zero-shot SmolVLA performs poorly on gym_pusht. Fine-tune it on the same
+pusht demonstrations you used in Ch3 and measure the improvement.
 
-**Approach:** Fine-tune SmolVLA using LeRobot's training script with your pusht demos from
-Chapter 3. Compare zero-shot vs. fine-tuned success rate.
+**Approach:** Use LeRobot's training script to fine-tune SmolVLA on `lerobot/pusht`.
+Then evaluate zero-shot vs. fine-tuned side-by-side.
 
 ### Why fine-tuning works
 
 Pretraining gives the model a strong prior about robot motion, spatial reasoning, and
 language-action mapping. Fine-tuning adapts these representations to your specific task,
-robot, and environment. With 50 demos you're teaching the *what* and *where*, not the
-basic *how* — the pretraining already handles that.
+robot, and environment. With the pusht dataset you're teaching the *what* and *where* for
+this task — the basic *how* of pushing was already learned during pretraining.
+
+SmolVLA inference uses ~2 GB VRAM — runs anywhere. Fine-tuning needs a CUDA GPU; Colab free T4 (16 GB) works with `--batch_size=16`. MPS and CPU will OOM.
+
+> 🟢 **Run** — kick off fine-tuning; come back when it's done (~60–90 min on a T4).
 
 ```bash workspace/vla/ch04/finetune_smolvla.sh
 cd workspace/ext/lerobot
-# Fine-tuning 50 epochs on an A100 takes ~30–60 min depending on dataset size
-python lerobot/scripts/train.py \
-  --policy.type=smolvla \
-  --policy.pretrained_model_name_or_path=lerobot/smolvla_base \
-  --dataset.repo_id=local/pusht_demos \
-  --dataset.root=./data/pusht_demos \
-  --training.batch_size=32 \
-  --training.steps=50000 \
-  --output_dir=./outputs/smolvla_finetuned
+
+lerobot-train \
+  --policy.path=lerobot/smolvla_base \
+  --dataset.repo_id=lerobot/pusht \
+  --batch_size=16 \
+  --steps=50000 \
+  --output_dir=outputs/smolvla_pusht
 ```
 
-Then evaluate with the same `run_episode()` function from Project A, pointing to your
-fine-tuned checkpoint. Print zero-shot vs. fine-tuned side-by-side.
+Now evaluate zero-shot vs. fine-tuned using the `run_episode()` function from Project A.
+Point `from_pretrained` at your checkpoint:
 
-**What to observe:** Fine-tuned success rate should jump significantly over zero-shot,
-even with only 50 demos. If it doesn't, check that your demo quality is high and that
-the task language instruction matches what you used in training.
+> 🔴 **Work** — fill in your checkpoint path and run; interpret the gap.
 
----
+Before the code: policy loads from a local checkpoint directory (the `pretrained_model`
+subfolder inside your output dir). The loop runs 20 episodes for each variant and prints
+success rate side by side.
 
-## Project D — Data Efficiency
+```python workspace/vla/ch04/compare_zeroshot_finetuned.py
+"""Compare zero-shot vs. fine-tuned SmolVLA on gym_pusht."""
+import gymnasium as gym
+import gym_pusht
+import torch
+from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+import pathlib
 
-**Problem:** Fine-tuning is faster than training from scratch — but by how much? And
-how does the data scaling curve compare?
+# Update this path to your actual checkpoint
+FINETUNED_PATH = "workspace/vla/ch04/outputs/smolvla_pusht/checkpoints/050000/pretrained_model"
 
-**Approach:** Train ACT from scratch and fine-tune SmolVLA on 10, 25, 50 demos each.
-Plot both curves.
+INSTRUCTION = "push the T block into the target area"
+N_TRIALS = 20
 
-```python workspace/vla/ch04/data_efficiency.py
-"""Compare data efficiency: ACT from scratch vs. SmolVLA fine-tuning."""
-import json
-import matplotlib.pyplot as plt
+def run_episode(policy: SmolVLAPolicy, env: gym.Env, instruction: str) -> bool:
+    obs, _ = env.reset()
+    device = next(policy.parameters()).device
+    for _ in range(300):
+        with torch.no_grad():
+            action = policy.select_action({
+                "observation.image": torch.tensor(obs["pixels"]).permute(2,0,1).unsqueeze(0).float().to(device) / 255.0,
+                "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).float().to(device),
+                "task": [instruction],
+            })
+        obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
+        if term or trunc:
+            return bool(info.get("is_success", False))
+    return False
 
-DEMO_COUNTS = [10, 25, 50]
-
-# Fill these in from your experiments before running this script:
-# act_results    — from Ch03 Project E: run train_and_eval(10), train_and_eval(25), train_and_eval(50)
-# smolvla_results — from Project C: re-run finetune_smolvla.sh with --dataset.num_episodes=10/25/50
-#                   then eval each checkpoint with run_episode()
-act_results    = {10: 0.0, 25: 0.0, 50: 0.0}
-smolvla_results = {10: 0.0, 25: 0.0, 50: 0.0}
-
-def plot(act: dict, smolvla: dict) -> None:
-    counts = sorted(act.keys())
-    plt.plot(counts, [act[n] for n in counts], "o-", label="ACT (from scratch)")
-    plt.plot(counts, [smolvla[n] for n in counts], "s-", label="SmolVLA (fine-tuned)")
-    plt.xlabel("Number of demonstrations")
-    plt.ylabel("Success rate")
-    plt.title("Data efficiency: ACT vs. SmolVLA fine-tuning")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig("data_efficiency.png")
-    print("Saved data_efficiency.png")
+def eval_policy(policy: SmolVLAPolicy, env: gym.Env, label: str) -> None:
+    successes = sum(run_episode(policy, env, INSTRUCTION) for _ in range(N_TRIALS))
+    print(f"{label}: {successes}/{N_TRIALS} ({successes/N_TRIALS:.0%})")
 
 if __name__ == "__main__":
-    plot(act_results, smolvla_results)
-    for n in DEMO_COUNTS:
-        delta = smolvla_results[n] - act_results[n]
-        print(f"{n:3d} demos: ACT={act_results[n]:.0%}  SmolVLA={smolvla_results[n]:.0%}  Δ={delta:+.0%}")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode=None)
+
+    zeroshot = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base").to(device)
+    zeroshot.eval()
+    eval_policy(zeroshot, env, "zero-shot")
+
+    finetuned = SmolVLAPolicy.from_pretrained(
+        str(pathlib.Path(FINETUNED_PATH).resolve())
+    ).to(device)
+    finetuned.eval()
+    eval_policy(finetuned, env, "fine-tuned (50k steps)")
+
+    env.close()
 ```
 
-**What to observe:** SmolVLA fine-tuning typically outperforms ACT from scratch at low
-demo counts (10–25 demos). At 200+ demos, the gap narrows. This tells you when pretraining
-is worth the overhead.
+**What to observe:** Fine-tuned success rate should jump significantly over zero-shot —
+even with 50k steps on a public dataset, the model learns the pusht task geometry. If it
+doesn't improve, check that your `FINETUNED_PATH` points to a valid checkpoint and that
+the instruction string exactly matches what the model saw during fine-tuning.
+
+**On data efficiency:** SmolVLA fine-tuning outperforms ACT trained from scratch at low
+demo counts (10–25 demos) because pretraining already handles the basic mechanics of pushing.
+At 200+ demos the gap narrows — at that scale, ACT catches up. This is the practical rule:
+use a VLA when you have few demos; ACT is competitive when you have many.
 
 ---
 
 ## Self-Check
 
-1. What does a VLA take as input and produce as output?
-   **Answer:** Input: one or more camera images + a natural language instruction string.
-   Output: robot actions (joint positions or velocities) for the next timestep or chunk.
+1. You load SmolVLA zero-shot on gym_pusht and get 5% success. After fine-tuning on 206 pusht demos for 50k steps you get 60%. What explains the gap?
+   **Answer:** Zero-shot SmolVLA has never seen this specific environment or task geometry. Fine-tuning adapts the pretrained priors to the exact observation space, action scale, and task. The pretrained model already knows how to "push" — fine-tuning teaches it *where* and *how far* in this env.
 
-2. Why can fine-tuning a pretrained VLA outperform training ACT from scratch on the same demos?
-   **Answer:** The pretrained model already understands robot motion, spatial relationships,
-   and language-action mappings from millions of demonstrations. Fine-tuning adapts this
-   prior to your task; training from scratch must learn everything from your small dataset.
+2. In Project B, all three instruction groups give the same success rate. What does that tell you?
+   **Answer:** The model is ignoring language on this env — it's out of distribution and falling back on visual patterns alone. After fine-tuning, re-running the probe should show language starting to matter: correct-task phrasings should outperform wrong-task ones.
 
-3. Your fine-tuned SmolVLA succeeds on "pick up the red cube" but fails on "grab the red block."
-   Why?
-   **Answer:** Language conditioning is learned during fine-tuning. If you always used
-   "pick up the red cube" in training, the model didn't learn to generalize the instruction.
-   Use varied phrasings in demonstrations to get instruction robustness.
+3. You fine-tune SmolVLA on "push the T block into the target area." At eval you pass "move block to goal." What do you expect?
+   **Answer:** Likely degraded performance. Language conditioning is learned from the fine-tuning data. If only one phrasing appeared in training, the model didn't learn to generalize the instruction. Use varied phrasings in fine-tuning data or stick to the exact training phrasing at eval.
 
-4. What is Open X-Embodiment and why does it matter?
-   **Answer:** A dataset of ~1M robot demonstrations from 22 robot types and 50+
-   institutions, curated for cross-embodiment training. It's the pretraining data that gives
-   VLAs their strong priors — without it, SmolVLA would be just another small transformer.
+4. The fine-tune script uses `lerobot/pusht` — the same dataset as Ch3 ACT training. Why does SmolVLA fine-tune faster (fewer steps) than ACT trained from scratch?
+   **Answer:** SmolVLA already has pretrained weights from millions of robot demonstrations. It's adapting an existing prior, not learning robot motion from zero. ACT from scratch has to learn everything from the 206 pusht episodes alone.
 
-5. Inference with SmolVLA is too slow for your 10 Hz control loop. What do you try?
-   **Answer:** Use a smaller chunk size (predict fewer steps per call), use `torch.compile`
-   or `float16` precision, or run the vision encoder at lower frequency than the action
-   decoder (most VLA frameworks support this).
+5. Your fine-tuned SmolVLA runs at 2 Hz — too slow for a 10 Hz control loop. What do you try first?
+   **Answer:** Switch to `float16` precision (`policy.half()` or `torch.autocast`). Then check if the vision encoder is re-running every step — caching it at lower frequency (e.g., 5 Hz) while running the action decoder at 10 Hz is a common optimization in VLA deployments.
 
 ---
 
 ## Common Mistakes
 
-- **Fine-tuning with inconsistent task instructions:** Use the same instruction phrasing
-  in all your training demos, and use that exact phrasing at eval time.
+- **Mismatched instruction at eval:** The phrasing you pass at eval must match (or be close to) what appeared in fine-tuning. If fine-tuning used "push the T block into the target area" and eval uses "move block," performance drops.
 
-- **Expecting zero-shot to work well on novel envs:** SmolVLA was trained on real robots
-  and different sims. Zero-shot on gym_pusht will be mediocre — fine-tuning is expected.
+- **Expecting zero-shot to work well on novel envs:** SmolVLA was trained on real robots and different sims. Zero-shot on gym_pusht will be mediocre — fine-tuning is the expected workflow, not an optional step.
 
-- **Running fine-tuning on CPU:** This takes days. Use Colab A100 or a local GPU.
+- **Running fine-tuning on CPU or MPS:** SmolVLA fine-tuning requires CUDA — MPS will OOM, CPU will take days. Use Colab (free T4) with `--batch_size=16` if you don't have a local GPU.
 
-- **Comparing zero-shot and fine-tuned at different eval conditions:** Same environment,
-  same instruction, same number of trials — otherwise the comparison is meaningless.
+- **Comparing zero-shot and fine-tuned at different eval conditions:** Same environment, same instruction string, same number of trials — otherwise the comparison is meaningless.
 
 ---
 
 ## Resources
 
-1. [SmolVLA blog post](https://huggingface.co/blog/smolvla) — architecture overview and benchmark results
+1. [SmolVLA blog post](https://huggingface.co/blog/smolvla) — architecture overview and benchmark results; check here for the current Hub model ID
 2. [OpenVLA paper](https://arxiv.org/abs/2406.09246) — the design decisions behind open-weight VLAs
-3. [Open X-Embodiment paper](https://arxiv.org/abs/2310.08864) — the pretraining dataset
-4. [π0 paper](https://arxiv.org/abs/2410.24164) — state-of-art VLA for dexterous manipulation (read for context)
+3. [Open X-Embodiment paper](https://arxiv.org/abs/2310.08864) — the pretraining dataset that gives SmolVLA its priors
+4. [π0 paper](https://arxiv.org/abs/2410.24164) — state-of-art VLA for dexterous manipulation (read for context on where the field is going)

@@ -13,10 +13,14 @@ by DeepMind, Google, and most serious robot learning labs. Before you can train 
 collect demonstrations, or run IK, you need to be fluent with it: how to load a robot, step
 the physics, read where things are, make joints move, and plan end-effector paths.
 
-This chapter covers all of that in three projects. You'll load a real robot model, localize
-objects using camera transforms, write a controller that holds a pose, and solve for joint
-angles that put the hand wherever you want. These four skills appear in every subsequent
-chapter.
+This chapter covers all of that in three projects. You'll load a real robot model, write a
+controller that holds a pose, and solve for joint angles that put the hand wherever you want.
+
+**Where this shows up:** Ch2 and Ch3 use MuJoCo environments under the hood — you won't
+touch the API directly, but knowing what `mj_step()` and `data.qpos` mean makes the gym
+interface less of a black box. The direct payoff comes in Ch5, where you'll tweak MuJoCo
+XML parameters for domain randomization, and Ch7, where you'll use IK to map policy outputs
+to real joint angles on the SO-101 arm.
 
 > **End-effector (EE)** — the physical tip of the robot arm: the hand, gripper, or tool that actually touches objects. Everything upstream (shoulder, elbow, wrist joints) exists only to position and orient this tip.
 >
