@@ -1,6 +1,6 @@
 # Chapter 3 — Imitation Learning
 
-**Time:** 1–2 days (GPU) · 2–3 days (Colab or Apple Silicon)
+**Time:** 1–2 days · on CPU/Apple Silicon ACT training can take up to 14h — use Colab T4 (free) and come back
 **Hardware:** GPU 8 GB+ recommended · Apple Silicon works but training takes ~14h — use Colab
 **Prerequisites:** Chapter 1 (MuJoCo), Chapter 2 (RL basics)
 
@@ -16,7 +16,7 @@ This chapter builds the core workflow you'll use in every chapter after this:
 2. Train a policy (ACT) on that dataset
 3. Evaluate it, watch it fail, and fix the dominant failure mode
 
-That loop — load, train, eval, debug — is exactly what Ch7 runs on a real SO-101 arm. The only difference there is that demonstrations come from a human teleoperating the arm.
+That loop — load, train, eval, debug — is exactly what Ch5 runs on a real SO-101 arm. The only difference there is that demonstrations come from a human teleoperating the arm.
 
 Two algorithms dominate robot manipulation IL today:
 
@@ -64,53 +64,13 @@ pip install -e ".[dataset_viz]"   # optional — for browsing the dataset
 
 ### The environment: gym_pusht
 
-`gym_pusht` is a 2D push-T task: a disk (the end-effector proxy) must push a T-shaped block into a target region. It's fast to simulate, visually clear, and widely used for IL benchmarks. The same LeRobot dataset format and training pipeline you use here works on real robot tasks in Ch7 — only the environment changes.
+`gym_pusht` is a 2D push-T task: a disk (the end-effector proxy) must push a T-shaped block into a target region. It's fast to simulate, visually clear, and widely used for IL benchmarks. The same LeRobot dataset format and training pipeline you use here works on real robot tasks in Ch5 — only the environment changes.
 
 ![PushT task — blue disk pushes gray T-block into the green target region](assets/pusht.gif)
 
 ### The dataset: LeRobotDataset
 
-We'll use [`lerobot/pusht`](https://huggingface.co/datasets/lerobot/pusht) — 206 episodes of human teleoperation, each a sequence of (observation, action) pairs recorded at around 10 Hz. The training script downloads it automatically on first run (around 200 MB, cached after).
-
-LeRobot has a standard format for storing robot demonstrations. Each frame in the dataset contains:
-
-| Field | What it is | Shape |
-|---|---|---|
-| `observation.image` | Top-down RGB camera view — agent (blue disk), T-block (gray), target (green) | `(3, 96, 96)` — channels first |
-| `observation.state` | Agent's (x, y) position in the arena | `(2,)` |
-| `action` | Target position commanded to the agent — (x, y) in [0, 512] | `(2,)` |
-
-A single frame looks like this:
-
-```
-observation.image  → tensor of shape (3, 96, 96), values in [0.0, 1.0]
-                     3 RGB channels, 96×96 pixels, top-down view of the arena
-
-observation.state  → [256.3, 189.7]
-                     agent (blue disk) is at x=256, y=190 — roughly center of the 512×512 arena
-
-action             → [261.0, 175.4]
-                     human commanded the agent to move to this absolute (x, y) position
-                     any position in [0, 512] × [0, 512] is a valid action — the full arena
-```
-
-The policy learns: *given this image and this state, predict this action*. At inference time you feed it the current frame and it outputs where to move next.
-
-**Why keep `observation.state` if the image already shows the agent?** You're right that the blue disk is visible in the image — a powerful enough vision model could infer position from pixels alone. But pixel-level localization is noisy and slow to learn. Feeding the exact (x, y) directly gives the policy a clean, low-noise signal and speeds up training significantly. In Ch7, the same idea applies: joint angles are fed as state even though a camera could theoretically see the arm.
-
-For a real arm in Ch7, the schema has wrist camera images, joint angles, and gripper torques instead — same format, different fields.
-
-> If you want to browse the dataset frame by frame, LeRobot ships a visualizer built on [Rerun](https://rerun.io/):
-> ```bash
-> lerobot-dataset-viz --repo-id lerobot/pusht --episode-index 0
-> ```
-> This opens an interactive timeline — scrub through any episode, see the image, state, and action at each step.
-
-Here's what the dataset looks like across 50 episodes:
-
-![Dataset inspection — action distribution, agent coverage, episode lengths](assets/dataset_inspection.png)
-
-Actions spread across the arena, the agent visited most of the 512×512 space, and episode lengths vary — humans succeed faster on easier trials. This is what healthy demonstration data looks like. If you train on data where actions cluster in one corner or coverage is sparse, the policy will reflect that.
+We'll use [`lerobot/pusht`](https://huggingface.co/datasets/lerobot/pusht) — 206 episodes of human teleoperation. Each frame is an (image, agent position, action) tuple. The training script downloads it automatically on first run (~200 MB, cached after). The same dataset format is used for real robot data in Ch.5 — only the field names change.
 
 ### What ACT does
 
@@ -118,7 +78,7 @@ Actions spread across the arena, the agent visited most of the 512×512 space, a
 
 **ACT** fixes this by predicting a *chunk* of future actions (e.g., 100 steps) at once, then executing them open-loop for a short window before re-predicting. Fewer policy queries = fewer opportunities for errors to compound. [ACT paper](https://arxiv.org/abs/2304.13705)
 
-ACT is the algorithm you'll use again in Ch4 as the baseline against SmolVLA, and it's the default starting point for real tasks in Ch7.
+ACT is the algorithm you'll use again in Ch4 as the baseline against SmolVLA, and it's the default starting point for real tasks in Ch5.
 
 ### Train
 
@@ -133,7 +93,7 @@ Here we're using `--policy.type=act` on `lerobot/pusht` — the simplest possibl
 - Any dataset on HuggingFace Hub via `--dataset.repo_id=<user>/<dataset>`
 - Your own locally recorded dataset from a real robot
 
-You could train a policy on real SO-101 arm data with one flag change. That's what Ch7 does.
+You could train a policy on real SO-101 arm data with one flag change. That's what Ch5 does.
 
 **How long will this take?**
 
@@ -308,7 +268,7 @@ A CUDA-trained policy at 80k steps gets that final alignment right 10–60% of t
 
 The other dominant IL algorithm is **Diffusion Policy** — it models the action distribution as a denoising process, which handles **multi-modal** tasks naturally. When there are multiple valid ways to solve something (approach from left or right), behavioral cloning averages the modes and produces invalid in-between actions. Diffusion Policy captures the full distribution. [Diffusion Policy paper](https://arxiv.org/abs/2303.04137)
 
-It trains slower than ACT. In this course ACT is the practical default — it's what Ch4 and Ch7 build on. But if you hit a real task where the robot has several valid approach strategies and ACT keeps producing hesitant, averaged-out motions, that's when to reach for Diffusion Policy.
+It trains slower than ACT. In this course ACT is the practical default — it's what Ch4 and Ch5 build on. But if you hit a real task where the robot has several valid approach strategies and ACT keeps producing hesitant, averaged-out motions, that's when to reach for Diffusion Policy.
 
 If you want to see it in action, 20k steps is enough to compare:
 
@@ -330,54 +290,26 @@ Then run the same eval script with `--policy.pretrained_path=workspace/vla/ch03/
 
 **Problem:** Your policy passes some trials and fails others. The failures are not random — they cluster into a few categories. Fixing the dominant one is more efficient than collecting more data indiscriminately.
 
-**Approach:** Run 20 trials, save failure frames, categorize them by hand.
+This is the most transferable skill in this chapter. In Ch5 you'll run the exact same loop on a real arm — staring at a robot that fails 30% of the time and asking: *what specifically is going wrong?*
 
-This is the most transferable skill in this chapter. In Ch7 you'll run the exact same loop on the real arm — staring at a robot that fails 30% of the time and asking: *what specifically is going wrong?*
-
-> 🔴 **Work** — copy the code below into `workspace/vla/ch03/failure_analysis.py`, then run:
+> 🟢 **Run** — copy the script below into `workspace/vla/ch03/failure_analysis.py`. It runs 20 episodes and saves three frames (start, mid, end) for each failed one — the code is just data wrangling, don't worry about the specifics.
 > ```bash
 > python workspace/vla/ch03/failure_analysis.py act \
 >   ./workspace/vla/ch03/outputs/act_pusht_full/checkpoints/080000/pretrained_model
 > ```
-> Open the saved images in `workspace/vla/ch03/failures/` and count how many failures fit each category. Write down the dominant one. In Ch7 you'll close the loop for real — collecting targeted demos on the arm and retraining.
-
-**What this script does:** Runs `N_TRIALS` episodes of the policy in the environment. For each episode it records every frame. If the episode fails (T-block didn't reach 95% coverage), it saves three snapshots — start, mid, end — so you can see *where* the episode went wrong. Successes are ignored. At the end it prints the failure rate and prompts you to categorize by hand.
-
-The data flow through one episode:
-```
-env.reset() → obs (image + agent_pos)
-    ↓
-policy.select_action(obs) → action [x, y]   # where to move the disk next
-    ↓
-env.step(action) → new obs, reward, done, info
-    ↓
-repeat until done (success or 300-step timeout)
-    ↓
-if failed → save frames[0], frames[mid], frames[-1] as PNGs
-```
+> Open the saved images in `workspace/vla/ch03/failures/` and count which category each failure falls into. Note the dominant one.
 
 ```python workspace/vla/ch03/failure_analysis.py
 """Run N trials, save failure frames as PNGs, print categorization guide."""
-import sys
-import os
-import pathlib
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
+import sys, os, pathlib, torch, matplotlib.pyplot as plt
 import gymnasium as gym
 import gym_pusht
 
-# 1. Globals — read first when the module loads, before any function runs.
-#    argv[1] = policy type ("act" or "diffusion"), passed from the run command
-#    argv[2] = path to the pretrained_model directory, passed from the run command
-#    N_TRIALS and OUT_DIR are fixed — change them here if needed.
 POLICY_TYPE = sys.argv[1] if len(sys.argv) > 1 else "act"
 POLICY_PATH = sys.argv[2] if len(sys.argv) > 2 else "workspace/vla/ch03/outputs/act_pusht/checkpoints/080000/pretrained_model"
 N_TRIALS    = 20
 OUT_DIR     = "workspace/vla/ch03/failures"
 
-# Categories you'll manually assign when reviewing saved PNGs.
-# Not a step — just a constant used in step 6.
 FAILURE_CATEGORIES = [
     "A: never reached the block",
     "B: reached block but couldn't push it",
@@ -387,14 +319,11 @@ FAILURE_CATEGORIES = [
 ]
 
 
-# Called from step 3 (inside analyze_failures) — returns policy object with .select_action()
-def load_policy(policy_type: str, policy_path: str, device: str):
-    policy_path = str(pathlib.Path(policy_path).resolve())  # absolute path avoids HF repo-id validation
-    # 3.1 ACT path — loads ACTPolicy, which predicts action chunks
+def load_policy(policy_type, policy_path, device):
+    policy_path = str(pathlib.Path(policy_path).resolve())
     if policy_type == "act":
         from lerobot.policies.act.modeling_act import ACTPolicy
         return ACTPolicy.from_pretrained(policy_path).to(device)
-    # 3.2 Diffusion path — same interface, different internals
     elif policy_type == "diffusion":
         from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy
         return DiffusionPolicy.from_pretrained(policy_path).to(device)
@@ -402,96 +331,67 @@ def load_policy(policy_type: str, policy_path: str, device: str):
         raise ValueError(f"Unknown policy type: {policy_type}")
 
 
-def analyze_failures(policy_type: str, policy_path: str, n_trials: int = 20) -> None:
-    # 3. Setup — load policy and create environment (called from __main__ at step 2)
+def analyze_failures(policy_type, policy_path, n_trials=20):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     policy = load_policy(policy_type, policy_path, device)
-    policy.eval()  # disable dropout — inference mode
+    policy.eval()
 
-    # obs_type="pixels_agent_pos" means obs will have two keys:
-    #   obs["pixels"]    → np.array shape (96, 96, 3), uint8, RGB image
-    #   obs["agent_pos"] → np.array shape (2,), float, (x, y) position of the disk
-    # render_mode="rgb_array" lets us call env.render() to get a frame as np.array
     env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
     os.makedirs(OUT_DIR, exist_ok=True)
-
     n_failures = 0
 
-    # 4. Run N_TRIALS episodes
     for trial in range(n_trials):
-        obs, _ = env.reset()          # random start position each trial
-        frames = [env.render()]       # list of np.array (H, W, 3) — one per step
-        done   = False
+        obs, _ = env.reset()
+        frames = [env.render()]
+        done = False
 
-        # 5. Run one episode step by step until done
         while not done:
-            with torch.no_grad():     # no gradients needed at inference
-                # 5.1 Build the observation dict the policy expects:
-                #   "observation.image": tensor shape (1, 3, 96, 96), float32 in [0, 1]
-                #     - obs["pixels"] is (96,96,3) uint8 → permute (3,96,96) → float32 → batch dim → /255
-                #   "observation.state": tensor shape (1, 2), float32
-                #     - obs["agent_pos"] is (2,) float64 → float32 → add batch dim (.float() avoids dtype mismatch)
+            with torch.no_grad():
                 action = policy.select_action({
                     "observation.image": torch.tensor(obs["pixels"]).permute(2, 0, 1).unsqueeze(0).float().to(device) / 255.0,
                     "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).float().to(device),
                 })
-                # action is tensor shape (1, 2) — target (x, y) for the disk, in [0, 512]
-
-            # 5.2 Step the environment with the action
-            #   action.cpu().numpy()[0] → np.array shape (2,) — remove batch dim
-            #   returns: new obs, reward (float), terminated (bool), truncated (bool), info (dict)
             obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
             frames.append(env.render())
-            done = term or trunc      # term = success/physics end; trunc = 300-step timeout
+            done = term or trunc
 
-        # 6. If the episode failed, save three frames for manual review
-        #    info["is_success"] = True only if T-block had >95% coverage at termination
         if not info.get("is_success", False):
-            for label, frame in [
-                ("start", frames[0]),
-                ("mid",   frames[len(frames) // 2]),
-                ("end",   frames[-1]),
-            ]:
-                # filename: trial003_end.png — sortable, easy to review in Finder
+            for label, frame in [("start", frames[0]), ("mid", frames[len(frames)//2]), ("end", frames[-1])]:
                 plt.imsave(f"{OUT_DIR}/trial{trial:03d}_{label}.png", frame)
             n_failures += 1
 
     env.close()
-
-    # 7. Print summary — this is your input for manual categorization
     print(f"\n{n_failures} failures out of {n_trials} trials ({n_failures/n_trials:.0%} failure rate)")
     print(f"Failure frames saved to {OUT_DIR}/")
     print("\nCount failures by category:")
     for cat in FAILURE_CATEGORIES:
         print(f"  {cat}")
-    print("\nNote the top category — in Ch7 you'll collect targeted demos for it on a real arm and retrain.")
+    print("\nNote the top category — in Ch5 you'll collect targeted demos for it on a real arm and retrain.")
 
 
-# 2. Entry point — execution starts here, after globals are read.
-#    Picks up POLICY_TYPE and POLICY_PATH from step 1, calls analyze_failures() → step 3.
 if __name__ == "__main__":
     analyze_failures(POLICY_TYPE, POLICY_PATH, N_TRIALS)
 ```
 
-**What to observe:** Most failures cluster into 1–2 categories. Targeted demos for those categories typically improve success rate more than doubling the random dataset size. If you can't identify a pattern, your success rate is too low — re-check dataset quality first.
+### What to look for
 
-Here are the failure patterns you're likely to see at 60k steps (before training fully converges):
+Most failures cluster into 1–2 categories. Here are the patterns you're likely to see at 60k–80k steps:
 
-> **Note:** You can absolutely use a vision model (GPT-4o, Claude) to batch-categorize these images — just pass it the start/mid/end strip and ask which category fits. But do a manual pass on a handful first. You'll develop intuition for what the policy is actually doing that no prompt can give you.
-
-**A — disk never reaches the block.** The disk (blue dot) moves to a fixed location and stops, or drifts off-screen. The T-block never moves. The policy hasn't learned to navigate to this starting configuration — it's underrepresented in the training demos.
+**A — disk never reaches the block.** The disk moves to a fixed spot and stops; the T-block never moves. That starting configuration is underrepresented in training data.
 
 ![Failure A: disk goes off-screen top-left, T-block and target never touched](assets/failure_a_never_reached.png)
 
-**B — disk gets stuck against the block.** The disk reaches the block and makes contact, then freezes in place — mid and end frames look identical. The policy learned to approach but not to push. Usually happens when the contact angle wasn't well covered in training.
+**B — disk gets stuck against the block.** Disk makes contact, then freezes — mid and end frames look identical. The policy learned to approach but not to push. Contact angle not well covered in demos.
 
 ![Failure B: disk contacts block at start, frozen in same position mid and end](assets/failure_b_stuck.png)
 
-**C — pushed in the wrong direction.** The disk pushes the block, but away from the target rather than toward it. At start the block is overlapping the target (a promising position) but the policy applies a push that slides it upward and off. Wrong push direction for this block orientation.
+**C — pushed in the wrong direction.** The block moves but away from the target. The policy applied a push that made sense in a similar training state but was wrong for this block orientation.
 
 ![Failure C: block starts near target, gets pushed upward and away](assets/failure_c_wrong_direction.png)
 
-On CUDA/Colab at 80k steps the policy succeeds 10–60% of the time (seed-dependent). On MPS, `avg_max_reward` reaches ~0.40 but `pc_success` stays 0% — the policy is learning but needs more steps to cross the 95% threshold. Either way, the failure patterns above are what you'll see, and A and C are the categories most worth targeting with extra demos.
+**A and C are the categories most worth targeting** — collect 20–30 demos specifically for those situations and retrain. Random demos won't help; they dilute signal for the specific gap.
+
+> You can use a vision model (GPT-4o, Claude) to batch-categorize the images — pass it the start/mid/end strip and ask which category fits. Do a few manually first to build intuition.
 
 ACT and Diffusion Policy are task-specific: they have no language understanding and no concept of "red ball" or "pick up". In Ch4 you'll add both by fine-tuning **SmolVLA** — same LeRobot dataset format, same eval loop, dramatically fewer demos needed.
 

@@ -1221,6 +1221,9 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
 .lang-text    { background: var(--bg5); }
 
 .code-lang { font-size: 10px; font-weight: 600; color: var(--text2); letter-spacing: 0.3px; font-family: var(--font-ui); }
+.code-lang-btn { background: none; border: none; padding: 2px 5px; margin: 0; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 7px; color: inherit; font: inherit; }
+.code-lang-btn:hover { background: var(--bg6, var(--border2)); }
+.code-lang-btn:hover .code-lang { color: var(--text1); }
 .code-header-right { display: flex; align-items: center; gap: 2px; }
 .code-copy {
   font-size: 11px;
@@ -1675,10 +1678,10 @@ function buildCodeBlock(code, key, displayLabel, wsPath){
   const pathBtn  = wsPath ? `<button class="code-copy" onclick="event.stopPropagation();copyPath(this)" ${pathAttr} title="Copy workspace path">${wsPath}</button>` : '';
   return `<div class="code-block-wrap">
     <div class="code-header" onclick="toggleCode(this)">
-      <div class="code-lang-wrap">
+      <button class="code-lang-btn" onclick="event.stopPropagation();copyFilename(this,'${displayLabel}')" title="Copy filename">
         <span class="code-lang-dot ${langClass}"></span>
         <span class="code-lang">${displayLabel}</span>
-      </div>
+      </button>
       <div class="code-header-right">
         ${pathBtn}
         <button class="code-copy" onclick="event.stopPropagation();copyCode(this)">Copy code</button>
@@ -1733,6 +1736,14 @@ renderer.code = function(code, lang){
 
 marked.use({ renderer, gfm:true, breaks:false });
 
+function copyFilename(btn, filename){
+  navigator.clipboard.writeText(filename).then(()=>{
+    const label = btn.querySelector('.code-lang');
+    const orig = label.textContent;
+    label.textContent = 'Copied!';
+    setTimeout(()=>{ label.textContent = orig; }, 1200);
+  });
+}
 function copyCode(btn){
   const code = btn.closest('.code-block-wrap').querySelector('code').innerText;
   navigator.clipboard.writeText(code).then(()=>{

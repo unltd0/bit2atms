@@ -15,8 +15,8 @@ VLAs are models that take a camera image and a natural language instruction as i
 That's the destination. The chapters before it build the foundations you'll need to get there without getting lost.
 
 **Who this is for:** Python-literate, basic ML intuition, no robotics background needed.
-**Time:** 4–8 weeks at 2–4 hours/day. Chapters 1–5 are laptop-only.
-**Hardware:** Ch.1–5 laptop only. Ch.6 needs Ubuntu/Docker. Ch.7 needs ~$370 in hardware.
+**Time:** 3–5 weeks at 2–4 hours/day.
+**Hardware:** Ch.1–4 laptop only. Ch.5 needs ~$620 in hardware (SO-101 arm + camera + lighting).
 
 ---
 
@@ -36,8 +36,9 @@ git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujo
 # Ch.2 — Reinforcement Learning (add when you reach Ch.2)
 pip install stable-baselines3[extra] gymnasium gymnasium-robotics
 
-# Ch.3 — Imitation Learning (add when you reach Ch.3)
-# git clone https://github.com/huggingface/lerobot workspace/ext/lerobot && cd workspace/ext/lerobot && pip install -e ".[pusht]"
+# Ch.3–4 — Imitation Learning + VLA (add when you reach Ch.3)
+git clone https://github.com/huggingface/lerobot workspace/ext/lerobot
+cd workspace/ext/lerobot && pip install -e ".[pusht,smolvla]"
 ```
 
 Each chapter's README also lists its installs at the top.
@@ -58,16 +59,13 @@ As you work through each chapter, copy the code from the reader into the corresp
 
 ## Chapters
 
-| # | Chapter | Time |
-|---|---------|------|
-| 1 | [MuJoCo & Robot Fundamentals](ch01_mujoco/README.md) | 1–2 days |
-| 2 | [Reinforcement Learning](ch02_rl/README.md) | 1–2 days |
-| 3 | [Imitation Learning](ch03_il/README.md) | 1–2 days |
-| 4 | [Vision-Language-Action Models](ch04_vla/README.md) | 4–5 days |
-| 5 | [Sim-to-Real Transfer](ch05_sim2real/README.md) | 4–5 days |
-| 6 | [ROS 2 & System Integration](ch06_ros2/README.md) | 3–4 days |
-| 7 | [Physical Hardware](ch07_hardware/README.md) | 1–2 weeks |
-| 8 | [Capstone Projects](ch08_capstone/README.md) | 2–4 weeks |
+| # | Chapter | Tech | Computer | Robot | Time |
+|---|---------|------|----------|-------|------|
+| 1 | [MuJoCo & Robot Fundamentals](ch01_mujoco/README.md) | MuJoCo, Pinocchio, Pink | Laptop | Simulated SO-101 | 1 day |
+| 2 | [Reinforcement Learning](ch02_rl/README.md) | SAC+HER, Gymnasium | Laptop (GPU helpful) | Simulated SO-101 | 1 day |
+| 3 | [Imitation Learning](ch03_il/README.md) | ACT, LeRobot | Laptop GPU 8 GB+ or Colab | Simulated SO-101 (gym_pusht) | 1–2 days |
+| 4 | [Vision-Language-Action Models](ch04_vla/README.md) | SmolVLA (450M), LeRobot | Laptop GPU 8 GB+ or Colab | Simulated SO-101 (MuJoCo) | 1–2 days |
+| 5 | [Real Hardware](ch05_hardware/README.md) | SmolVLA, LeRobot, lerobot teleoperate | Laptop GPU 8 GB+ | Physical SO-101 (~$620) | 1–2 weeks |
 
 ---
 
@@ -106,46 +104,24 @@ pip install -e ".[pusht]"
 ---
 
 ### Chapter 4 — Vision-Language-Action Models
-Run SmolVLA zero-shot, probe language conditioning, fine-tune on a custom task, and measure
-data efficiency vs. ACT from scratch.
+Run SmolVLA zero-shot on a simulated SO-101 arm, probe how language conditioning affects joint trajectories, and optionally fine-tune on a custom task. Exposes the domain gap: the checkpoint was trained on real photos, but the sim renders synthetic images — the arm moves but not accurately. That gap is what Ch.5 closes.
 
 **Install:** `pip install -e ".[smolvla]"` (inside lerobot)
 
-**Projects:** SmolVLA inference · Language conditioning probe · Fine-tune SmolVLA · Data efficiency comparison
+**Projects:** Interactive SmolVLA sim · Language conditioning probe · (Optional) Fine-tune SmolVLA
 
 ---
 
-### Chapter 5 — Sim-to-Real Transfer
-Measure and close the reality gap using physics and visual domain randomization. Build a
-robustness heatmap to identify brittle axes before real deployment.
+### Chapter 5 — Real Hardware
+Deploy everything on a real SO-101 arm: assemble, calibrate, collect 20–50 real demonstrations, fine-tune SmolVLA on your data, and iterate on failures. Closes the domain gap you saw in Ch.4 — the model now sees real images of your robot and your task.
 
-**Projects:** Physics DR · Robust vs. non-robust · Visual DR · Robustness report
+Language robustness eval is included: test the same task with 3 different phrasings (10 trials each) to measure how brittle language conditioning is before and after fine-tuning.
 
----
+**Hardware:** SO-101 arm kit (~$500) + USB camera (~$80) + LED lighting (~$40) = ~$620
 
-### Chapter 6 — ROS 2 & System Integration
-Build the communication layer that connects policy, hardware, and visualization.
+**Install:** `pip install lerobot` (already installed from Ch.3–4)
 
-**Install (Ubuntu):** `sudo apt install ros-jazzy-desktop`
-**Install (macOS):** `docker pull osrf/ros:jazzy-desktop`
-
-**Projects:** Joint state pub/sub · IK service · MuJoCo↔ROS2 bridge · RViz2
-
----
-
-### Chapter 7 — Physical Hardware
-Deploy everything on a real SO-101 arm: assemble, calibrate, collect 100 real demos, train,
-deploy, and iterate on failures.
-
-**Hardware:** SO-101 (~$250) + camera (~$80) + lighting (~$40) = ~$370
-
-**Projects:** Assemble + teleoperate · Calibrate · Collect demos · Train + deploy · Failure analysis
-
----
-
-### Chapter 8 — Capstone Projects
-Four options: open-vocabulary pick-and-place (VLA + perception), sim-to-real study
-(no hardware), VLA fine-tuning at scale (500 real demos), or bimanual manipulation.
+**Projects:** Assemble + teleoperate · Calibrate · Collect demos · Fine-tune SmolVLA + deploy · Evaluate & iterate
 
 ---
 
@@ -153,13 +129,11 @@ Four options: open-vocabulary pick-and-place (VLA + perception), sim-to-real stu
 
 Time estimates per chapter are in the Chapters table above. This schedule assumes 2–4 hours/day.
 
-| Week | Chapters | Approx. time |
-|------|---------|-------------|
-| 1 | Ch.1–2 (sim, RL) | 4–7 days |
-| 2 | Ch.3 (imitation learning) | 1–2 days |
-| 3 | Ch.4–5 (VLA, sim-to-real) | 8–10 days |
-| 4 | Ch.6–7 (ROS 2, hardware setup) | 4–6 days |
-| 5–8 | Ch.8 capstone | 2–4 weeks |
+| Week | Chapters | What you build |
+|------|---------|----------------|
+| 1 | Ch.1–3 | Sim robot, IK, RL, IL pipeline |
+| 2 | Ch.4 | SmolVLA in sim, language probe |
+| 3–6 | Ch.5 | Real arm, fine-tuned SmolVLA, deploy |
 
 ---
 
@@ -171,11 +145,13 @@ Time estimates per chapter are in the Chapters table above. This schedule assume
 
 **IL overfits** — more diverse demos, color jitter + random crop, try Diffusion Policy over ACT.
 
-**Sim-to-real fails visually** — visual DR + aggressive augmentation during training. Fix lighting on the real robot.
-
-**IK doesn't converge** — check joint limits in MJCF, add a posture task to stay near neutral.
-
 **Real robot erratic** — calibration first, then camera latency, then action frequency mismatch.
+
+**SmolVLA arm barely moves in sim** — expected: domain gap from real photos → synthetic renders. Collect real demos (Ch.5) to fix it.
+
+**Wrong camera key names** — `ValueError: All image features are missing`. Check `observation.images.up` and `observation.images.side`.
+
+**Fine-tuning OOM** — reduce `--batch-size` or switch from MPS/CPU to a GPU with `--device cuda`.
 
 ---
 
@@ -183,10 +159,13 @@ Time estimates per chapter are in the Chapters table above. This schedule assume
 
 | Item | Where to buy | Cost |
 |------|-------------|------|
-| SO-101 arm kit | [The Robot Studio](https://www.therobotstudio.com/) | ~$250 |
+| SO-101 arm kit | [The Robot Studio](https://www.therobotstudio.com/) | ~$500 |
 | USB camera (Logitech C920) | Amazon | ~$80 |
 | LED lighting panel | Amazon | ~$40 |
-| RealSense D435 (Capstone A only) | Intel / Amazon | ~$200 |
+
+**Total: ~$620**
+
+> Domain randomization (varied lighting, backgrounds) and ROS 2 integration are covered as callout boxes in Ch.5 for learners who want to go further — neither requires extra hardware.
 
 ---
 
@@ -212,6 +191,19 @@ Time estimates per chapter are in the Chapters table above. This schedule assume
 6. [Open X-Embodiment](https://arxiv.org/abs/2310.08864)
 7. [Domain Randomization](https://arxiv.org/abs/1703.06907)
 8. [HER](https://arxiv.org/abs/1707.01495)
+
+---
+
+## Where to Go Next
+
+After Ch.5 you have a working VLA pipeline on real hardware. Options for going further:
+
+- **More tasks** — collect demos for a new task, fine-tune, deploy. The pipeline is the same.
+- **Bimanual manipulation** — SO-101 supports two arms; LeRobot's dataset format handles multi-arm observations.
+- **Open-vocabulary pick-and-place** — add a perception module (Grounding DINO + SAM) upstream of SmolVLA for zero-shot object detection.
+- **Larger models** — π0, OpenVLA, or RoboVLMs trained on Open X-Embodiment scale better to novel tasks.
+- **ROS 2 integration** — wrap your fine-tuned policy in a ROS 2 node for integration with navigation, perception, and multi-robot stacks.
+- **Domain randomization** — vary lighting, backgrounds, and object positions in MuJoCo sim to reduce the real-to-sim gap before collecting real demos.
 
 ---
 

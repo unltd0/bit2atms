@@ -1,6 +1,6 @@
 # Chapter 1 — MuJoCo & Robot Fundamentals
 
-**Time:** 1–2 days
+**Time:** 1 day
 **Hardware:** Laptop only
 **Prerequisites:** Python, NumPy basics
 
@@ -18,9 +18,7 @@ controller that holds a pose, and solve for joint angles that put the hand where
 
 **Where this shows up:** Ch2 and Ch3 use MuJoCo environments under the hood — you won't
 touch the API directly, but knowing what `mj_step()` and `data.qpos` mean makes the gym
-interface less of a black box. The direct payoff comes in Ch5, where you'll tweak MuJoCo
-XML parameters for domain randomization, and Ch7, where you'll use IK to map policy outputs
-to real joint angles on the SO-101 arm.
+interface less of a black box. The direct payoff comes in Ch5, where you'll use IK to map policy outputs to real joint angles on the SO-101 arm.
 
 > **End-effector (EE)** — the physical tip of the robot arm: the hand, gripper, or tool that actually touches objects. Everything upstream (shoulder, elbow, wrist joints) exists only to position and orient this tip.
 >

@@ -1,45 +1,45 @@
 # Chapter 4 — Vision-Language-Action Models
 
-**Time:** 3–4 days
-**Hardware:** GPU required for fine-tuning (T4 16 GB works; inference runs on any GPU or CPU)
+**Time:** 1–2 days
+**Hardware:** CPU or MPS for inference · CUDA (T4 16 GB) for fine-tuning
 **Prerequisites:** Chapter 3 (Imitation Learning, LeRobot)
 
 ---
 
 ## What are we here for
 
-ACT and Diffusion Policy are trained per-task: collect demos, train, deploy. They have no
-prior knowledge of the world — no concept of "red ball" or "pick up." A **Vision-Language-Action (VLA) model** is different. It's a large pretrained model that has seen millions of robot demonstrations across hundreds of tasks and robots. You give it a language instruction and an image; it outputs robot actions.
+ACT and Diffusion Policy are trained per-task: collect demos, train, deploy. They have
+no concept of language — no idea what "red ball" or "pick up" means. A **Vision-Language-Action (VLA) model** is different. It's a large pretrained model that has seen millions of robot
+demonstrations across hundreds of tasks and robots. You give it a natural language instruction
+and a camera image; it outputs robot joint targets.
 
-The practical payoff: instead of collecting 200 demos and training from scratch, you can
-fine-tune a pretrained VLA on 20–50 demos and get better generalization. This chapter uses
-**SmolVLA** — a 450M-parameter VLA from HuggingFace that's small enough to fine-tune on a
-single A100.
+This chapter uses **SmolVLA** — a 450M-parameter VLA from HuggingFace. It was pretrained on
+the [Open X-Embodiment dataset](https://arxiv.org/abs/2310.08864) — ~1M demonstrations from
+22 robot types across 50+ institutions — then fine-tuned on real SO-101 pick-and-place data.
 
-You'll run inference, probe how language conditioning works, and fine-tune on the same pusht
-task from Ch3 to see the gap between zero-shot and fine-tuned.
+**What you'll build:** Type a language instruction → watch a simulated SO-101 arm try to
+execute it in MuJoCo → understand the VLA interface before using a real robot in Ch5.
 
 **Hardware by project:**
 
 | Project | What runs | Where |
 |---------|-----------|-------|
-| A — Inference | SmolVLA forward pass (450M params) | CPU or MPS works; slow but functional. CUDA recommended. |
-| B — Language probe | Same as A, repeated across instructions | CPU or MPS works |
-| C — Fine-tuning | Full backward pass, 50k steps | **CUDA required.** Colab free T4 (16 GB) works at batch_size=16. MPS and CPU will OOM or take days. |
-| C — Eval | Inference only | CPU or MPS works |
+| A — Interactive sim | SmolVLA forward pass (~2 GB VRAM) | CPU, MPS, or any CUDA GPU |
+| B — Probe language | Same as A, repeated across instructions | CPU, MPS, or any CUDA GPU |
+| C — Fine-tune (optional) | Full backward pass | **CUDA required** · Colab free T4 works |
 
-**Install:** (inside the LeRobot repo)
+**Install:**
 ```bash
 cd workspace/ext/lerobot
-pip install -e ".[smolvla,pusht]"
+pip install -e ".[smolvla]"
 ```
 
-**Working directory:** Create `workspace/vla/ch04/` for your files.
+**Working directory:** `workspace/vla/ch04/`
 
 **Skip if you can answer:**
 1. What does a VLA take as input and produce as output?
 2. Why fine-tune a pretrained VLA rather than train ACT from scratch on the same data?
-3. You fine-tune SmolVLA on "pick up the red cube." It fails on "grab the red block." Why?
+3. A VLA trained on real robot photos is loaded into a MuJoCo sim. What do you expect?
 
 ---
 
@@ -47,87 +47,268 @@ pip install -e ".[smolvla,pusht]"
 
 | # | Project | What you build |
 |---|---------|---------------|
-| A | Run SmolVLA Inference | Load SmolVLA, run zero-shot on gym_pusht with language instructions |
-| B | Probe Language Conditioning | Same environment, different phrasings — measure behavioral change |
-| C | Fine-tune SmolVLA | Fine-tune on pusht demos; compare zero-shot vs. fine-tuned success rate |
+| A | Interactive Sim | Type instruction → SO-101 arm moves in MuJoCo |
+| B | Probe Language | Measure whether instruction phrasing changes behavior |
+| C | Fine-tune (optional) | Adapt SmolVLA to new data; compare with zero-shot |
 
 ---
 
-## Project A — Run SmolVLA Inference
+## Project A — Interactive Sim
 
-**Problem:** You need to understand what a VLA does before you can use or fine-tune one.
-Running inference is the fastest way to build that intuition.
+**Problem:** A VLA takes three things in and produces robot actions out:
 
-**Approach:** Load SmolVLA from HuggingFace Hub and run it in `gym_pusht` with a natural
-language instruction. Observe what actions it generates and whether zero-shot works.
+| Input | Where it comes from |
+|-------|---------------------|
+| **Vision** — camera images | Simulated by MuJoCo, or real photos from a robot's cameras |
+| **Language** — what you want to happen | You type it: "pick up the pink lego brick" |
+| **State** — where the robot currently is | Joint angles read from the simulator |
+
+| Output | What it means |
+|--------|---------------|
+| **Action** — joint targets | Tells each motor how much to rotate this step |
+
+The best way to build intuition is to see all three inputs and the output in one interactive
+loop: simulate camera views → type an instruction → watch the arm move.
+
+**Approach:** Load a SmolVLA checkpoint fine-tuned on real SO-101 pick-and-place data. Set up
+two virtual cameras in a MuJoCo SO-101 scene. Each sim step: render both cameras → tokenize
+the instruction → feed everything to policy → apply the output joint targets → step the sim.
 
 ### What a VLA is
 
 A VLA has three parts:
-1. **Vision encoder** — extracts features from camera images (usually a ViT)
-2. **Language encoder** — encodes the instruction string into a token sequence
-3. **Action decoder** — takes combined vision+language features and outputs robot actions
 
-SmolVLA is built on SmolVLM-256M (vision-language model) with an action decoder head.
-It was pretrained on the Open X-Embodiment dataset — ~1M robot demonstrations from
-22 robot types across 50+ institutions. That pretraining is why it can generalize: it has
-seen thousands of "push object to target" tasks on real robots, even if it's never seen
-gym_pusht specifically.
+1. **Vision encoder** — extracts features from camera images (a ViT inside SmolVLM-500M)
+2. **Language encoder** — tokenizes your instruction string into a token sequence
+3. **Action decoder** — takes the combined vision+language+state features and outputs joint targets
 
-> 🟢 **Run** — load SmolVLA and check zero-shot success across three instruction phrasings.
+The checkpoint used here (`lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace`) was
+fine-tuned on 50 real SO-101 episodes of a pick-and-place task. It expects:
 
-```python workspace/vla/ch04/run_inference.py
-"""Run SmolVLA zero-shot inference in gym_pusht. Observe action quality."""
-import numpy as np
-import gymnasium as gym
-import gym_pusht
-import torch
-from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+- **Two cameras:** `observation.images.up` (top-down) and `observation.images.side` (front)
+- **Image shape:** 480 × 640, float32, normalised to [0, 1]
+- **Joint state:** 6 current joint positions in radians
+- **Language:** pre-tokenized to `observation.language.tokens` (int64) and `observation.language.attention_mask` (bool)
+- **Output:** 6 joint targets in radians — shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper
 
-INSTRUCTIONS = [
-    "push the T block into the target area",
-    "move the block to the goal position",
-    "push the object",
-]
+### Honest domain gap callout
 
-def run_episode(policy: SmolVLAPolicy, env: gym.Env,
-                instruction: str, max_steps: int = 200) -> bool:
-    obs, _ = env.reset()
-    device = next(policy.parameters()).device
+The checkpoint was trained on **real robot photos**. MuJoCo renders **synthetic images**.
+The model will move the arm — often purposefully — but won't reliably complete the task
+because the image distribution doesn't match training. This is called the **sim-to-real gap**,
+run here in reverse: real-to-sim.
 
-    for _ in range(max_steps):
-        with torch.no_grad():
-            action = policy.select_action({
-                "observation.image": torch.tensor(obs["pixels"]).permute(2, 0, 1)
-                                     .unsqueeze(0).float().to(device) / 255.0,
-                "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).float().to(device),
-                "task": [instruction],
-            })
-        obs, _, terminated, truncated, info = env.step(action.cpu().numpy()[0])
-        if terminated or truncated:
-            return bool(info.get("is_success", False))
-    return False
+The useful thing to observe is the *interface* — how language and images flow into the model,
+how joint targets come out, and what "following an instruction" looks like at the action level.
+Closing the gap is Ch5 (real hardware).
 
-if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
+### Data flow
 
-    policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base").to(device)
-    policy.eval()
+```
+# inputs to policy.select_action()
+up_frame           np.array (480,640,3) uint8  → permute → unsqueeze → /255.0 → tensor (1,3,480,640) float32
+side_frame         np.array (480,640,3) uint8  → permute → unsqueeze → /255.0 → tensor (1,3,480,640) float32
+data.qpos[:6]      np.array (6,)        float64 → unsqueeze → .float32()      → tensor (1,6)          float32
+instruction        str                          → tokenizer(max_length=48)     → tensor (1,48)          int64
 
-    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode=None)
-
-    for instruction in INSTRUCTIONS:
-        successes = sum(run_episode(policy, env, instruction) for _ in range(10))
-        print(f"'{instruction}':  {successes}/10 success")
-
-    env.close()
+# output
+select_action()  →  tensor (1,6)  float32  [on device]
+.cpu().numpy()   →  np.array (1,6) float32
+[0]              →  np.array (6,)  float32  ← data.ctrl[:] expects this
 ```
 
-**What to observe:** Zero-shot success rate is likely low on gym_pusht — SmolVLA wasn't
-pretrained on this exact env. But the policy should produce *plausible* motions — it
-understands "push" and "block" from pretraining. That's what pretraining buys you: a
-reasonable prior even on unseen environments. Fine-tuning closes the rest of the gap.
+The tokenizer lives at `policy.model.vlm_with_expert.processor.tokenizer` — it converts
+the instruction string to integer token IDs the language encoder understands.
+The `[0]` strips the batch dimension — the policy always outputs one action per batch item,
+even when batch size is 1.
+
+### Cameras
+
+MuJoCo free cameras are positioned by `lookat` + `distance` + `azimuth` + `elevation`.
+These positions approximate the wrist-cam and overview-cam used during SO-101 data collection:
+
+```
+up:   pos=[0.25, 0.1, 0.9]   lookat=[0.25, 0.1, 0.0]   — top-down wrist view
+side: pos=[0.7, -0.5, 0.4]   lookat=[0.15, 0.05, 0.15]  — front-side overview
+```
+
+> 🟢 **Run** — start the interactive sim, type an instruction, watch the arm move.
+
+The script opens a live MuJoCo viewer window. It prompts for an instruction, runs 100 sim
+steps with the policy, then prompts again. Press `q` or close the window to exit.
+
+The menagerie must be cloned into `workspace/ext/`:
+```bash
+git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
+```
+
+```python courses/vla/ch04_vla/code/interact_so101.py
+"""
+Interactive SmolVLA + SO-101 MuJoCo sim.
+
+Type a language instruction → watch the arm try to execute it → repeat.
+
+NOTE: Domain gap is real. The checkpoint was trained on real robot photos;
+MuJoCo renders synthetic images. The arm will move, but not accurately.
+That's expected — Ch5 is where you close the gap on real hardware.
+
+Usage:
+    cd workspace/vla/ch04
+    uv run --extra smolvla python interact_so101.py
+"""
+
+import os
+import sys
+import math
+import numpy as np
+import mujoco
+import mujoco.viewer
+import torch
+
+# Fine-tuned on 50 real SO-101 pick-and-place episodes.
+# Task phrasing it understands: "pink lego brick into the transparent box"
+CHECKPOINT = "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace"
+
+CAM_CONFIGS = {
+    "up":   {"pos": np.array([0.25, 0.1,  0.9]),  "lookat": np.array([0.25, 0.1,  0.0])},
+    "side": {"pos": np.array([0.7,  -0.5, 0.4]),  "lookat": np.array([0.15, 0.05, 0.15])},
+}
+IMG_H, IMG_W = 480, 640
+
+
+def _make_mjv_camera(pos, lookat):
+    cam = mujoco.MjvCamera()
+    cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+    diff = pos - lookat
+    dist = float(np.linalg.norm(diff))
+    cam.lookat[:] = lookat
+    cam.distance  = dist
+    cam.azimuth   = math.degrees(math.atan2(diff[1], diff[0]))
+    cam.elevation = -math.degrees(math.atan2(diff[2], math.sqrt(diff[0]**2 + diff[1]**2)))
+    return cam
+
+
+def render_camera(renderer, data, cam):
+    """Return (H, W, 3) uint8 RGB."""
+    renderer.update_scene(data, camera=cam)
+    return renderer.render()
+
+
+def make_obs(data, frames, lang_tokens, lang_mask, device):
+    """Build the dict that policy.select_action() expects."""
+    def img_tensor(frame):
+        # (H,W,3) uint8 → (1,3,H,W) float32 [0,1]
+        return torch.tensor(frame, dtype=torch.float32).permute(2,0,1).unsqueeze(0).to(device) / 255.0
+    return {
+        "observation.images.up":               img_tensor(frames["up"]),
+        "observation.images.side":             img_tensor(frames["side"]),
+        # current joint positions: (6,) float64 → (1,6) float32
+        "observation.state":                   torch.tensor(data.qpos[:6], dtype=torch.float32).unsqueeze(0).to(device),
+        "observation.language.tokens":         lang_tokens.to(device),
+        "observation.language.attention_mask": lang_mask.to(device),
+    }
+
+
+def main():
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    print(f"Device: {device}")
+
+    menagerie_dir = os.path.realpath(os.path.join(
+        os.path.dirname(__file__), "..", "..", "ext",
+        "mujoco_menagerie", "robotstudio_so101"
+    ))
+    if not os.path.isdir(menagerie_dir):
+        sys.exit(f"Menagerie not found at {menagerie_dir}\n"
+                 "Run:  git clone https://github.com/google-deepmind/mujoco_menagerie "
+                 "workspace/ext/mujoco_menagerie")
+
+    # chdir so STL asset paths relative to the XML resolve correctly
+    os.chdir(menagerie_dir)
+    model = mujoco.MjModel.from_xml_path("scene_box.xml")
+    data  = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+
+    renderer = mujoco.Renderer(model, height=IMG_H, width=IMG_W)
+    cameras  = {n: _make_mjv_camera(c["pos"], c["lookat"]) for n, c in CAM_CONFIGS.items()}
+
+    print(f"Loading {CHECKPOINT} …")
+    from lerobot.policies.smolvla import SmolVLAPolicy
+    policy = SmolVLAPolicy.from_pretrained(CHECKPOINT).to(device)
+    policy.eval()
+
+    # tokenizer lives inside the VLM; converts instruction str → token ids
+    tokenizer = policy.model.vlm_with_expert.processor.tokenizer
+    max_len   = policy.config.tokenizer_max_length
+    print("Policy ready.\n")
+
+    def tokenize(instruction):
+        enc = tokenizer(
+            instruction + "\n",   # trailing newline matches training format
+            padding="max_length", max_length=max_len,
+            return_tensors="pt",  truncation=True,
+        )
+        return enc["input_ids"], enc["attention_mask"].bool()
+
+    STEPS_PER_INSTRUCTION = 100
+
+    print("Opening MuJoCo viewer … close the window or press Ctrl-C to quit.\n")
+    with mujoco.viewer.launch_passive(model, data) as viewer:
+        while viewer.is_running():
+            try:
+                instruction = input("Instruction (Enter for default, q to quit): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                break
+            if instruction.lower() in ("q", "quit", "exit"):
+                break
+            if not instruction:
+                instruction = "pink lego brick into the transparent box"
+            print(f"Running: '{instruction}'  ({STEPS_PER_INSTRUCTION} steps)")
+
+            lang_tokens, lang_mask = tokenize(instruction)
+            policy.reset()   # clear action chunk buffer between instructions
+
+            for _ in range(STEPS_PER_INSTRUCTION):
+                frames = {name: render_camera(renderer, data, cam) for name, cam in cameras.items()}
+                obs    = make_obs(data, frames, lang_tokens, lang_mask, device)
+
+                with torch.no_grad():
+                    action = policy.select_action(obs)
+
+                # action: tensor (1,6) → numpy (6,) joint targets [rad]
+                data.ctrl[:] = action.cpu().numpy()[0]
+                mujoco.mj_step(model, data)
+                viewer.sync()
+
+            print(f"Done. Joint positions: {data.qpos[:6].round(3)}\n")
+
+    print("Viewer closed.")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+**What to observe:**
+
+- The arm moves in response to your instruction — even across phrasings it hasn't seen, it
+  produces *something* purposeful. That's the pretrained prior at work.
+- The motion won't complete the pick-and-place accurately. Images look wrong to the model
+  (synthetic vs. real). This is the gap Ch5 closes.
+- Try: `"pick up the block"`, `"open gripper"`, `"do nothing"` — notice how different
+  instructions produce different joint trajectories even without task completion.
+- `policy.reset()` between instructions clears the action chunk buffer. Without it, leftover
+  temporal state from the previous run bleeds into the next.
+
+**Known instruction the checkpoint was trained on:**
+```
+"pink lego brick into the transparent box"
+```
+Other phrasings will be interpreted via language similarity — results will vary.
 
 ---
 
@@ -136,215 +317,241 @@ reasonable prior even on unseen environments. Fine-tuning closes the rest of the
 **Problem:** Does the language instruction actually change the policy's behavior, or is it
 passed through and ignored?
 
-**Approach:** Run the same environment with semantically different and similar instructions
-and measure whether behavior changes. On gym_pusht zero-shot the differences may be subtle
-— the model is already out of distribution. The point is to see *whether* language has any
-effect before fine-tuning pins the connection.
+**Approach:** Run the same sim loop with semantically different instructions and compare
+final joint positions. You can't measure "success" here (no ground truth), so you measure
+joint displacement — how far did the arm move, and in which direction?
 
-> 🟡 **Know** — read the structure and instruction groups; run it and note which group shows the most variation.
+> 🟡 **Know** — read the structure; run it and note whether instruction groups cluster differently.
 
-```python workspace/vla/ch04/probe_language.py
-"""Test how sensitive SmolVLA is to instruction phrasing."""
-import gymnasium as gym
-import gym_pusht
+```python courses/vla/ch04_vla/code/probe_language.py
+"""
+Probe SmolVLA language conditioning on the SO-101 MuJoCo sim.
+Runs each instruction for 50 steps and prints final joint positions.
+Compare groups to see whether language changes the trajectory.
+"""
+import os
+import math
+import numpy as np
+import mujoco
 import torch
-from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+
+CHECKPOINT = "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace"
+IMG_H, IMG_W = 480, 640
+STEPS = 50
+
+CAM_CONFIGS = {
+    "up":   {"pos": np.array([0.25, 0.1, 0.9]),  "lookat": np.array([0.25, 0.1, 0.0])},
+    "side": {"pos": np.array([0.7, -0.5, 0.4]),  "lookat": np.array([0.15, 0.05, 0.15])},
+}
 
 INSTRUCTION_GROUPS = {
-    "correct task (paraphrases)": [
-        "push the T block into the target area",
-        "move the T-shaped block to the goal",
-        "get the block to the highlighted region",
+    "trained task (paraphrases)": [
+        "pink lego brick into the transparent box",
+        "place the pink block in the box",
+        "pick up the lego and put it in the container",
     ],
-    "wrong task": [
-        "pick up the block",
-        "rotate the block 90 degrees",
+    "different task": [
+        "wave hello",
         "do nothing",
-    ],
-    "ambiguous": [
-        "go",
-        "block",
-        "target",
+        "move left",
     ],
 }
 
-def eval_instruction(policy: SmolVLAPolicy, env: gym.Env,
-                     instruction: str, n_trials: int = 10) -> float:
-    successes = 0
-    device = next(policy.parameters()).device
-    for _ in range(n_trials):
-        obs, _ = env.reset()
-        for _ in range(200):
-            with torch.no_grad():
-                action = policy.select_action({
-                    "observation.image": torch.tensor(obs["pixels"]).permute(2,0,1).unsqueeze(0).float().to(device) / 255.0,
-                    "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).float().to(device),
-                    "task": [instruction],
-                })
-            obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
-            if term or trunc:
-                successes += int(info.get("is_success", False))
-                break
-    return successes / n_trials
+
+def _make_cam(pos, lookat):
+    cam = mujoco.MjvCamera()
+    cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+    diff = pos - lookat
+    dist = float(np.linalg.norm(diff))
+    cam.lookat[:] = lookat
+    cam.distance  = dist
+    cam.azimuth   = math.degrees(math.atan2(diff[1], diff[0]))
+    cam.elevation = -math.degrees(math.atan2(diff[2], math.sqrt(diff[0]**2 + diff[1]**2)))
+    return cam
+
+
+def img_tensor(frame, device):
+    """(H,W,3) uint8 → (1,3,H,W) float32 [0,1]"""
+    return torch.tensor(frame, dtype=torch.float32).permute(2,0,1).unsqueeze(0).to(device) / 255.0
+
+
+def run_instruction(model, data, renderer, cameras, policy, tokenizer, max_len,
+                    instruction, device):
+    mujoco.mj_resetData(model, data)
+    mujoco.mj_forward(model, data)
+    policy.reset()
+
+    enc = tokenizer(
+        instruction + "\n",
+        padding="max_length", max_length=max_len,
+        return_tensors="pt",  truncation=True,
+    )
+    lang_tokens = enc["input_ids"].to(device)
+    lang_mask   = enc["attention_mask"].bool().to(device)
+
+    for _ in range(STEPS):
+        frames = {}
+        for name, cam in cameras.items():
+            renderer.update_scene(data, camera=cam)
+            frames[name] = renderer.render()
+
+        obs = {
+            "observation.images.up":               img_tensor(frames["up"],   device),
+            "observation.images.side":             img_tensor(frames["side"], device),
+            "observation.state":                   torch.tensor(data.qpos[:6], dtype=torch.float32).unsqueeze(0).to(device),
+            "observation.language.tokens":         lang_tokens,
+            "observation.language.attention_mask": lang_mask,
+        }
+        with torch.no_grad():
+            action = policy.select_action(obs)
+        data.ctrl[:] = action.cpu().numpy()[0]
+        mujoco.mj_step(model, data)
+
+    return data.qpos[:6].copy()
+
 
 if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    policy = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base").to(device)
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+
+    menagerie_dir = os.path.realpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "ext",
+                     "mujoco_menagerie", "robotstudio_so101")
+    )
+    os.chdir(menagerie_dir)
+    model    = mujoco.MjModel.from_xml_path("scene_box.xml")
+    data     = mujoco.MjData(model)
+    renderer = mujoco.Renderer(model, height=IMG_H, width=IMG_W)
+    cameras  = {n: _make_cam(c["pos"], c["lookat"]) for n, c in CAM_CONFIGS.items()}
+
+    from lerobot.policies.smolvla import SmolVLAPolicy
+    policy = SmolVLAPolicy.from_pretrained(CHECKPOINT).to(device)
     policy.eval()
-    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode=None)
+
+    tokenizer = policy.model.vlm_with_expert.processor.tokenizer
+    max_len   = policy.config.tokenizer_max_length
 
     for group, instructions in INSTRUCTION_GROUPS.items():
-        print(f"\n{group}:")
+        print(f"\n── {group} ──")
         for instr in instructions:
-            sr = eval_instruction(policy, env, instr)
-            print(f"  '{instr}': {sr:.0%}")
-
-    env.close()
+            qpos = run_instruction(model, data, renderer, cameras,
+                                   policy, tokenizer, max_len, instr, device)
+            print(f"  '{instr}'")
+            print(f"    joints (rad): {qpos.round(3)}")
 ```
 
-**What to observe:** If paraphrases of the correct task cluster together and wrong-task
-instructions differ, language conditioning is working. If all groups give the same rate,
-the model is ignoring language on this env — which is fine, it's out of distribution.
-After fine-tuning (Project C), re-run this and compare: fine-tuning should sharpen the
-language signal.
+**What to observe:** If trained-task paraphrases cluster to similar joint positions and
+different-task instructions diverge, language conditioning is working. If all groups produce
+nearly identical trajectories, the model is relying on visual features alone and ignoring
+language — possible given the sim-to-real gap.
 
 ---
 
-## Project C — Fine-tune SmolVLA
+## Project C — Fine-tune (optional)
 
-**Problem:** Zero-shot SmolVLA performs poorly on gym_pusht. Fine-tune it on the same
-pusht demonstrations you used in Ch3 and measure the improvement.
+**Why bother fine-tuning here?** The pretrained checkpoint already "knows" the SO-101
+pick-and-place task. Fine-tuning on new data makes sense when you have a *different* task or
+robot. This section shows the mechanics — run it if you want hands-on experience with the
+LeRobot training pipeline, or skip to Ch5 (real hardware).
 
-**Approach:** Use LeRobot's training script to fine-tune SmolVLA on `lerobot/pusht`.
-Then evaluate zero-shot vs. fine-tuned side-by-side.
+### The dataset
 
-### Why fine-tuning works
+[`lerobot/svla_so101_pickplace`](https://huggingface.co/datasets/lerobot/svla_so101_pickplace)
+— 50 real SO-101 pick-and-place episodes, task: "pink lego brick into the transparent box."
+This is the same data the checkpoint was trained on — fine-tuning here is mostly a pipeline
+exercise, not a new capability.
 
-Pretraining gives the model a strong prior about robot motion, spatial reasoning, and
-language-action mapping. Fine-tuning adapts these representations to your specific task,
-robot, and environment. With the pusht dataset you're teaching the *what* and *where* for
-this task — the basic *how* of pushing was already learned during pretraining.
+SmolVLA inference uses ~2 GB VRAM — runs anywhere. Fine-tuning needs a CUDA GPU; Colab
+free T4 (16 GB) works with `--batch_size=16`. MPS and CPU will OOM.
 
-SmolVLA inference uses ~2 GB VRAM — runs anywhere. Fine-tuning needs a CUDA GPU; Colab free T4 (16 GB) works with `--batch_size=16`. MPS and CPU will OOM.
+> 🟢 **Run** — kick off fine-tuning (~60–90 min on a T4); inspect the loss curve.
 
-> 🟢 **Run** — kick off fine-tuning; come back when it's done (~60–90 min on a T4).
-
-```bash workspace/vla/ch04/finetune_smolvla.sh
+```bash courses/vla/ch04_vla/code/finetune_smolvla.sh
 cd workspace/ext/lerobot
 
-lerobot-train \
-  --policy.path=lerobot/smolvla_base \
-  --dataset.repo_id=lerobot/pusht \
-  --batch_size=16 \
-  --steps=50000 \
-  --output_dir=outputs/smolvla_pusht
+uv run --extra smolvla --extra training --extra dataset \
+  lerobot-train \
+    --policy.path=lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace \
+    --dataset.repo_id=lerobot/svla_so101_pickplace \
+    --batch_size=16 \
+    --steps=10000 \
+    --policy.push_to_hub=false \
+    --output_dir=outputs/smolvla_so101_ft
 ```
 
-Now evaluate zero-shot vs. fine-tuned using the `run_episode()` function from Project A.
-Point `from_pretrained` at your checkpoint:
+> 🔴 **Work** — after fine-tuning, swap `CHECKPOINT` in `probe_language.py` to your new
+> checkpoint path and re-run. Compare joint trajectories before and after fine-tuning.
 
-> 🔴 **Work** — fill in your checkpoint path and run; interpret the gap.
-
-Before the code: policy loads from a local checkpoint directory (the `pretrained_model`
-subfolder inside your output dir). The loop runs 20 episodes for each variant and prints
-success rate side by side.
-
-```python workspace/vla/ch04/compare_zeroshot_finetuned.py
-"""Compare zero-shot vs. fine-tuned SmolVLA on gym_pusht."""
-import gymnasium as gym
-import gym_pusht
-import torch
-from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
-import pathlib
-
-# Update this path to your actual checkpoint
-FINETUNED_PATH = "workspace/vla/ch04/outputs/smolvla_pusht/checkpoints/050000/pretrained_model"
-
-INSTRUCTION = "push the T block into the target area"
-N_TRIALS = 20
-
-def run_episode(policy: SmolVLAPolicy, env: gym.Env, instruction: str) -> bool:
-    obs, _ = env.reset()
-    device = next(policy.parameters()).device
-    for _ in range(300):
-        with torch.no_grad():
-            action = policy.select_action({
-                "observation.image": torch.tensor(obs["pixels"]).permute(2,0,1).unsqueeze(0).float().to(device) / 255.0,
-                "observation.state": torch.tensor(obs["agent_pos"]).unsqueeze(0).float().to(device),
-                "task": [instruction],
-            })
-        obs, _, term, trunc, info = env.step(action.cpu().numpy()[0])
-        if term or trunc:
-            return bool(info.get("is_success", False))
-    return False
-
-def eval_policy(policy: SmolVLAPolicy, env: gym.Env, label: str) -> None:
-    successes = sum(run_episode(policy, env, INSTRUCTION) for _ in range(N_TRIALS))
-    print(f"{label}: {successes}/{N_TRIALS} ({successes/N_TRIALS:.0%})")
-
-if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode=None)
-
-    zeroshot = SmolVLAPolicy.from_pretrained("lerobot/smolvla_base").to(device)
-    zeroshot.eval()
-    eval_policy(zeroshot, env, "zero-shot")
-
-    finetuned = SmolVLAPolicy.from_pretrained(
-        str(pathlib.Path(FINETUNED_PATH).resolve())
-    ).to(device)
-    finetuned.eval()
-    eval_policy(finetuned, env, "fine-tuned (50k steps)")
-
-    env.close()
-```
-
-**What to observe:** Fine-tuned success rate should jump significantly over zero-shot —
-even with 50k steps on a public dataset, the model learns the pusht task geometry. If it
-doesn't improve, check that your `FINETUNED_PATH` points to a valid checkpoint and that
-the instruction string exactly matches what the model saw during fine-tuning.
-
-**On data efficiency:** SmolVLA fine-tuning outperforms ACT trained from scratch at low
-demo counts (10–25 demos) because pretraining already handles the basic mechanics of pushing.
-At 200+ demos the gap narrows — at that scale, ACT catches up. This is the practical rule:
-use a VLA when you have few demos; ACT is competitive when you have many.
+**What to observe:** With only 50 episodes, fine-tuning mainly reinforces the task phrasing
+and timing — don't expect a dramatic change. The value here is understanding the pipeline:
+dataset → training loop → checkpoint → evaluation.
 
 ---
 
 ## Self-Check
 
-1. You load SmolVLA zero-shot on gym_pusht and get 5% success. After fine-tuning on 206 pusht demos for 50k steps you get 60%. What explains the gap?
-   **Answer:** Zero-shot SmolVLA has never seen this specific environment or task geometry. Fine-tuning adapts the pretrained priors to the exact observation space, action scale, and task. The pretrained model already knows how to "push" — fine-tuning teaches it *where* and *how far* in this env.
+1. You run `interact_so101.py` and the arm barely moves for any instruction. What are two
+   likely causes?
+   **Answer:** (a) The sim images look so different from training (domain gap) that the model
+   outputs near-zero actions. (b) `policy.reset()` is missing — stale temporal state from a
+   previous run is leaking into the action chunk buffer.
 
-2. In Project B, all three instruction groups give the same success rate. What does that tell you?
-   **Answer:** The model is ignoring language on this env — it's out of distribution and falling back on visual patterns alone. After fine-tuning, re-running the probe should show language starting to matter: correct-task phrasings should outperform wrong-task ones.
+2. In Project B, trained-task paraphrases and different-task instructions produce nearly
+   identical joint trajectories. What does that tell you?
+   **Answer:** The model is ignoring language and relying on visual features alone — likely
+   because the image distribution (synthetic) is so far from training (real) that the vision
+   encoder dominates. On real hardware this gap disappears.
 
-3. You fine-tune SmolVLA on "push the T block into the target area." At eval you pass "move block to goal." What do you expect?
-   **Answer:** Likely degraded performance. Language conditioning is learned from the fine-tuning data. If only one phrasing appeared in training, the model didn't learn to generalize the instruction. Use varied phrasings in fine-tuning data or stick to the exact training phrasing at eval.
+3. The checkpoint expects `observation.images.up` and `observation.images.side`. You pass
+   `observation.image` instead. What happens?
+   **Answer:** The policy raises a `KeyError` or `ValueError` — it can't find any of the
+   expected camera keys. Key names are part of the model's interface contract.
 
-4. The fine-tune script uses `lerobot/pusht` — the same dataset as Ch3 ACT training. Why does SmolVLA fine-tune faster (fewer steps) than ACT trained from scratch?
-   **Answer:** SmolVLA already has pretrained weights from millions of robot demonstrations. It's adapting an existing prior, not learning robot motion from zero. ACT from scratch has to learn everything from the 206 pusht episodes alone.
+4. Why do you call `policy.reset()` between instructions in `interact_so101.py`?
+   **Answer:** SmolVLA uses action chunking — it buffers a sequence of predicted actions and
+   replays them over several steps. `reset()` clears this buffer. Without it, the tail of the
+   previous instruction's chunk bleeds into the next run.
 
-5. Your fine-tuned SmolVLA runs at 2 Hz — too slow for a 10 Hz control loop. What do you try first?
-   **Answer:** Switch to `float16` precision (`policy.half()` or `torch.autocast`). Then check if the vision encoder is re-running every step — caching it at lower frequency (e.g., 5 Hz) while running the action decoder at 10 Hz is a common optimization in VLA deployments.
+5. You want to adapt SmolVLA to a completely new task on a different robot. How many demos
+   do you need, roughly, and why less than ACT from scratch?
+   **Answer:** 20–50 demos is a reasonable starting point. SmolVLA already has pretrained
+   priors for robot motion, spatial reasoning, and language-action mapping from millions of
+   demonstrations. Fine-tuning adapts those priors — ACT from scratch must learn everything
+   from your demos alone.
 
 ---
 
 ## Common Mistakes
 
-- **Mismatched instruction at eval:** The phrasing you pass at eval must match (or be close to) what appeared in fine-tuning. If fine-tuning used "push the T block into the target area" and eval uses "move block," performance drops.
+- **Wrong camera key names:** `observation.image` will fail. The checkpoint expects exactly
+  `observation.images.up` and `observation.images.side`. Check `policy.config.input_features`
+  for the expected keys if you use a different checkpoint.
 
-- **Expecting zero-shot to work well on novel envs:** SmolVLA was trained on real robots and different sims. Zero-shot on gym_pusht will be mediocre — fine-tuning is the expected workflow, not an optional step.
+- **Expecting zero-shot to complete the task in sim:** It won't — the domain gap between
+  synthetic MuJoCo renders and real robot photos is too large. The point of Project A is
+  to understand the interface and observe motion, not to achieve task success.
 
-- **Running fine-tuning on CPU or MPS:** SmolVLA fine-tuning requires CUDA — MPS will OOM, CPU will take days. Use Colab (free T4) with `--batch_size=16` if you don't have a local GPU.
+- **Forgetting `policy.reset()` between episodes:** Stale action chunks from a previous
+  run leak into the next. Always reset before a new episode or instruction.
 
-- **Comparing zero-shot and fine-tuned at different eval conditions:** Same environment, same instruction string, same number of trials — otherwise the comparison is meaningless.
+- **Running fine-tuning on MPS or CPU:** MPS will OOM during the backward pass. CPU will
+  take days. Use a CUDA GPU — Colab free T4 with `--batch_size=16` is the minimum viable
+  setup.
+
+- **Skipping `os.chdir` before loading the XML:** MuJoCo resolves STL asset paths relative
+  to the XML file's directory. If the working directory is wrong, it raises errors about
+  missing mesh files.
 
 ---
 
 ## Resources
 
-1. [SmolVLA blog post](https://huggingface.co/blog/smolvla) — architecture overview and benchmark results; check here for the current Hub model ID
-2. [OpenVLA paper](https://arxiv.org/abs/2406.09246) — the design decisions behind open-weight VLAs
+1. [SmolVLA blog post](https://huggingface.co/blog/smolvla) — architecture overview and benchmark results
+2. [OpenVLA paper](https://arxiv.org/abs/2406.09246) — design decisions behind open-weight VLAs
 3. [Open X-Embodiment paper](https://arxiv.org/abs/2310.08864) — the pretraining dataset that gives SmolVLA its priors
-4. [π0 paper](https://arxiv.org/abs/2410.24164) — state-of-art VLA for dexterous manipulation (read for context on where the field is going)
+4. [π0 paper](https://arxiv.org/abs/2410.24164) — state-of-art VLA for dexterous manipulation
+5. [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/main/robotstudio_so101) — the robot model used in this chapter
