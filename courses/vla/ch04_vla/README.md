@@ -21,7 +21,10 @@ the [Open X-Embodiment dataset](https://arxiv.org/abs/2310.08864) — ~1M demons
 
 These are actual frames from the training data — top-down and side cameras, real SO-101, pink lego brick, orange taped target box:
 
-![SO-101 top-down camera — pink lego brick, orange target box](assets/so101_up.gif) ![SO-101 side camera — arm approaching the lego brick](assets/so101_side.gif)
+<table><tr>
+<td><img src="assets/so101_up.gif" width="100%" alt="Top-down camera — pink lego brick, orange target box"></td>
+<td><img src="assets/so101_side.gif" width="100%" alt="Side camera — arm approaching the lego brick"></td>
+</tr></table>
 
 **What you'll build:** Type a language instruction → watch a simulated SO-101 arm try to
 execute it in MuJoCo → understand the VLA interface before using a real robot in Ch5.
