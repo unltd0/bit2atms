@@ -19,6 +19,11 @@ the [Open X-Embodiment dataset](https://arxiv.org/abs/2310.08864) — ~1M demons
 
 ![SO-101 performing pick-and-place — asynchronous counting, synchronous counting, under perturbations, and lego brick generalization](https://cdn-uploads.huggingface.co/production/uploads/640e21ef3c82bd463ee5a76d/S-3vvVCulChREwHDkquoc.gif)
 
+These are actual frames from the training data — top-down and side cameras, real SO-101, pink lego brick, orange taped target box:
+
+<video src="assets/so101_up.mp4" autoplay loop muted playsinline width="49%"></video>
+<video src="assets/so101_side.mp4" autoplay loop muted playsinline width="49%"></video>
+
 **What you'll build:** Type a language instruction → watch a simulated SO-101 arm try to
 execute it in MuJoCo → understand the VLA interface before using a real robot in Ch5.
 
@@ -97,7 +102,7 @@ fine-tuned on 50 real SO-101 episodes of a pick-and-place task. It expects:
 
 > ⚠️ **The arm will move but won't complete the task.** This is expected — not a bug.
 >
-> The checkpoint was trained on **real robot photos**. MuJoCo renders **synthetic images**. The model has never seen renders like these, so the motions will be approximate. Don't spend time debugging why it doesn't pick up the block — it won't, in sim. That's exactly what Ch5 fixes by running the same model on a real arm with real camera images.
+> Two reasons: (1) the checkpoint was trained on **real robot photos** — MuJoCo renders synthetic images the model has never seen; (2) the scene has a **generic green box**, not the pink lego brick and transparent box from training. The objects don't match, and the images don't match. Don't spend time debugging it — it won't work in sim. That's exactly what Ch5 fixes.
 >
 > What *is* worth watching: the arm responds to language, moves purposefully, and produces different trajectories for different instructions. That's the interface working correctly.
 
@@ -167,7 +172,9 @@ import mujoco.viewer
 import torch
 
 # Fine-tuned on 50 real SO-101 pick-and-place episodes.
-# Task phrasing it understands: "pink lego brick into the transparent box"
+# Training instruction: "pink lego brick into the transparent box"
+# Note: the MuJoCo scene has a generic green box — not the training objects.
+# The arm will move but won't complete the task. That's expected.
 CHECKPOINT = "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace"
 
 CAM_CONFIGS = {
