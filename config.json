@@ -6,17 +6,14 @@
     {
       "id": "vla",
       "title": "Vision-Language-Action (VLA)",
-      "description": "8-chapter project-driven curriculum from sim to physical robot.",
+      "description": "5-chapter project-driven curriculum from sim to physical robot.",
       "chapters": [
-        { "id": "readme", "num": "○", "file": "courses/vla/README.md",                  "color": "accent"  },
-        { "id": "ch01",   "num": "01", "file": "courses/vla/ch01_mujoco/README.md",      "color": "accentg" },
-        { "id": "ch02",   "num": "02", "file": "courses/vla/ch02_rl/README.md",          "color": "accent"  },
-        { "id": "ch03",   "num": "03", "file": "courses/vla/ch03_il/README.md",          "color": "accentp" },
-        { "id": "ch04",   "num": "04", "file": "courses/vla/ch04_vla/README.md",         "color": "accento" },
-        { "id": "ch05",   "num": "05", "file": "courses/vla/ch05_sim2real/README.md",    "color": "accent"  },
-        { "id": "ch06",   "num": "06", "file": "courses/vla/ch06_ros2/README.md",        "color": "accentp" },
-        { "id": "ch07",   "num": "07", "file": "courses/vla/ch07_hardware/README.md",    "color": "accentg" },
-        { "id": "ch08",   "num": "08", "file": "courses/vla/ch08_capstone/README.md",    "color": "accentr" }
+        { "id": "readme", "num": "○", "file": "courses/vla/README.md",                   "color": "accent"  },
+        { "id": "ch01",   "num": "01", "file": "courses/vla/ch01_mujoco/README.md",       "color": "accentg" },
+        { "id": "ch02",   "num": "02", "file": "courses/vla/ch02_rl/README.md",           "color": "accent"  },
+        { "id": "ch03",   "num": "03", "file": "courses/vla/ch03_il/README.md",           "color": "accentp" },
+        { "id": "ch04",   "num": "04", "file": "courses/vla/ch04_vla/README.md",          "color": "accento" },
+        { "id": "ch05",   "num": "05", "file": "courses/vla/ch05_hardware/README.md",     "color": "accentg" }
       ]
     }
   ]
