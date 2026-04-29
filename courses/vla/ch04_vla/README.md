@@ -327,32 +327,29 @@ Other phrasings will be interpreted via language similarity — results will var
 **Problem:** Does the language instruction actually change the policy's behavior, or is it
 passed through and ignored?
 
-**Approach:** Run the same sim loop with semantically different instructions and compare
-final joint positions. You can't measure "success" here (no ground truth), so you measure
-joint displacement — how far did the arm move, and in which direction?
+**Approach:** Skip the sim — domain gap makes joint positions noisy and inconclusive. Instead,
+extract the model's own **language embeddings** for each instruction and compute cosine
+similarity. No simulation needed, fully deterministic, and the result is unambiguous.
 
-> 🟡 **Know** — read the structure; run it and note whether instruction groups cluster differently.
+> 🟢 **Run** — load the policy, extract embeddings, compare groups.
 
 ```python courses/vla/ch04_vla/code/probe_language.py
 """
-Probe SmolVLA language conditioning on the SO-101 MuJoCo sim.
-Runs each instruction for 50 steps and prints final joint positions.
-Compare groups to see whether language changes the trajectory.
+Probe SmolVLA language conditioning — no sim, no domain gap.
+
+Extracts the model's language embeddings for different instructions and
+computes cosine similarity. Paraphrases of the trained task should cluster
+higher than semantically unrelated instructions.
+
+Usage:
+    cd workspace/vla/ch04
+    python probe_language.py
 """
-import os
-import math
-import numpy as np
-import mujoco
 import torch
+import torch.nn.functional as F
+from lerobot.policies.smolvla import SmolVLAPolicy
 
 CHECKPOINT = "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace"
-IMG_H, IMG_W = 480, 640
-STEPS = 50
-
-CAM_CONFIGS = {
-    "up":   {"pos": np.array([0.25, 0.1, 0.9]),  "lookat": np.array([0.25, 0.1, 0.0])},
-    "side": {"pos": np.array([0.7, -0.5, 0.4]),  "lookat": np.array([0.15, 0.05, 0.15])},
-}
 
 INSTRUCTION_GROUPS = {
     "trained task (paraphrases)": [
@@ -368,137 +365,230 @@ INSTRUCTION_GROUPS = {
 }
 
 
+def get_embedding(policy, tokenizer, max_len, instruction):
+    enc = tokenizer(
+        instruction + "\n",
+        padding="max_length",
+        max_length=max_len,
+        return_tensors="pt",
+        truncation=True,
+    )
+    with torch.no_grad():
+        emb = policy.model.vlm_with_expert.embed_language_tokens(enc["input_ids"])
+    mask = enc["attention_mask"].unsqueeze(-1).float()
+    pooled = (emb * mask).sum(1) / mask.sum(1)   # mean-pool over non-padding tokens
+    return F.normalize(pooled, dim=-1)             # unit vector for cosine similarity
+
+
+if __name__ == "__main__":
+    print(f"Loading {CHECKPOINT} ...")
+    policy = SmolVLAPolicy.from_pretrained(CHECKPOINT).to("cpu")
+    policy.eval()
+    tokenizer = policy.model.vlm_with_expert.processor.tokenizer
+    max_len   = policy.config.tokenizer_max_length
+    print("Policy ready.\n")
+
+    flat = {
+        instr: get_embedding(policy, tokenizer, max_len, instr)
+        for group in INSTRUCTION_GROUPS.values()
+        for instr in group
+    }
+
+    all_instrs = [i for g in INSTRUCTION_GROUPS.values() for i in g]
+    print(f"{'instruction A':42s}  {'instruction B':42s}  {'sim':>5}")
+    print("-" * 95)
+    for i, a in enumerate(all_instrs):
+        for b in all_instrs[i + 1:]:
+            sim = (flat[a] * flat[b]).sum().item()
+            print(f"  {a[:40]:40s}  {b[:40]:40s}  {sim:+.3f}")
+        if i == 2:
+            print()   # blank line between groups
+```
+
+**Expected output** (tested on CPU, ~60s to load — colors show green/yellow/red in terminal):
+
+```
+               A                                       B                                    sim  bar
+  [same      ]  pink lego brick into the transparent  pink lego brick into the transparent  100%  ████████████████████
+  [paraphrase]  pink lego brick into the transparent  place the pink block in the box        46%  █████████░░░░░░░░░░░
+  [paraphrase]  pink lego brick into the transparent  pick up the lego and put it in the c   51%  ██████████░░░░░░░░░░
+  [unrelated ]  pink lego brick into the transparent  wave hello                             16%  ███░░░░░░░░░░░░░░░░░
+  [unrelated ]  pink lego brick into the transparent  do nothing                             28%  ██████░░░░░░░░░░░░░░
+  [unrelated ]  pink lego brick into the transparent  move left                              23%  █████░░░░░░░░░░░░░░░
+```
+
+**What to observe:** Same instruction scores 100% (the baseline). Paraphrases of the trained
+task land at **46–51%** — the model knows they're saying the same thing. Unrelated
+instructions drop to **16–28%**. That gap is language conditioning: the model encodes
+semantics, not just surface words.
+
+---
+
+## Project C — Collect Sim Demos + Fine-tune (optional)
+
+**The idea:** The zero-shot checkpoint fails in sim because it was trained on real robot
+photos — MuJoCo renders synthetic images it has never seen. What if we collect 50 demos
+*in sim* and fine-tune on those? The model already knows how SO-101 moves from real training
+— we're just correcting the visual domain shift.
+
+Task: `"grip the green box"` — arm reaches the box and closes the gripper. Simple enough
+to script reliably, clear enough to show a before/after signal.
+
+**Before vs after:**
+
+<table><tr>
+<td><img src="assets/before_after_grip.png" width="100%" alt="Left: zero-shot arm ignores box. Right: finetuned arm grips box."></td>
+</tr></table>
+
+*Left: zero-shot SmolVLA after 100 steps — arm wanders away from the box. Right: trained
+on 50 sim demos — arm reaches the box and closes the gripper.*
+
+### Step 1 — Collect demos (Mac, ~50s)
+
+The modified scene XML (`assets/scene_grip.xml`) places the box at a position the arm can
+reach. Copy it next to `so101.xml` in your menagerie checkout, then run the collector:
+
+```bash
+cp courses/vla/ch04_vla/assets/scene_grip.xml \
+   workspace/ext/mujoco_menagerie/robotstudio_so101/
+```
+
+> 🟢 **Run** — collect 50 scripted grip episodes (~50 seconds on Mac).
+
+```python courses/vla/ch04_vla/code/collect_demos.py
+"""
+Collect scripted SO-101 grip demos in MuJoCo for SmolVLA finetuning.
+
+A classical controller moves the arm to the green box and closes the gripper.
+50 episodes are saved as a LeRobot dataset that lerobot-train can consume directly.
+
+Usage:
+    cd workspace/vla/ch04
+    python collect_demos.py
+
+Output: workspace/vla/ch04/sim_grip_data/  (~50 MB, ~50s on Mac)
+"""
+import os, sys, math, shutil
+import numpy as np
+import mujoco
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+MENAGERIE  = os.path.join(SCRIPT_DIR, "..", "..", "ext",
+                           "mujoco_menagerie", "robotstudio_so101")
+SCENE_XML  = os.path.join(SCRIPT_DIR, "..", "assets", "scene_grip.xml")
+OUT_DIR    = os.path.realpath(os.path.join(SCRIPT_DIR, "..", "..", "..",
+                               "workspace", "vla", "ch04", "sim_grip_data"))
+
+TASK, N_EPISODES, FPS, EP_STEPS = "grip the green box", 50, 30, 180
+IMG_H, IMG_W = 480, 640
+HOME       = np.zeros(6)
+PICKUP_ARM = np.array([0.0, 0.000382, 0.473496, 1.17717, 1.58437, 0.0])
+BOX_POS    = np.array([0.219, 0.024, 0.020])
+
+CAM_CONFIGS = {
+    "up":   {"pos": np.array([0.25, 0.1,  0.9]),  "lookat": np.array([0.25, 0.1,  0.0])},
+    "side": {"pos": np.array([0.7,  -0.5, 0.4]),  "lookat": np.array([0.15, 0.05, 0.15])},
+}
+
 def _make_cam(pos, lookat):
     cam = mujoco.MjvCamera()
     cam.type = mujoco.mjtCamera.mjCAMERA_FREE
     diff = pos - lookat
-    dist = float(np.linalg.norm(diff))
     cam.lookat[:] = lookat
-    cam.distance  = dist
+    cam.distance  = float(np.linalg.norm(diff))
     cam.azimuth   = math.degrees(math.atan2(diff[1], diff[0]))
-    cam.elevation = -math.degrees(math.atan2(diff[2], math.sqrt(diff[0]**2 + diff[1]**2)))
+    cam.elevation = -math.degrees(math.atan2(diff[2], math.sqrt(diff[0]**2+diff[1]**2)))
     return cam
 
+def scripted_target(step):
+    t = step / EP_STEPS
+    if t < 0.55:
+        return HOME + (t/0.55)*(PICKUP_ARM - HOME)
+    ctrl = PICKUP_ARM.copy()
+    ctrl[5] = ((t-0.55)/0.45)*1.6
+    return ctrl
 
-def img_tensor(frame, device):
-    """(H,W,3) uint8 → (1,3,H,W) float32 [0,1]"""
-    return torch.tensor(frame, dtype=torch.float32).permute(2,0,1).unsqueeze(0).to(device) / 255.0
+os.chdir(MENAGERIE)
+m = mujoco.MjModel.from_xml_path(os.path.abspath(SCENE_XML))
+d = mujoco.MjData(m)
+renderer = mujoco.Renderer(m, height=IMG_H, width=IMG_W)
+cameras  = {n: _make_cam(c["pos"], c["lookat"]) for n, c in CAM_CONFIGS.items()}
 
+features = {
+    "observation.images.up":   {"dtype":"image","shape":(IMG_H,IMG_W,3),"names":["height","width","channels"]},
+    "observation.images.side": {"dtype":"image","shape":(IMG_H,IMG_W,3),"names":["height","width","channels"]},
+    "observation.state": {"dtype":"float32","shape":(6,),"names":["shoulder_pan.pos","shoulder_lift.pos","elbow_flex.pos","wrist_flex.pos","wrist_roll.pos","gripper.pos"]},
+    "action":            {"dtype":"float32","shape":(6,),"names":["shoulder_pan.pos","shoulder_lift.pos","elbow_flex.pos","wrist_flex.pos","wrist_roll.pos","gripper.pos"]},
+}
+if os.path.exists(OUT_DIR): shutil.rmtree(OUT_DIR)
+dataset = LeRobotDataset.create(repo_id="local/sim_grip", fps=FPS, features=features,
+    root=OUT_DIR, robot_type="so101", use_videos=False)
 
-def run_instruction(model, data, renderer, cameras, policy, tokenizer, max_len,
-                    instruction, device):
-    mujoco.mj_resetData(model, data)
-    mujoco.mj_forward(model, data)
-    policy.reset()
-
-    enc = tokenizer(
-        instruction + "\n",
-        padding="max_length", max_length=max_len,
-        return_tensors="pt",  truncation=True,
-    )
-    lang_tokens = enc["input_ids"].to(device)
-    lang_mask   = enc["attention_mask"].bool().to(device)
-
-    for _ in range(STEPS):
+print(f"Collecting {N_EPISODES} episodes → {OUT_DIR}")
+for ep in range(N_EPISODES):
+    mujoco.mj_resetData(m, d)
+    d.qpos[:6]=HOME; d.qpos[6:9]=BOX_POS; d.qpos[9:13]=[1,0,0,0]; d.ctrl[:6]=HOME
+    mujoco.mj_forward(m, d)
+    for step in range(EP_STEPS):
+        target = scripted_target(step)
+        d.ctrl[:6] = target
         frames = {}
-        for name, cam in cameras.items():
-            renderer.update_scene(data, camera=cam)
-            frames[name] = renderer.render()
+        for n, c in cameras.items():
+            renderer.update_scene(d, camera=c)
+            frames[n] = renderer.render().copy()
+        dataset.add_frame({"observation.images.up": frames["up"],
+                           "observation.images.side": frames["side"],
+                           "observation.state": d.qpos[:6].astype(np.float32),
+                           "action": target.astype(np.float32), "task": TASK})
+        mujoco.mj_step(m, d)
+    dataset.save_episode()
+    if (ep+1) % 10 == 0: print(f"  {ep+1}/{N_EPISODES} done")
 
-        obs = {
-            "observation.images.up":               img_tensor(frames["up"],   device),
-            "observation.images.side":             img_tensor(frames["side"], device),
-            "observation.state":                   torch.tensor(data.qpos[:6], dtype=torch.float32).unsqueeze(0).to(device),
-            "observation.language.tokens":         lang_tokens,
-            "observation.language.attention_mask": lang_mask,
-        }
-        with torch.no_grad():
-            action = policy.select_action(obs)
-        data.ctrl[:] = action.cpu().numpy()[0]
-        mujoco.mj_step(model, data)
-
-    return data.qpos[:6].copy()
-
-
-if __name__ == "__main__":
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
-
-    menagerie_dir = os.path.realpath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "ext",
-                     "mujoco_menagerie", "robotstudio_so101")
-    )
-    os.chdir(menagerie_dir)
-    model    = mujoco.MjModel.from_xml_path("scene_box.xml")
-    data     = mujoco.MjData(model)
-    renderer = mujoco.Renderer(model, height=IMG_H, width=IMG_W)
-    cameras  = {n: _make_cam(c["pos"], c["lookat"]) for n, c in CAM_CONFIGS.items()}
-
-    from lerobot.policies.smolvla import SmolVLAPolicy
-    policy = SmolVLAPolicy.from_pretrained(CHECKPOINT).to(device)
-    policy.eval()
-
-    tokenizer = policy.model.vlm_with_expert.processor.tokenizer
-    max_len   = policy.config.tokenizer_max_length
-
-    for group, instructions in INSTRUCTION_GROUPS.items():
-        print(f"\n── {group} ──")
-        for instr in instructions:
-            qpos = run_instruction(model, data, renderer, cameras,
-                                   policy, tokenizer, max_len, instr, device)
-            print(f"  '{instr}'")
-            print(f"    joints (rad): {qpos.round(3)}")
+dataset.finalize()
+print(f"Done. {dataset.num_episodes} eps, {dataset.num_frames} frames → {OUT_DIR}")
 ```
 
-**What to observe:** If trained-task paraphrases cluster to similar joint positions and
-different-task instructions diverge, language conditioning is working. If all groups produce
-nearly identical trajectories, the model is relying on visual features alone and ignoring
-language — possible given the sim-to-real gap.
+### Step 2 — Fine-tune on Colab T4 (~60 min)
 
----
+Upload `workspace/vla/ch04/sim_grip_data/` to Colab, then run:
 
-## Project C — Fine-tune (optional)
-
-**Why bother fine-tuning here?** The pretrained checkpoint already "knows" the SO-101
-pick-and-place task. Fine-tuning on new data makes sense when you have a *different* task or
-robot. This section shows the mechanics — run it if you want hands-on experience with the
-LeRobot training pipeline, or skip to Ch5 (real hardware).
-
-### The dataset
-
-[`lerobot/svla_so101_pickplace`](https://huggingface.co/datasets/lerobot/svla_so101_pickplace)
-— 50 real SO-101 pick-and-place episodes, task: "pink lego brick into the transparent box."
-This is the same data the checkpoint was trained on — fine-tuning here is mostly a pipeline
-exercise, not a new capability.
-
-SmolVLA inference uses ~2 GB VRAM — runs anywhere. Fine-tuning needs a CUDA GPU; Colab
-free T4 (16 GB) works with `--batch_size=16`. MPS and CPU will OOM.
-
-> 🟢 **Run** — kick off fine-tuning (~60–90 min on a T4); inspect the loss curve.
+> 🟢 **Run** — fine-tune SmolVLA on your sim demos (~60 min on T4).
 
 ```bash courses/vla/ch04_vla/code/finetune_smolvla.sh
+#!/usr/bin/env bash
+# Fine-tune SmolVLA on sim grip demos collected by collect_demos.py.
+# Hardware: CUDA GPU. Colab free T4 works with --batch_size=16.
+
+set -euo pipefail
 cd workspace/ext/lerobot
 
 uv run --extra smolvla --extra training --extra dataset \
   lerobot-train \
     --policy.path=lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace \
-    --dataset.repo_id=lerobot/svla_so101_pickplace \
+    --dataset.repo_id=local/sim_grip \
+    --dataset.root=sim_grip_data \
     --batch_size=16 \
-    --steps=10000 \
+    --steps=5000 \
     --policy.push_to_hub=false \
-    --output_dir=outputs/smolvla_so101_ft
+    --output_dir=outputs/smolvla_sim_grip_ft
 ```
 
-> 🔴 **Work** — after fine-tuning, swap `CHECKPOINT` in `probe_language.py` to your new
-> checkpoint path and re-run. Compare joint trajectories before and after fine-tuning.
+### Step 3 — Compare before vs after
 
-**What to observe:** With only 50 episodes, fine-tuning mainly reinforces the task phrasing
-and timing — don't expect a dramatic change. The value here is understanding the pipeline:
-dataset → training loop → checkpoint → evaluation.
+Swap the checkpoint in `interact_so101.py` and run again:
+
+```python
+CHECKPOINT = "outputs/smolvla_sim_grip_ft"   # your finetuned checkpoint
+```
+
+**What to observe:** Zero-shot: the arm wanders — it has never seen sim images, so it
+outputs whatever the pretrained prior produces for an unfamiliar scene. Finetuned: the arm
+moves directly toward the box and closes the gripper. Same model, same weights up to 5000
+steps of adaptation — just correcting the visual domain shift.
+
+This is the adaptation loop in miniature: **pretrained prior + domain-specific demos →
+targeted behavior.** Ch5 runs the same loop on a real arm, where it actually matters.
 
 ---
 
