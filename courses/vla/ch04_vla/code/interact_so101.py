@@ -9,7 +9,7 @@ That's expected — Ch5 is where you close the gap on real hardware.
 
 Usage:
     cd workspace/vla/ch04
-    uv run --extra smolvla python interact_so101.py
+    python interact_so101.py
 
 Requirements:
     mujoco, torch, lerobot (with smolvla extra)

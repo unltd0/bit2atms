@@ -15,7 +15,9 @@ and a camera image; it outputs robot joint targets.
 
 This chapter uses **SmolVLA** — a 450M-parameter VLA from HuggingFace. It was pretrained on
 the [Open X-Embodiment dataset](https://arxiv.org/abs/2310.08864) — ~1M demonstrations from
-22 robot types across 50+ institutions — then fine-tuned on real SO-101 pick-and-place data.
+22 robot types across 50+ institutions — then fine-tuned on real [SO-101 pick-and-place data](https://huggingface.co/datasets/lerobot/svla_so101_pickplace).
+
+![SO-101 performing pick-and-place — asynchronous counting, synchronous counting, under perturbations, and lego brick generalization](https://cdn-uploads.huggingface.co/production/uploads/640e21ef3c82bd463ee5a76d/S-3vvVCulChREwHDkquoc.gif)
 
 **What you'll build:** Type a language instruction → watch a simulated SO-101 arm try to
 execute it in MuJoCo → understand the VLA interface before using a real robot in Ch5.
@@ -91,16 +93,13 @@ fine-tuned on 50 real SO-101 episodes of a pick-and-place task. It expects:
 - **Language:** pre-tokenized to `observation.language.tokens` (int64) and `observation.language.attention_mask` (bool)
 - **Output:** 6 joint targets in radians — shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper
 
-### Honest domain gap callout
+### Domain gap — set expectations before you run
 
-The checkpoint was trained on **real robot photos**. MuJoCo renders **synthetic images**.
-The model will move the arm — often purposefully — but won't reliably complete the task
-because the image distribution doesn't match training. This is called the **sim-to-real gap**,
-run here in reverse: real-to-sim.
-
-The useful thing to observe is the *interface* — how language and images flow into the model,
-how joint targets come out, and what "following an instruction" looks like at the action level.
-Closing the gap is Ch5 (real hardware).
+> ⚠️ **The arm will move but won't complete the task.** This is expected — not a bug.
+>
+> The checkpoint was trained on **real robot photos**. MuJoCo renders **synthetic images**. The model has never seen renders like these, so the motions will be approximate. Don't spend time debugging why it doesn't pick up the block — it won't, in sim. That's exactly what Ch5 fixes by running the same model on a real arm with real camera images.
+>
+> What *is* worth watching: the arm responds to language, moves purposefully, and produces different trajectories for different instructions. That's the interface working correctly.
 
 ### Data flow
 
@@ -131,6 +130,8 @@ These positions approximate the wrist-cam and overview-cam used during SO-101 da
 up:   pos=[0.25, 0.1, 0.9]   lookat=[0.25, 0.1, 0.0]   — top-down wrist view
 side: pos=[0.7, -0.5, 0.4]   lookat=[0.15, 0.05, 0.15]  — front-side overview
 ```
+
+> ⚠️ **Before you run:** the arm will move but won't complete the pick-and-place. That's expected — synthetic sim images don't match the real photos the model was trained on. Don't debug it. Watch the motion, probe language conditioning, then move to Ch5 for the real thing.
 
 > 🟢 **Run** — start the interactive sim, type an instruction, watch the arm move.
 
