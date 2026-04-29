@@ -21,7 +21,7 @@ python3 -m http.server 8080
 
 | Course | Topics | Duration |
 |---|---|---|
-| [VLA — Vision-Language-Action](courses/vla/OVERVIEW.md) | Transforms, MuJoCo, kinematics, RL, imitation learning, VLA models, ROS 2, real hardware | 4–8 weeks |
+| [VLA — Vision-Language-Action](courses/vla/README.md) | Transforms, MuJoCo, kinematics, RL, imitation learning, VLA models, ROS 2, real hardware | 4–8 weeks |
 
 More courses coming. See [CONTRIBUTING.md](CONTRIBUTING.md) to propose one.
 
