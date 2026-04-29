@@ -1,7 +1,7 @@
 # Chapter 5 — Real Hardware
 
 **Time:** 1–2 weeks
-**Hardware:** 2× SO-101 arm kits (~$500 total) + USB camera + lighting
+**Hardware:** SO-101 arm kit (~$500) + USB camera + lighting
 **Prerequisites:** Chapter 4 (SmolVLA in sim), Chapter 1 (MuJoCo, IK)
 
 ---

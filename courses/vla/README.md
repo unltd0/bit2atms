@@ -15,7 +15,7 @@ VLAs are models that take a camera image and a natural language instruction as i
 That's the destination. The chapters before it build the foundations you'll need to get there without getting lost.
 
 **Who this is for:** Python-literate, basic ML intuition, no robotics background needed.
-**Time:** 4–6 weeks at 2–4 hours/day.
+**Time:** 3–5 weeks at 2–4 hours/day.
 **Hardware:** Ch.1–4 laptop only. Ch.5 needs ~$620 in hardware (SO-101 arm + camera + lighting).
 
 ---
@@ -61,10 +61,10 @@ As you work through each chapter, copy the code from the reader into the corresp
 
 | # | Chapter | Tech | Computer | Robot | Time |
 |---|---------|------|----------|-------|------|
-| 1 | [MuJoCo & Robot Fundamentals](ch01_mujoco/README.md) | MuJoCo, Pinocchio, Pink | Laptop | Simulated SO-101 | 1–2 days |
-| 2 | [Reinforcement Learning](ch02_rl/README.md) | SAC+HER, Gymnasium | Laptop (GPU helpful) | Simulated SO-101 | 1–2 days |
+| 1 | [MuJoCo & Robot Fundamentals](ch01_mujoco/README.md) | MuJoCo, Pinocchio, Pink | Laptop | Simulated SO-101 | 1 day |
+| 2 | [Reinforcement Learning](ch02_rl/README.md) | SAC+HER, Gymnasium | Laptop (GPU helpful) | Simulated SO-101 | 1 day |
 | 3 | [Imitation Learning](ch03_il/README.md) | ACT, LeRobot | Laptop GPU 8 GB+ or Colab | Simulated SO-101 (gym_pusht) | 1–2 days |
-| 4 | [Vision-Language-Action Models](ch04_vla/README.md) | SmolVLA (450M), LeRobot | Laptop GPU 8 GB+ or Colab | Simulated SO-101 (MuJoCo) | 2–3 days |
+| 4 | [Vision-Language-Action Models](ch04_vla/README.md) | SmolVLA (450M), LeRobot | Laptop GPU 8 GB+ or Colab | Simulated SO-101 (MuJoCo) | 1–2 days |
 | 5 | [Real Hardware](ch05_hardware/README.md) | SmolVLA, LeRobot, lerobot teleoperate | Laptop GPU 8 GB+ | Physical SO-101 (~$620) | 1–2 weeks |
 
 ---
@@ -131,10 +131,9 @@ Time estimates per chapter are in the Chapters table above. This schedule assume
 
 | Week | Chapters | What you build |
 |------|---------|----------------|
-| 1 | Ch.1–2 | Sim robot, IK, RL policy |
-| 2 | Ch.3 | IL pipeline, ACT, failure analysis |
-| 3–4 | Ch.4 | SmolVLA in sim, language probe |
-| 5–8 | Ch.5 | Real arm, fine-tuned SmolVLA, deploy |
+| 1 | Ch.1–3 | Sim robot, IK, RL, IL pipeline |
+| 2 | Ch.4 | SmolVLA in sim, language probe |
+| 3–6 | Ch.5 | Real arm, fine-tuned SmolVLA, deploy |
 
 ---
 

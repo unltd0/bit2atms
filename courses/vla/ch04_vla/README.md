@@ -1,6 +1,6 @@
 # Chapter 4 — Vision-Language-Action Models
 
-**Time:** 2–3 days
+**Time:** 1–2 days
 **Hardware:** CPU or MPS for inference · CUDA (T4 16 GB) for fine-tuning
 **Prerequisites:** Chapter 3 (Imitation Learning, LeRobot)
 
