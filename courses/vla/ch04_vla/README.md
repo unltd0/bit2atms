@@ -562,15 +562,11 @@ uv run --extra smolvla --extra training --extra dataset \
 
 Run the sim twice — once with the original checkpoint, once with your finetuned one.
 
-> **Mac:** use `mjpython` instead of `python` — MuJoCo requires it to access the window server.
-> **Linux/Windows:** use `python` as normal.
-
 **Zero-shot (original checkpoint):**
 
 ```bash
 CHECKPOINT=lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace \
-  mjpython workspace/vla/ch04/interact_so101.py   # mac
-  # python workspace/vla/ch04/interact_so101.py   # linux/windows
+  python workspace/vla/ch04/interact_so101.py
 ```
 
 When prompted, type: `grip the green box`
@@ -579,8 +575,7 @@ When prompted, type: `grip the green box`
 
 ```bash
 CHECKPOINT=workspace/vla/ch04/smolvla_sim_grip_ft \
-  mjpython workspace/vla/ch04/interact_so101.py   # mac
-  # python workspace/vla/ch04/interact_so101.py   # linux/windows
+  python workspace/vla/ch04/interact_so101.py
 ```
 
 When prompted, type: `grip the green box`
@@ -629,6 +624,13 @@ targeted behavior.** Ch5 runs the same loop on a real arm, where it actually mat
 ---
 
 ## Common Mistakes
+
+- **`python interact_so101.py` crashes with a display error on Mac:** MuJoCo's interactive
+  viewer needs special window server access on macOS. Use `mjpython` instead of `python`:
+  ```bash
+  mjpython workspace/vla/ch04/interact_so101.py
+  ```
+  `mjpython` ships with the `mujoco` pip package. On Linux and Windows, plain `python` works fine.
 
 - **Wrong camera key names:** `observation.image` will fail. The checkpoint expects exactly
   `observation.images.up` and `observation.images.side`. Check `policy.config.input_features`
