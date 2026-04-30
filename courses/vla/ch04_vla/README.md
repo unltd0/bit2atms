@@ -144,8 +144,9 @@ side: pos=[0.7, -0.5, 0.4]   lookat=[0.15, 0.05, 0.15]  — front-side overview
 
 The script opens a live MuJoCo viewer window. It prompts for an instruction, runs 100 sim
 steps with the policy, then prompts again. Press `q` or close the window to exit.
+The scene XML (box at reachable position) is copied in automatically.
 
-The menagerie must be cloned into `workspace/ext/`:
+The menagerie must be cloned into `workspace/ext/` first:
 ```bash
 git clone https://github.com/google-deepmind/mujoco_menagerie workspace/ext/mujoco_menagerie
 ```
