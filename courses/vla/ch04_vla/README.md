@@ -560,19 +560,31 @@ uv run --extra smolvla --extra training --extra dataset \
 
 ### Step 3 — Compare before vs after
 
-Swap the checkpoint in `interact_so101.py` and run again:
+Run the sim twice — once with the original checkpoint, once with your finetuned one.
 
-```python
-# MPS finetune output:
-CHECKPOINT = "workspace/vla/ch04/smolvla_sim_grip_ft"
+**Zero-shot (original checkpoint):**
 
-# Colab/CUDA finetune output:
-# CHECKPOINT = "outputs/smolvla_sim_grip_ft"
+```bash
+cd workspace/vla/ch04
+CHECKPOINT=lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace \
+  python ../../../courses/vla/ch04_vla/code/interact_so101.py
 ```
 
-**What to observe:** Zero-shot: the arm collapses flat, going nowhere near the box — it has
+When prompted, type: `grip the green box`
+
+**Finetuned (your checkpoint):**
+
+```bash
+cd workspace/vla/ch04
+CHECKPOINT=workspace/vla/ch04/smolvla_sim_grip_ft \
+  python ../../../courses/vla/ch04_vla/code/interact_so101.py
+```
+
+When prompted, type: `grip the green box`
+
+**What to observe:** Zero-shot — the arm collapses flat, going nowhere near the box. It has
 never seen sim images, so the pretrained prior outputs near-zero actions for an unfamiliar
-scene. Finetuned (300 steps, ~10 min): the arm rises and positions directly over the box.
+scene. Finetuned (300 steps, ~10 min) — the arm rises and positions directly over the box.
 Same model, same 448M VLM — only the 1.64M action head changed.
 
 This is the adaptation loop in miniature: **pretrained prior + domain-specific demos →

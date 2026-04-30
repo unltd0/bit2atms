@@ -23,9 +23,11 @@ import mujoco
 import mujoco.viewer
 import torch
 
-# Fine-tuned on 50 real SO-101 pick-and-place episodes.
-# Task phrasing it understands: "pink lego brick into the transparent box"
-CHECKPOINT = "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace"
+# Override via env: CHECKPOINT=path/to/ckpt python interact_so101.py
+CHECKPOINT = os.environ.get(
+    "CHECKPOINT",
+    "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace",
+)
 
 # Camera positions that approximate the wrist-cam and overview-cam used during training.
 CAM_CONFIGS = {
