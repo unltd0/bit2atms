@@ -568,8 +568,6 @@ PyTorch on Mac (MPS) doesn't pre-compile GPU code. Instead, it compiles shaders 
 | 300-step finetune, VLM frozen | **~10 min** (~1s/step) |
 | 5000-step finetune | ~90 min |
 
-**32 GB vs 16 GB:** Same timings. 32 GB lets you use batch size 8+ and unfreeze VLM layers.
-
 ### Why 300-step finetune takes ~10 min
 
 SmolVLA has 448M params in the vision-language backbone. Even frozen (no gradients), PyTorch still runs the forward pass — that's ~21s/step on MPS.
