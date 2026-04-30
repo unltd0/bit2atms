@@ -26,7 +26,7 @@ CHAPTERS=(
   "ch01 read_robot_state.py ik_solver.py pd_controller.py"
   "ch02 train_sac_her.py visualise.py reward_ablation.py curriculum.py"
   "ch03 train_act.sh train_diffusion.sh eval_act.sh failure_analysis.py"
-  "ch04 interact_so101.py probe_language.py finetune_smolvla.sh"
+  "ch04 interact_so101.py probe_language.py collect_demos.py finetune_smolvla.sh finetune_mps.py"
   "ch05 teleoperate.sh calibrate.sh collect_demos.sh finetune_smolvla.sh deploy.sh failure_log.py"
 )
 
@@ -70,6 +70,24 @@ for entry in "${CHAPTERS[@]}"; do
       echo "  created $path"
     fi
   done
+done
+
+echo ""
+echo "Copying assets..."
+# Assets: src_relative_to_repo:dst_relative_to_repo
+ASSETS=(
+  "courses/vla/ch04_vla/assets/scene_grip.xml:workspace/vla/assets/scene_grip.xml"
+)
+for entry in "${ASSETS[@]}"; do
+  src="$REPO_ROOT/$(echo $entry | cut -d: -f1)"
+  dst="$REPO_ROOT/$(echo $entry | cut -d: -f2)"
+  mkdir -p "$(dirname "$dst")"
+  if [ -f "$src" ]; then
+    cp "$src" "$dst"
+    echo "  copied $dst"
+  else
+    echo "  ⚠️  Asset not found: $src"
+  fi
 done
 
 echo ""

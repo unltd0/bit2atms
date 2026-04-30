@@ -27,9 +27,11 @@ if not torch.backends.mps.is_available():
     sys.exit(1)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT  = os.path.realpath(os.path.join(SCRIPT_DIR, "..", "..", "..", ".."))
-DATA_DIR   = os.path.join(REPO_ROOT, "workspace", "vla", "ch04", "sim_grip_data")
-OUT_DIR    = os.path.join(REPO_ROOT, "workspace", "vla", "ch04", "smolvla_sim_grip_ft")
+# courses/vla/ch04_vla/code/ → 4 levels up | workspace/vla/ch04/ → 3 levels up
+if '/courses/' in SCRIPT_DIR:
+    REPO_ROOT = os.path.realpath(os.path.join(SCRIPT_DIR, "..", "..", "..", ".."))
+else:
+    REPO_ROOT = os.path.realpath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
 
 CHECKPOINT = "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace"
 TASK       = "grip the green box"
