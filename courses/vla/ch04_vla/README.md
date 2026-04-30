@@ -565,9 +565,8 @@ Run the sim twice — once with the original checkpoint, once with your finetune
 **Zero-shot (original checkpoint):**
 
 ```bash
-cd workspace/vla/ch04
 CHECKPOINT=lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace \
-  python interact_so101.py
+  python workspace/vla/ch04/interact_so101.py
 ```
 
 When prompted, type: `grip the green box`
@@ -575,9 +574,8 @@ When prompted, type: `grip the green box`
 **Finetuned (your checkpoint):**
 
 ```bash
-cd workspace/vla/ch04
-CHECKPOINT=smolvla_sim_grip_ft \
-  python interact_so101.py
+CHECKPOINT=workspace/vla/ch04/smolvla_sim_grip_ft \
+  python workspace/vla/ch04/interact_so101.py
 ```
 
 When prompted, type: `grip the green box`
