@@ -38,7 +38,7 @@ pip install stable-baselines3[extra] gymnasium gymnasium-robotics
 
 # Ch.3–4 — Imitation Learning + VLA (add when you reach Ch.3)
 git clone https://github.com/huggingface/lerobot workspace/ext/lerobot
-cd workspace/ext/lerobot && pip install -e ".[pusht,smolvla]"
+cd workspace/ext/lerobot && pip install -e ".[pusht,training,smolvla]"
 ```
 
 Each chapter's README also lists its installs at the top.
@@ -64,7 +64,7 @@ As you work through each chapter, copy the code from the reader into the corresp
 | 1 | [MuJoCo & Robot Fundamentals](ch01_mujoco/README.md) | MuJoCo, Pinocchio, Pink | Laptop | Simulated SO-101 | 1 day |
 | 2 | [Reinforcement Learning](ch02_rl/README.md) | SAC+HER, Gymnasium | Laptop (GPU helpful) | Simulated SO-101 | 1 day |
 | 3 | [Imitation Learning](ch03_il/README.md) | ACT, LeRobot | Laptop GPU 8 GB+ or Colab | Simulated SO-101 (gym_pusht) | 1–2 days |
-| 4 | [Vision-Language-Action Models](ch04_vla/README.md) | SmolVLA (450M), LeRobot | Laptop GPU 8 GB+ or Colab | Simulated SO-101 (MuJoCo) | 1–2 days |
+| 4 | [Vision-Language-Action Models](ch04_vla/README.md) | SmolVLA (450M), LeRobot | GPU 16 GB+ or Colab | Simulated SO-101 (MuJoCo) | 1–2 days |
 | 5 | [Real Hardware](ch05_hardware/README.md) | SmolVLA, LeRobot, lerobot teleoperate | Laptop GPU 8 GB+ | Physical SO-101 (~$620) | 1–2 weeks |
 
 ---
@@ -72,8 +72,7 @@ As you work through each chapter, copy the code from the reader into the corresp
 ## Chapter Summaries
 
 ### Chapter 1 — MuJoCo & Robot Fundamentals
-Load a real robot, read its state, localize objects with camera transforms, write a PD
-controller, and solve IK with Pink. These four skills are used in every subsequent chapter.
+Load a real robot, read its state, write a PD controller, and solve IK with Pink. These three projects build the foundations used in every subsequent chapter.
 
 **Install:** `pip install mujoco pin-pink pinocchio robot_descriptions quadprog`
 
@@ -86,7 +85,7 @@ Train SAC+HER on a robotic reach task. Understand the RL loop, sparse rewards, a
 
 **Install:** `pip install stable-baselines3[extra] gymnasium gymnasium-robotics`
 
-**Projects:** Explore env · Train SAC+HER · Reward ablation · Curriculum learning
+**Projects:** Train SAC+HER
 
 ---
 
@@ -104,16 +103,16 @@ pip install -e ".[pusht]"
 ---
 
 ### Chapter 4 — Vision-Language-Action Models
-Run SmolVLA zero-shot on a simulated SO-101 arm, probe how language conditioning affects joint trajectories, and optionally fine-tune on a custom task. Exposes the domain gap: the checkpoint was trained on real photos, but the sim renders synthetic images — the arm moves but not accurately. That gap is what Ch.5 closes.
+Run SmolVLA zero-shot on a simulated SO-101 arm, probe how language conditioning affects joint trajectories, and fine-tune on a sim task to see the before/after difference. Exposes the domain gap: the checkpoint was trained on real photos, but the sim renders synthetic images — the arm moves but not accurately. That gap is what Ch.5 closes.
 
 **Install:** `pip install -e ".[smolvla]"` (inside lerobot)
 
-**Projects:** Interactive SmolVLA sim · Language conditioning probe · (Optional) Fine-tune SmolVLA
+**Projects:** Interactive SmolVLA sim · Language conditioning probe · Fine-tune SmolVLA
 
 ---
 
 ### Chapter 5 — Real Hardware
-Deploy everything on a real SO-101 arm: assemble, calibrate, collect 20–50 real demonstrations, fine-tune SmolVLA on your data, and iterate on failures. Closes the domain gap you saw in Ch.4 — the model now sees real images of your robot and your task.
+Deploy everything on a real SO-101 arm: assemble, calibrate, collect 100 real demonstrations, fine-tune SmolVLA on your data, and iterate on failures. Closes the domain gap you saw in Ch.4 — the model now sees real images of your robot and your task.
 
 Language robustness eval is included: test the same task with 3 different phrasings (10 trials each) to measure how brittle language conditioning is before and after fine-tuning.
 
@@ -121,7 +120,7 @@ Language robustness eval is included: test the same task with 3 different phrasi
 
 **Install:** `pip install lerobot` (already installed from Ch.3–4)
 
-**Projects:** Assemble + teleoperate · Calibrate · Collect demos · Fine-tune SmolVLA + deploy · Evaluate & iterate
+**Projects:** Assemble + calibrate + teleoperate · Collect demos · Fine-tune SmolVLA + deploy · Language robustness check · Evaluate & iterate
 
 ---
 

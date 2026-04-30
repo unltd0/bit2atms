@@ -1,7 +1,7 @@
 # Chapter 3 — Imitation Learning
 
-**Time:** 1–2 days · on CPU/Apple Silicon ACT training can take up to 14h — use Colab T4 (free) and come back
-**Hardware:** GPU 8 GB+ recommended · Apple Silicon works but training takes ~14h — use Colab
+**Time:** 1–2 days
+**Hardware:** GPU 8 GB+
 **Prerequisites:** Chapter 1 (MuJoCo), Chapter 2 (RL basics)
 
 ---
@@ -400,7 +400,7 @@ ACT and Diffusion Policy are task-specific: they have no language understanding 
 ## Self-Check
 
 1. Your 80k-step ACT policy shows `avg_max_reward ≈ 0.40` but `pc_success = 0%`. Is training broken?
-   **Answer:** No. `pc_success` requires >95% T-block coverage — a strict threshold. `avg_max_reward` at 0.40 means the policy is learning real behavior; it just hasn't crossed that bar yet. On CUDA, 80k typically reaches 10–60% success. On Apple Silicon (MPS), 0% at 80k is normal — train longer or use Colab.
+   **Answer:** No. `pc_success` requires >95% T-block coverage — a strict threshold. `avg_max_reward` at 0.40 means the policy is learning real behavior; it just hasn't crossed that bar yet. On CUDA, 80k typically reaches 10–60% success. If you're still at 0%, train to 100k–120k steps or switch to a faster GPU via Colab.
 
 2. Why does ACT predict a chunk of actions instead of one at a time?
    **Answer:** Querying the policy every step compounds errors — each small mistake feeds into the next prediction. Predicting a block and executing it briefly reduces how often the policy sees its own errors.

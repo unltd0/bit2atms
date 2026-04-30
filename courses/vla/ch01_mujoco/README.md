@@ -18,14 +18,16 @@ controller that holds a pose, and solve for joint angles that put the hand where
 
 **Where this shows up:** Ch2 and Ch3 use MuJoCo environments under the hood — you won't
 touch the API directly, but knowing what `mj_step()` and `data.qpos` mean makes the gym
-interface less of a black box. The direct payoff comes in Ch5, where you'll use IK to map policy outputs to real joint angles on the SO-101 arm.
+interface less of a black box. In Ch5, IK is used under the hood by LeRobot to translate
+policy outputs into joint commands on the real SO-101 arm — you won't call it yourself,
+but Project C here gives you the mental model for why calibration matters.
 
 > **End-effector (EE)** — the physical tip of the robot arm: the hand, gripper, or tool that actually touches objects. Everything upstream (shoulder, elbow, wrist joints) exists only to position and orient this tip.
 >
 > In code, "end-effector" usually refers to the **pose** of that tip — its `[x, y, z]` position plus orientation in world space.
 >
 > - **Forward kinematics (FK):** given joint angles → compute the end-effector pose. This is what `mj_forward()` does.
-> - **Inverse kinematics (IK):** given a target end-effector pose → solve for the joint angles that achieve it. Covered in Project D.
+> - **Inverse kinematics (IK):** given a target end-effector pose → solve for the joint angles that achieve it. Covered in Project C.
 
 **Install:** (run from the repo root)
 ```bash
@@ -145,7 +147,7 @@ R   = data.xmat[body_id].reshape(3, 3)
 
 `read_robot_state.py` sets two joint configurations and prints the EE position for each — no physics simulation, just FK. The viewer opens at the end showing the final pose.
 
-```python courses/vla/ch01_mujoco/code/read_robot_state.py
+```python workspace/vla/ch01/read_robot_state.py
 ```
 
 **What to observe in the terminal:**
@@ -228,7 +230,7 @@ torque = kp × (target_angle − current_angle) − kd × current_velocity
 >
 > Seeing the plot change under your edits is the whole point.
 
-```python courses/vla/ch01_mujoco/code/pd_controller.py
+```python workspace/vla/ch01/pd_controller.py
 ```
 
 **What to observe:** The script saves `pd_gains.png` in your working directory. Here is what the four panels should look like:
@@ -284,7 +286,7 @@ T_camera_in_world = T_wrist_in_world @ T_camera_on_wrist
 p_cup_in_world    = T_camera_in_world @ p_cup_in_camera
 ```
 
-In this project the target is hardcoded in world space, so no transform is needed. You'll use this in Chapter 8 (Capstone A) when a real depth camera gives you the cup position in camera space.
+In this project the target is hardcoded in world space, so no transform is needed.
 
 ### Why load the model twice?
 
@@ -316,7 +318,7 @@ singularities, and multiple simultaneous tasks. [Read more: Pink docs](https://s
 >
 > No need to understand the Pink math — know what goes in and what comes out.
 
-```python courses/vla/ch01_mujoco/code/ik_solver.py
+```python workspace/vla/ch01/ik_solver.py
 ```
 
 **Note:** The loop uses `mj_forward()` not `mj_step()` — physics don't advance. The arm

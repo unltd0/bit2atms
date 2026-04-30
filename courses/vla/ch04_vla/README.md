@@ -1,8 +1,8 @@
 # Chapter 4 — Vision-Language-Action Models
 
 **Time:** 1–2 days
-**Hardware:** CPU or MPS for inference · MPS (16 GB+) or CUDA (T4 16 GB) for fine-tuning
-**Prerequisites:** Chapter 3 (Imitation Learning, LeRobot)
+**Hardware:** GPU 16 GB+
+**Prerequisites:** Chapter 3 (Imitation Learning, LeRobot), Chapter 1 (MuJoCo, viewer)
 
 ---
 
@@ -35,7 +35,7 @@ execute it in MuJoCo → understand the VLA interface before using a real robot 
 |---------|-----------|-------|
 | A — Interactive sim | SmolVLA forward pass (~2 GB VRAM) | CPU, MPS, or any CUDA GPU |
 | B — Probe language | Same as A, repeated across instructions | CPU, MPS, or any CUDA GPU |
-| C — Fine-tune (optional) | Full backward pass | MPS 16 GB+ Mac (~10 min) · Colab free T4 (~60 min) |
+| C — Fine-tune SmolVLA | Full backward pass | MPS 16 GB+ Mac (~10 min) · Colab free T4 (~60 min) |
 
 **Install:**
 ```bash
@@ -49,6 +49,7 @@ pip install -e ".[smolvla]"
 1. What does a VLA take as input and produce as output?
 2. Why fine-tune a pretrained VLA rather than train ACT from scratch on the same data?
 3. A VLA trained on real robot photos is loaded into a MuJoCo sim. What do you expect?
+4. You fine-tune SmolVLA on 50 sim demos. Will it work on a real robot? Why or why not?
 
 ---
 
@@ -58,7 +59,7 @@ pip install -e ".[smolvla]"
 |---|---------|---------------|
 | A | Interactive Sim | Type instruction → SO-101 arm moves in MuJoCo |
 | B | Probe Language | Measure whether instruction phrasing changes behavior |
-| C | Fine-tune (optional) | Adapt SmolVLA to new data; compare with zero-shot |
+| C | Fine-tune SmolVLA | Adapt SmolVLA to sim data; compare zero-shot vs fine-tuned behavior |
 
 ---
 
@@ -317,7 +318,7 @@ semantics, not just surface words.
 
 ---
 
-## Project C — Collect Sim Demos + Fine-tune (optional)
+## Project C — Collect Sim Demos + Fine-tune
 
 **The idea:** The zero-shot checkpoint fails in sim because it was trained on real robot
 photos — MuJoCo renders synthetic images it has never seen. What if we collect 50 demos

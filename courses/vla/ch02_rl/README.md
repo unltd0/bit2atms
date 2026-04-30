@@ -1,7 +1,7 @@
 # Chapter 2 — Reinforcement Learning
 
 **Time:** 1 day
-**Hardware:** GPU helpful (CPU works, training is slower)
+**Hardware:** GPU helpful
 **Prerequisites:** Chapter 1 (MuJoCo, FK, IK)
 
 ---
@@ -44,7 +44,7 @@ there as you work through the projects.
 
 | # | Project | What you build |
 |---|---------|---------------|
-| A | Train SAC with HER | Train a reaching policy and see it succeed |
+| A | Train SAC+HER | Reaching policy trained from scratch; success rate tracked from 0% to 90%+ |
 
 ---
 
