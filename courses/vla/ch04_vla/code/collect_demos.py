@@ -20,11 +20,11 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
-MENAGERIE    = os.path.join(SCRIPT_DIR, "..", "..", "ext",
+REPO_ROOT    = os.path.realpath(os.path.join(SCRIPT_DIR, "..", "..", "..", ".."))
+MENAGERIE    = os.path.join(REPO_ROOT, "workspace", "ext",
                              "mujoco_menagerie", "robotstudio_so101")
 SCENE_XML    = os.path.join(SCRIPT_DIR, "..", "assets", "scene_grip.xml")
-OUT_DIR      = os.path.join(SCRIPT_DIR, "..", "..", "..", "workspace",
-                             "vla", "ch04", "sim_grip_data")
+OUT_DIR      = os.path.join(REPO_ROOT, "workspace", "vla", "ch04", "sim_grip_data")
 OUT_DIR      = os.path.realpath(OUT_DIR)
 
 # ── episode config ─────────────────────────────────────────────────────────────
@@ -86,8 +86,11 @@ def main():
     if not os.path.isfile(SCENE_XML):
         sys.exit(f"Scene XML not found: {SCENE_XML}")
 
-    os.chdir(MENAGERIE)   # so101.xml include resolves correctly
-    m = mujoco.MjModel.from_xml_path(os.path.abspath(SCENE_XML))
+    # Copy scene XML into menagerie dir so MuJoCo can resolve the so101.xml include
+    scene_in_menagerie = os.path.join(MENAGERIE, "scene_grip.xml")
+    shutil.copy(SCENE_XML, scene_in_menagerie)
+    os.chdir(MENAGERIE)
+    m = mujoco.MjModel.from_xml_path("scene_grip.xml")
     d = mujoco.MjData(m)
     renderer = mujoco.Renderer(m, height=IMG_H, width=IMG_W)
     cameras  = {n: _make_cam(c["pos"], c["lookat"]) for n, c in CAM_CONFIGS.items()}
