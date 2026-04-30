@@ -113,7 +113,9 @@ def main():
     # SmolVLA policy
     print(f"Loading {CHECKPOINT} …")
     from lerobot.policies.smolvla import SmolVLAPolicy
-    policy = SmolVLAPolicy.from_pretrained(CHECKPOINT).to(device)
+    # Resolve local paths to absolute so HF doesn't mistake them for repo IDs
+    ckpt = os.path.abspath(CHECKPOINT) if os.path.exists(CHECKPOINT) else CHECKPOINT
+    policy = SmolVLAPolicy.from_pretrained(ckpt).to(device)
     policy.eval()
 
     # Tokenizer lives inside the VLM component
