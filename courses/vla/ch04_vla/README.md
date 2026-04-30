@@ -639,21 +639,19 @@ targeted behavior.** Ch5 runs the same loop on a real arm, where it actually mat
 
 ## Apple Silicon — Fine-tuning on MPS
 
-> Tested on a MacBook Pro M-series. The timings below are from actual runs — not estimates.
+> Tested on a MacBook Pro M-series 16 GB. The timings below are from actual runs — not estimates.
 
-**Summary by RAM:**
+**Summary for a 16 GB MPS Mac:**
 
-| Step | 16 GB MPS | 32 GB MPS |
-|------|-----------|-----------|
-| One-time Metal shader warmup | 60–90 min (once, cached) | 60–90 min (once, cached) |
-| Load model to MPS (after warmup) | ~15 sec | ~15 sec |
-| 300-step finetune, batch=4, VLM frozen | **~10 min** (~1s/step) | **~10 min** (~1s/step) |
-| 5000-step full finetune, VLM frozen | ~90 min | ~90 min |
-| Larger batch (batch=8+) | may OOM | ✅ comfortable headroom |
-| Full finetune (VLM unfrozen) | OOM | possible, ~3–4× slower per step |
+| Step | Time |
+|------|------|
+| One-time Metal shader warmup (`warmup_mps.py`) | 60–90 min (once, then cached) |
+| Load model to MPS (after warmup) | ~15 sec |
+| 300-step finetune, batch=4, VLM frozen | **~10 min** (~1s/step) |
+| 5000-step finetune, VLM frozen | ~90 min |
 
-With 32 GB you have comfortable headroom — batch size 8 works, and you could experiment
-with unfreezing the top few VLM layers for a more thorough adaptation.
+> **32 GB Mac:** same timings, more headroom — batch size 8+ works, and you can experiment
+> with unfreezing the top few VLM layers for a more thorough adaptation.
 
 ### What Metal shader compilation is
 
