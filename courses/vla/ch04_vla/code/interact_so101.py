@@ -101,7 +101,10 @@ def main():
         )
 
     os.chdir(menagerie_dir)
-    model = mujoco.MjModel.from_xml_path("scene_box.xml")
+    # Use scene_grip.xml (box at reachable position) if available, else fall back to scene_box.xml
+    scene_xml = "scene_grip.xml" if os.path.exists("scene_grip.xml") else "scene_box.xml"
+    print(f"Scene: {scene_xml}")
+    model = mujoco.MjModel.from_xml_path(scene_xml)
     data  = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
 
