@@ -805,8 +805,9 @@ Warmup complete in 74.1 min.
 Subsequent MPS runs will be fast. Cache at ~/Library/Caches/com.apple.metal/
 ```
 
-After step 1, every subsequent step runs at ~21s. That's the true MPS throughput for
-this model — no more compilation overhead.
+After step 1, every subsequent step runs at ~21s for the warmup script (full model).
+The actual finetune (`finetune_mps.py`) runs at ~1s/step because LeRobot automatically
+reduces the VLM to 16 layers on MPS to fit in memory — same behavior, less compute.
 
 ### What this tells us about VLA inference
 

@@ -8,8 +8,7 @@ MuJoCo renders synthetic images. The arm will move, but not accurately.
 That's expected — Ch5 is where you close the gap on real hardware.
 
 Usage:
-    cd workspace/vla/ch04
-    python interact_so101.py
+    python workspace/vla/ch04/interact_so101.py
 
 Requirements:
     mujoco, torch, lerobot (with smolvla extra)

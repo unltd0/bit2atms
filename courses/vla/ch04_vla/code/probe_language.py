@@ -6,8 +6,7 @@ prints cosine similarity with a plain-English label so you can see at a
 glance whether the model treats two instructions as similar or different.
 
 Usage:
-    cd workspace/vla/ch04
-    python probe_language.py
+    python workspace/vla/ch04/probe_language.py
 """
 import torch
 import torch.nn.functional as F
