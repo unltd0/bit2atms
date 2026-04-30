@@ -162,23 +162,21 @@ MuJoCo renders synthetic images. The arm will move, but not accurately.
 That's expected — Ch5 is where you close the gap on real hardware.
 
 Usage:
-    cd workspace/vla/ch04
-    uv run --extra smolvla python interact_so101.py
+    python workspace/vla/ch04/interact_so101.py
+
+Requirements:
+    mujoco, torch, lerobot (with smolvla extra)
 """
 
-import os
-import sys
-import math
+import os, sys, math, shutil
 import numpy as np
-import mujoco
-import mujoco.viewer
+import mujoco, mujoco.viewer
 import torch
 
-# Fine-tuned on 50 real SO-101 pick-and-place episodes.
-# Training instruction: "pink lego brick into the transparent box"
-# Note: the MuJoCo scene has a generic green box — not the training objects.
-# The arm will move but won't complete the task. That's expected.
-CHECKPOINT = "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace"
+# Override via env: CHECKPOINT=path/to/ckpt python interact_so101.py
+# Resolve to absolute path immediately — os.chdir later would break relative paths
+_ckpt = os.environ.get("CHECKPOINT", "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace")
+CHECKPOINT = os.path.abspath(_ckpt) if os.path.exists(_ckpt) else _ckpt
 
 CAM_CONFIGS = {
     "up":   {"pos": np.array([0.25, 0.1,  0.9]),  "lookat": np.array([0.25, 0.1,  0.0])},
@@ -186,122 +184,11 @@ CAM_CONFIGS = {
 }
 IMG_H, IMG_W = 480, 640
 
-
-def _make_mjv_camera(pos, lookat):
-    cam = mujoco.MjvCamera()
-    cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-    diff = pos - lookat
-    dist = float(np.linalg.norm(diff))
-    cam.lookat[:] = lookat
-    cam.distance  = dist
-    cam.azimuth   = math.degrees(math.atan2(diff[1], diff[0]))
-    cam.elevation = -math.degrees(math.atan2(diff[2], math.sqrt(diff[0]**2 + diff[1]**2)))
-    return cam
-
-
-def render_camera(renderer, data, cam):
-    """Return (H, W, 3) uint8 RGB."""
-    renderer.update_scene(data, camera=cam)
-    return renderer.render()
-
-
-def make_obs(data, frames, lang_tokens, lang_mask, device):
-    """Build the dict that policy.select_action() expects."""
-    def img_tensor(frame):
-        # (H,W,3) uint8 → (1,3,H,W) float32 [0,1]
-        return torch.tensor(frame, dtype=torch.float32).permute(2,0,1).unsqueeze(0).to(device) / 255.0
-    return {
-        "observation.images.up":               img_tensor(frames["up"]),
-        "observation.images.side":             img_tensor(frames["side"]),
-        # current joint positions: (6,) float64 → (1,6) float32
-        "observation.state":                   torch.tensor(data.qpos[:6], dtype=torch.float32).unsqueeze(0).to(device),
-        "observation.language.tokens":         lang_tokens.to(device),
-        "observation.language.attention_mask": lang_mask.to(device),
-    }
-
-
-def main():
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
-    print(f"Device: {device}")
-
-    menagerie_dir = os.path.realpath(os.path.join(
-        os.path.dirname(__file__), "..", "..", "ext",
-        "mujoco_menagerie", "robotstudio_so101"
-    ))
-    if not os.path.isdir(menagerie_dir):
-        sys.exit(f"Menagerie not found at {menagerie_dir}\n"
-                 "Run:  git clone https://github.com/google-deepmind/mujoco_menagerie "
-                 "workspace/ext/mujoco_menagerie")
-
-    # chdir so STL asset paths relative to the XML resolve correctly
-    os.chdir(menagerie_dir)
-    model = mujoco.MjModel.from_xml_path("scene_box.xml")
-    data  = mujoco.MjData(model)
-    mujoco.mj_forward(model, data)
-
-    renderer = mujoco.Renderer(model, height=IMG_H, width=IMG_W)
-    cameras  = {n: _make_mjv_camera(c["pos"], c["lookat"]) for n, c in CAM_CONFIGS.items()}
-
-    print(f"Loading {CHECKPOINT} …")
-    from lerobot.policies.smolvla import SmolVLAPolicy
-    policy = SmolVLAPolicy.from_pretrained(CHECKPOINT).to(device)
-    policy.eval()
-
-    # tokenizer lives inside the VLM; converts instruction str → token ids
-    tokenizer = policy.model.vlm_with_expert.processor.tokenizer
-    max_len   = policy.config.tokenizer_max_length
-    print("Policy ready.\n")
-
-    def tokenize(instruction):
-        enc = tokenizer(
-            instruction + "\n",   # trailing newline matches training format
-            padding="max_length", max_length=max_len,
-            return_tensors="pt",  truncation=True,
-        )
-        return enc["input_ids"], enc["attention_mask"].bool()
-
-    STEPS_PER_INSTRUCTION = 100
-
-    print("Opening MuJoCo viewer … close the window or press Ctrl-C to quit.\n")
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-        while viewer.is_running():
-            try:
-                instruction = input("Instruction (Enter for default, q to quit): ").strip()
-            except (EOFError, KeyboardInterrupt):
-                break
-            if instruction.lower() in ("q", "quit", "exit"):
-                break
-            if not instruction:
-                instruction = "pink lego brick into the transparent box"
-            print(f"Running: '{instruction}'  ({STEPS_PER_INSTRUCTION} steps)")
-
-            lang_tokens, lang_mask = tokenize(instruction)
-            policy.reset()   # clear action chunk buffer between instructions
-
-            for _ in range(STEPS_PER_INSTRUCTION):
-                frames = {name: render_camera(renderer, data, cam) for name, cam in cameras.items()}
-                obs    = make_obs(data, frames, lang_tokens, lang_mask, device)
-
-                with torch.no_grad():
-                    action = policy.select_action(obs)
-
-                # action: tensor (1,6) → numpy (6,) joint targets [rad]
-                data.ctrl[:] = action.cpu().numpy()[0]
-                mujoco.mj_step(model, data)
-                viewer.sync()
-
-            print(f"Done. Joint positions: {data.qpos[:6].round(3)}\n")
-
-    print("Viewer closed.")
-
-
-if __name__ == "__main__":
-    main()
+# ... (full source at courses/vla/ch04_vla/code/interact_so101.py)
+# Key setup in main():
+#   - copies scene_grip.xml into menagerie dir (box at reachable position)
+#   - loads SmolVLAPolicy from CHECKPOINT
+#   - loops: render → policy.select_action → mj_step → viewer.sync
 ```
 
 **What to observe:**
