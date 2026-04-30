@@ -549,176 +549,48 @@ targeted behavior.** Ch5 runs the same loop on a real arm, where it actually mat
 
 ## Apple Silicon — Fine-tuning on MPS
 
-> Tested on a MacBook Pro M-series 32 GB. The timings below are from actual runs — not estimates.
+> **One-time setup:** Run `warmup_mps.py` once (60–90 min). After that, 300-step finetune takes ~10 min.
 
-**Summary for a 32 GB MPS Mac:**
+### The problem: Metal compiles shaders on first use
 
-| Step | Time |
+PyTorch on Mac (MPS) doesn't pre-compile GPU code. Instead, it compiles shaders *the first time* each operation runs. SmolVLA has thousands of operations, so the first run takes 60–90 min. After that, the compiled shaders cache permanently.
+
+**Good news:** The cache is saved at `~/Library/Caches/com.apple.metal/` — future runs skip compilation entirely.
+
+**Bad news:** The cache is per-machine. Each Mac must warm up once.
+
+### Timings (tested on 32 GB MPS Mac)
+
+| What | Time |
 |------|------|
-| One-time Metal shader warmup (`warmup_mps.py`) | 60–90 min (once, then cached) |
+| One-time warmup | 60–90 min (once) |
 | Load model to MPS (after warmup) | ~15 sec |
-| 300-step finetune, batch=4, VLM frozen | **~10 min** (~1s/step) |
-| 5000-step finetune, VLM frozen | ~90 min |
+| 300-step finetune, VLM frozen | **~10 min** (~1s/step) |
+| 5000-step finetune | ~90 min |
 
-> **32 GB Mac:** same timings, more headroom — batch size 8+ works, and you can experiment
-> with unfreezing the top few VLM layers for a more thorough adaptation.
+**32 GB vs 16 GB:** Same timings. 32 GB lets you use batch size 8+ and unfreeze VLM layers.
 
-### What Metal shader compilation is
+### Why 300-step finetune takes ~10 min
 
-When PyTorch moves a model to MPS (Apple's GPU API), it doesn't use pre-compiled GPU programs.
-Instead, it compiles each unique operation — each distinct tensor shape, dtype, and op
-combination — into a Metal shader *on the first call*. A 450M-parameter model like SmolVLA
-has thousands of unique ops. The first forward + backward pass triggers a compilation cascade
-that takes **60–90 minutes** on an M-series 32 GB Mac.
+SmolVLA has 448M params in the vision-language backbone. Even frozen (no gradients), PyTorch still runs the forward pass — that's ~21s/step on MPS.
 
-The good news: Metal caches compiled shaders to disk at:
-
-```
-~/Library/Caches/com.apple.metal/
-```
-
-After the cache is warm, subsequent runs skip compilation entirely. A 300-step head-only
-finetune takes **~10 min** on every run after — 1s/step steady state.
-
-The bad news: the cache is device-specific. You can't share it with other machines.
-Each Mac compiles its own shaders once.
-
-### Why this matters for SmolVLA specifically
-
-SmolVLA has two parts with very different compute profiles:
-
-| Component | Params | MPS behavior |
+| Component | Params | Speed on MPS |
 |-----------|--------|--------------|
-| `vlm_with_expert` (vision-language backbone) | ~448M | ~21s per forward even frozen — computation not skipped, only gradients |
-| Action head (`state_proj`, `action_in_proj`, `action_out_proj`, action MLPs) | ~1.6M | Fast — tiny network |
+| Vision-language backbone | ~448M | ~21s/step (forward only) |
+| Action head (trained) | ~1.6M | Fast |
 
-Freezing the VLM with `requires_grad_(False)` eliminates the backward pass but **not the
-forward pass**. You still run 448M parameters of transformer inference every step. On MPS
-that's ~21s/step after warmup. 300 steps ≈ 10 min. 5000 steps ≈ 100 min.
+**Bottom line:** For 5000-step finetunes, use Colab T4 (~0.5s/step). For quick 300-step experiments, MPS works fine.
 
-**Colab T4 comparison:** ~21s/step on MPS (after warmup) vs ~0.5s/step on T4. For full
-5000-step finetune, Colab is faster. For quick 300-step experiments, MPS is viable.
+### One-time warmup
 
-### The one-time warmup script
+Run this once and walk away:
 
-If you want to fine-tune on your Mac, run the warmup once and walk away:
-
-> 🟡 **Know** — this runs once per machine, then caches permanently.
-
-```python courses/vla/ch04_vla/code/warmup_mps.py
-"""
-One-time Metal shader warmup for SmolVLA on Apple Silicon.
-
-Run this once (~60-90 min). After completion, MPS finetuning takes ~10 min
-for 300 steps. The compiled shaders cache permanently at:
-  ~/Library/Caches/com.apple.metal/
-
-The cache is device-specific — each Mac compiles its own shaders once.
-"""
-import sys, os, time
-sys.path.insert(0, "../../ext/lerobot/src")
-
-import torch
-
-if not torch.backends.mps.is_available():
-    print("MPS not available — run on Apple Silicon Mac")
-    sys.exit(1)
-
-device = torch.device("mps")
-print(f"Metal shader warmup for SmolVLA")
-print(f"Started: {time.strftime('%H:%M:%S')} — expect 60-90 min\n")
-
-from lerobot.policies.smolvla import SmolVLAPolicy
-from torch.optim import AdamW
-
-t0 = time.time()
-print("Loading policy to MPS (triggers shader compilation) ...")
-policy = SmolVLAPolicy.from_pretrained(
-    "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace"
-).to(device)
-policy.model.vlm_with_expert.requires_grad_(False)
-policy.train()
-print(f"Policy on MPS: {(time.time()-t0)/60:.1f} min elapsed\n")
-
-tokenizer = policy.model.vlm_with_expert.processor.tokenizer
-max_len   = policy.config.tokenizer_max_length
-enc = tokenizer("grip the green box\n", padding="max_length",
-                max_length=max_len, return_tensors="pt", truncation=True)
-
-B = 4
-batch = {
-    "observation.images.up":               torch.rand(B, 3, 480, 640, device=device),
-    "observation.images.side":             torch.rand(B, 3, 480, 640, device=device),
-    "observation.state":                   torch.rand(B, 6, device=device),
-    "observation.language.tokens":         enc["input_ids"].expand(B, -1).to(device),
-    "observation.language.attention_mask": enc["attention_mask"].bool().expand(B, -1).to(device),
-    "action":                              torch.rand(B, policy.config.n_action_steps, 6, device=device),
-}
-
-opt = AdamW([p for p in policy.parameters() if p.requires_grad], lr=1e-4)
-
-print("Running 3 training steps to finish shader compilation ...")
-for step in range(3):
-    t1 = time.time()
-    opt.zero_grad()
-    loss, _ = policy.forward(batch)
-    loss.backward()
-    opt.step()
-    elapsed = time.time() - t1
-    print(f"  Step {step+1}: {elapsed:.1f}s  loss={loss.item():.4f}")
-    if step == 0:
-        print(f"  (step 1 is slowest — most shaders compile here)")
-
-total = time.time() - t0
-print(f"\nWarmup complete in {total/60:.1f} min.")
-print("Subsequent MPS runs will be fast. Cache at ~/Library/Caches/com.apple.metal/")
+```bash
+mjpython courses/vla/ch04_vla/code/warmup_mps.py
 ```
 
-**Expected output:**
-
+Expected output (first run only):
 ```
-Metal shader warmup for SmolVLA
-Started: 14:32:00 — expect 60-90 min
-
-Loading policy to MPS (triggers shader compilation) ...
-Policy on MPS: 67.3 min elapsed
-
-Running 3 training steps to finish shader compilation ...
-  Step 1: 340.2s  loss=0.0821
-  (step 1 is slowest — most shaders compile here)
-  Step 2: 21.4s   loss=0.0798
-  Step 3: 21.1s   loss=0.0804
-
-Warmup complete in 74.1 min.
-Subsequent MPS runs will be fast. Cache at ~/Library/Caches/com.apple.metal/
+Warmup complete in 67.3 min.
+Subsequent MPS runs will be fast.
 ```
-
-After step 1, every subsequent step runs at ~21s for the warmup script (full model).
-The actual finetune (`finetune_mps.py`) runs at ~1s/step because LeRobot automatically
-reduces the VLM to 16 layers on MPS to fit in memory — same behavior, less compute.
-
-### What this tells us about VLA inference
-
-This is a useful mental model beyond just Apple Silicon:
-
-1. **Inference ≠ training speed.** 21s/forward is fast enough for demo purposes (you don't
-   need real-time during data collection). It's the *5000-step backward pass accumulation*
-   that makes full finetune slow.
-
-2. **Freezing weights ≠ skipping computation.** Frozen layers still run forward — you get
-   features from them, just no gradients. `torch.no_grad()` skips the gradient graph, not
-   the matrix multiplications. For a 448M transformer, that's still a lot of compute.
-
-3. **JIT compilation costs are real.** CUDA has precompiled kernels for common ops.
-   Metal compiles at runtime. If you're building a system that deploys to Apple Silicon,
-   account for first-run latency or pre-compile as part of your setup.
-
----
-
-## Resources
-
-1. [SmolVLA blog post](https://huggingface.co/blog/smolvla) — architecture overview and benchmark results
-2. [OpenVLA paper](https://arxiv.org/abs/2406.09246) — design decisions behind open-weight VLAs
-3. [Open X-Embodiment paper](https://arxiv.org/abs/2310.08864) — the pretraining dataset that gives SmolVLA its priors
-4. [π0 paper](https://arxiv.org/abs/2410.24164) — state-of-art VLA for dexterous manipulation
-5. [MuJoCo Menagerie SO-101](https://github.com/google-deepmind/mujoco_menagerie/tree/main/robotstudio_so101) — the robot model used in this chapter
