@@ -562,11 +562,15 @@ uv run --extra smolvla --extra training --extra dataset \
 
 Run the sim twice — once with the original checkpoint, once with your finetuned one.
 
+> **Mac:** use `mjpython` instead of `python` — MuJoCo requires it to access the window server.
+> **Linux/Windows:** use `python` as normal.
+
 **Zero-shot (original checkpoint):**
 
 ```bash
 CHECKPOINT=lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace \
-  python workspace/vla/ch04/interact_so101.py
+  mjpython workspace/vla/ch04/interact_so101.py   # mac
+  # python workspace/vla/ch04/interact_so101.py   # linux/windows
 ```
 
 When prompted, type: `grip the green box`
@@ -575,7 +579,8 @@ When prompted, type: `grip the green box`
 
 ```bash
 CHECKPOINT=workspace/vla/ch04/smolvla_sim_grip_ft \
-  python workspace/vla/ch04/interact_so101.py
+  mjpython workspace/vla/ch04/interact_so101.py   # mac
+  # python workspace/vla/ch04/interact_so101.py   # linux/windows
 ```
 
 When prompted, type: `grip the green box`
