@@ -39,3 +39,4 @@ workspace_old/
 # Training outputs (checkpoints, eval videos)
 outputs/
 workspace/vla/*/outputs/
+node_modules/
