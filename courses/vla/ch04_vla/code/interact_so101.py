@@ -101,12 +101,10 @@ def main():
             "workspace/ext/mujoco_menagerie"
         )
 
-    scene_src = os.path.realpath(os.path.join(
-        os.path.dirname(__file__), "..", "assets", "scene_grip.xml"
-    ))
-    shutil.copy(scene_src, os.path.join(menagerie_dir, "scene_grip.xml"))
     os.chdir(menagerie_dir)
-    model = mujoco.MjModel.from_xml_path("scene_grip.xml")
+    # scene_grip.xml has the box at a reachable position; falls back to scene_box.xml if not present
+    scene_xml = "scene_grip.xml" if os.path.exists("scene_grip.xml") else "scene_box.xml"
+    model = mujoco.MjModel.from_xml_path(scene_xml)
     data  = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
 
