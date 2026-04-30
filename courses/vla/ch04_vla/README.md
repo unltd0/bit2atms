@@ -1,7 +1,7 @@
 # Chapter 4 — Vision-Language-Action Models
 
 **Time:** 1–2 days
-**Hardware:** CPU or MPS for inference · CUDA (T4 16 GB) for fine-tuning
+**Hardware:** CPU or MPS for inference · MPS (16 GB+) or CUDA (T4 16 GB) for fine-tuning
 **Prerequisites:** Chapter 3 (Imitation Learning, LeRobot)
 
 ---
@@ -35,7 +35,7 @@ execute it in MuJoCo → understand the VLA interface before using a real robot 
 |---------|-----------|-------|
 | A — Interactive sim | SmolVLA forward pass (~2 GB VRAM) | CPU, MPS, or any CUDA GPU |
 | B — Probe language | Same as A, repeated across instructions | CPU, MPS, or any CUDA GPU |
-| C — Fine-tune (optional) | Full backward pass | **CUDA required** · Colab free T4 works |
+| C — Fine-tune (optional) | Full backward pass | MPS 16 GB+ Mac (~10 min) · Colab free T4 (~60 min) |
 
 **Install:**
 ```bash
@@ -639,8 +639,21 @@ targeted behavior.** Ch5 runs the same loop on a real arm, where it actually mat
 
 ## Apple Silicon — Fine-tuning on MPS
 
-> This section documents what happens when you try to fine-tune a 450M-parameter model on
-> an Apple Silicon Mac. The behavior is surprising and worth understanding.
+> Tested on a MacBook Pro M-series. The timings below are from actual runs — not estimates.
+
+**Summary by RAM:**
+
+| Step | 16 GB MPS | 32 GB MPS |
+|------|-----------|-----------|
+| One-time Metal shader warmup | 60–90 min (once, cached) | 60–90 min (once, cached) |
+| Load model to MPS (after warmup) | ~15 sec | ~15 sec |
+| 300-step finetune, batch=4, VLM frozen | **~10 min** (~1s/step) | **~10 min** (~1s/step) |
+| 5000-step full finetune, VLM frozen | ~90 min | ~90 min |
+| Larger batch (batch=8+) | may OOM | ✅ comfortable headroom |
+| Full finetune (VLM unfrozen) | OOM | possible, ~3–4× slower per step |
+
+With 32 GB you have comfortable headroom — batch size 8 works, and you could experiment
+with unfreezing the top few VLM layers for a more thorough adaptation.
 
 ### What Metal shader compilation is
 
@@ -648,7 +661,7 @@ When PyTorch moves a model to MPS (Apple's GPU API), it doesn't use pre-compiled
 Instead, it compiles each unique operation — each distinct tensor shape, dtype, and op
 combination — into a Metal shader *on the first call*. A 450M-parameter model like SmolVLA
 has thousands of unique ops. The first forward + backward pass triggers a compilation cascade
-that takes **60–90 minutes** on an M-series chip.
+that takes **60–90 minutes** on an M-series 16 GB Mac.
 
 The good news: Metal caches compiled shaders to disk at:
 
@@ -657,10 +670,10 @@ The good news: Metal caches compiled shaders to disk at:
 ```
 
 After the cache is warm, subsequent runs skip compilation entirely. A 300-step head-only
-finetune that took 90 min on first run takes **~10 min** on every run after.
+finetune takes **~10 min** on every run after — 1s/step steady state.
 
 The bad news: the cache is device-specific. You can't share it with other machines.
-Each Apple Silicon Mac compiles its own shaders once.
+Each Mac compiles its own shaders once.
 
 ### Why this matters for SmolVLA specifically
 
