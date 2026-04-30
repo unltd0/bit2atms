@@ -549,9 +549,9 @@ targeted behavior.** Ch5 runs the same loop on a real arm, where it actually mat
 
 ## Apple Silicon — Fine-tuning on MPS
 
-> Tested on a MacBook Pro M-series 16 GB. The timings below are from actual runs — not estimates.
+> Tested on a MacBook Pro M-series 32 GB. The timings below are from actual runs — not estimates.
 
-**Summary for a 16 GB MPS Mac:**
+**Summary for a 32 GB MPS Mac:**
 
 | Step | Time |
 |------|------|
@@ -569,7 +569,7 @@ When PyTorch moves a model to MPS (Apple's GPU API), it doesn't use pre-compiled
 Instead, it compiles each unique operation — each distinct tensor shape, dtype, and op
 combination — into a Metal shader *on the first call*. A 450M-parameter model like SmolVLA
 has thousands of unique ops. The first forward + backward pass triggers a compilation cascade
-that takes **60–90 minutes** on an M-series 16 GB Mac.
+that takes **60–90 minutes** on an M-series 32 GB Mac.
 
 The good news: Metal caches compiled shaders to disk at:
 
