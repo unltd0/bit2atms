@@ -314,11 +314,16 @@ if __name__ == "__main__":
 - `policy.reset()` between instructions clears the action chunk buffer. Without it, leftover
   temporal state from the previous run bleeds into the next.
 
-**Known instruction the checkpoint was trained on:**
+**Suggested instructions to try:**
 ```
-"pink lego brick into the transparent box"
+grip the green box
+pink lego brick into the transparent box
+pick up the block
+do nothing
 ```
-Other phrasings will be interpreted via language similarity — results will vary.
+
+The first (`"grip the green box"`) is the same task used in Project C — try it here
+zero-shot, then compare after finetuning in Project C to see the difference.
 
 ---
 
