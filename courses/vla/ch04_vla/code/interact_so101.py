@@ -24,10 +24,9 @@ import mujoco.viewer
 import torch
 
 # Override via env: CHECKPOINT=path/to/ckpt python interact_so101.py
-CHECKPOINT = os.environ.get(
-    "CHECKPOINT",
-    "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace",
-)
+# Resolve to absolute path immediately — os.chdir later would break relative paths
+_ckpt = os.environ.get("CHECKPOINT", "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace")
+CHECKPOINT = os.path.abspath(_ckpt) if os.path.exists(_ckpt) else _ckpt
 
 # Camera positions that approximate the wrist-cam and overview-cam used during training.
 CAM_CONFIGS = {
@@ -113,9 +112,7 @@ def main():
     # SmolVLA policy
     print(f"Loading {CHECKPOINT} …")
     from lerobot.policies.smolvla import SmolVLAPolicy
-    # Resolve local paths to absolute so HF doesn't mistake them for repo IDs
-    ckpt = os.path.abspath(CHECKPOINT) if os.path.exists(CHECKPOINT) else CHECKPOINT
-    policy = SmolVLAPolicy.from_pretrained(ckpt).to(device)
+    policy = SmolVLAPolicy.from_pretrained(CHECKPOINT).to(device)
     policy.eval()
 
     # Tokenizer lives inside the VLM component
