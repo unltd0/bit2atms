@@ -568,14 +568,19 @@ PyTorch on Mac (MPS) doesn't pre-compile GPU code. Instead, it compiles shaders 
 | 300-step finetune, VLM frozen | **~10 min** (~1s/step) |
 | 5000-step finetune | ~90 min |
 
-### Why 300-step finetune takes ~10 min
+### Why warmup is slow (~21s/step) but finetune is fast (~1s/step)
 
-SmolVLA has 448M params in the vision-language backbone. Even frozen (no gradients), PyTorch still runs the forward pass — that's ~21s/step on MPS.
+The warmup script runs the FULL 448M-parameter model. Even with `requires_grad=False`,
+PyTorch still runs the forward pass — that's ~21s/step on MPS.
 
-| Component | Params | Speed on MPS |
-|-----------|--------|--------------|
-| Vision-language backbone | ~448M | ~21s/step (forward only) |
-| Action head (trained) | ~1.6M | Fast |
+But `finetune_mps.py` (the actual finetune) automatically reduces the VLM to
+16 layers on MPS to fit in memory. That's why 300 steps takes ~10 min (~1s/step),
+not 105 min (~21s/step).
+
+| What | Model size | Speed |
+|------|-----------|-------|
+| `warmup_mps.py` (one-time) | Full 448M | ~21s/step |
+| `finetune_mps.py` (actual work) | 16 layers | ~1s/step |
 
 **Bottom line:** For 5000-step finetunes, use Colab T4 (~0.5s/step). For quick 300-step experiments, MPS works fine.
 
