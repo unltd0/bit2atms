@@ -24,6 +24,20 @@ Everything before built toward this:
 
 ---
 
+## Why the SO-101 specifically
+
+`smolvla_base` was pretrained on 481 community datasets uploaded to the LeRobot Hub — ~23K episodes of tabletop manipulation, predominantly SO-100 arm. Not Open X-Embodiment (the million-trajectory multi-institution corpus that OpenVLA and RT-2 trained on). Real people's SO-100 demos, collected in real labs with real cameras. That's what the action expert's priors are built from.
+
+The paper's own limitation: *"Our pretraining currently uses datasets collected from a single robot type (SO100). Although we demonstrate that the model can be fine-tuned to different robots...we argue incorporating training data from multiple robot embodiments is likely to prove critical."*
+
+SmolVLA does transfer to other hardware after fine-tuning — it achieves 87.3% on LIBERO (Franka Panda) and 57.3% on Meta-World (Sawyer), both in simulation. So it's not SO-100 locked. But for those arms, you'd need to collect your own demos and fine-tune from scratch.
+
+The SO-101 is an updated SO-100 — same kinematic structure, same joint count, same form factor. It transfers with minimal bridging: the Edinburgh team fine-tuned on just 50 real SO-101 pick-and-place episodes (human teleoperated, ~60–90 min of collection) to produce the checkpoint you'll run in Project B.
+
+**Why not a cheaper arm?** The SO-101 is the cheapest arm with a ready-made checkpoint you can run today. For any other arm — even one that SmolVLA could in principle transfer to — you'd need to collect your own demos and fine-tune. That's doable, but you lose the "works on day one" shortcut that makes this chapter's Project B possible.
+
+---
+
 ## How general is SmolVLA — and what does fine-tuning actually do?
 
 SmolVLA is a 450M parameter vision-language-action model. Its architecture has two parts:
