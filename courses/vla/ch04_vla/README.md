@@ -216,24 +216,28 @@ zero-shot, then compare after finetuning in Project C to see the difference.
 
 ---
 
-## Project B — Probe Language Conditioning
+## Project B — Does Your Model Understand the Semantics of Instructions?
 
-**Problem:** Does the language instruction actually change the policy's behavior, or is it
-passed through and ignored?
+**Problem:** Your model might not produce perfect results yet — but does it at least understand
+the *meaning* of instructions? A model that understands instruction semantics should generate
+*similar actions for similar instructions* and *different actions for different ones*. That's a
+meaningful sanity check you can run right now, before you ever worry about accuracy.
 
-**Approach:** Skip the sim — domain gap makes joint positions noisy and inconclusive. Instead,
-extract the model's own **language embeddings** for each instruction and compute cosine
-similarity. No simulation needed, fully deterministic, and the result is unambiguous.
+**Approach:** Feed the same image and robot state to the policy, swap only the instruction,
+and compare the **action chunks** the policy produces. If language conditioning is working,
+paraphrases of the trained task should produce similar action sequences (high cosine
+similarity) while unrelated instructions should diverge (lower similarity). No simulation
+needed — we use a synthetic image and zero state, which is enough to see the signal.
 
-> 🟢 **Run** — load the policy, extract embeddings, compare groups.
+> 🟢 **Run** — load the policy, run inference per instruction, compare action chunks.
 
 ```python courses/vla/ch04_vla/code/probe_language.py
 """
-Probe SmolVLA language conditioning — no sim, no domain gap.
+Probe SmolVLA action conditioning — does swapping the instruction change the actions?
 
-Extracts the model's language embeddings for different instructions and
-computes cosine similarity. Paraphrases of the trained task should cluster
-higher than semantically unrelated instructions.
+Feeds the same synthetic image and robot state to the policy with different instructions
+and compares the resulting action chunks via cosine similarity.  Paraphrases of the
+trained task should produce similar action sequences; unrelated instructions should diverge.
 
 Usage:
     cd workspace/vla/ch04
@@ -242,79 +246,98 @@ Usage:
 import torch
 import torch.nn.functional as F
 from lerobot.policies.smolvla import SmolVLAPolicy
+from lerobot.utils.constants import OBS_LANGUAGE_TOKENS, OBS_LANGUAGE_ATTENTION_MASK, OBS_STATE
 
 CHECKPOINT = "lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace"
 
-INSTRUCTION_GROUPS = {
-    "trained task (paraphrases)": [
-        "pink lego brick into the transparent box",
-        "place the pink block in the box",
-        "pick up the lego and put it in the container",
-    ],
-    "different task": [
-        "wave hello",
-        "do nothing",
-        "move left",
-    ],
-}
+ANCHOR = "pink lego brick into the transparent box"
+PAIRS = [
+    ("same",        ANCHOR),
+    ("paraphrase",  "place the pink block in the box"),
+    ("paraphrase",  "pick up the lego and put it in the container"),
+    ("unrelated",   "wave hello"),
+    ("unrelated",   "open the drawer"),
+    ("unrelated",   "move the arm to the left"),
+]
 
+GREEN  = "\033[32m"
+YELLOW = "\033[33m"
+RED    = "\033[31m"
+RESET  = "\033[0m"
 
-def get_embedding(policy, tokenizer, max_len, instruction):
+def label_color(label):
+    return {"same": GREEN, "paraphrase": YELLOW, "unrelated": RED}[label]
+
+def similarity_bar(sim):
+    filled = round(sim * 20)
+    return "█" * filled + "░" * (20 - filled)
+
+def get_action_vector(policy, tokenizer, cfg, instruction, img, device):
     enc = tokenizer(
         instruction + "\n",
         padding="max_length",
-        max_length=max_len,
+        max_length=cfg.tokenizer_max_length,
         return_tensors="pt",
         truncation=True,
     )
+    batch = {}
+    for key in list(cfg.image_features.keys()):
+        batch[key] = img.clone().to(device)
+    batch[OBS_STATE] = torch.zeros(1, cfg.robot_state_feature.shape[0],
+                                   dtype=torch.float32, device=device)
+    batch[OBS_LANGUAGE_TOKENS]         = enc["input_ids"].to(device)
+    batch[OBS_LANGUAGE_ATTENTION_MASK] = enc["attention_mask"].bool().to(device)
+    policy.reset()
     with torch.no_grad():
-        emb = policy.model.vlm_with_expert.embed_language_tokens(enc["input_ids"])
-    mask = enc["attention_mask"].unsqueeze(-1).float()
-    pooled = (emb * mask).sum(1) / mask.sum(1)   # mean-pool over non-padding tokens
-    return F.normalize(pooled, dim=-1)             # unit vector for cosine similarity
-
+        chunk = policy.predict_action_chunk(batch)
+    return F.normalize(chunk.reshape(1, -1), dim=-1)
 
 if __name__ == "__main__":
-    print(f"Loading {CHECKPOINT} ...")
-    policy = SmolVLAPolicy.from_pretrained(CHECKPOINT).to("cpu")
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    print(f"Loading {CHECKPOINT} on {device} ...")
+    policy = SmolVLAPolicy.from_pretrained(CHECKPOINT).to(device)
     policy.eval()
     tokenizer = policy.model.vlm_with_expert.processor.tokenizer
-    max_len   = policy.config.tokenizer_max_length
+    cfg = policy.config
     print("Policy ready.\n")
 
-    flat = {
-        instr: get_embedding(policy, tokenizer, max_len, instr)
-        for group in INSTRUCTION_GROUPS.values()
-        for instr in group
-    }
+    torch.manual_seed(7)
+    img = (torch.randn(1, 3, 480, 640) * 0.2 + 0.45).clamp(0, 1)
 
-    all_instrs = [i for g in INSTRUCTION_GROUPS.values() for i in g]
-    print(f"{'instruction A':42s}  {'instruction B':42s}  {'sim':>5}")
-    print("-" * 95)
-    for i, a in enumerate(all_instrs):
-        for b in all_instrs[i + 1:]:
-            sim = (flat[a] * flat[b]).sum().item()
-            print(f"  {a[:40]:40s}  {b[:40]:40s}  {sim:+.3f}")
-        if i == 2:
-            print()   # blank line between groups
+    cache = {}
+    all_instrs = {ANCHOR} | {b for _, b in PAIRS}
+    for instr in all_instrs:
+        print(f"  running: {instr[:70]}")
+        cache[instr] = get_action_vector(policy, tokenizer, cfg, instr, img, device)
+    print()
+
+    print(f"  {'':11s}  {'anchor':38s}  {'comparison':38s}  {'sim':>4}  bar")
+    print("  " + "-" * 106)
+    for label, b in PAIRS:
+        sim = (cache[ANCHOR] * cache[b]).sum().item()
+        pct = int(sim * 100)
+        color = label_color(label)
+        bar   = similarity_bar(sim)
+        print(f"  {color}[{label:10s}]{RESET}  {ANCHOR[:36]:36s}  {b[:36]:36s}  {pct:3d}%  {color}{bar}{RESET}")
 ```
 
-**Expected output** (tested on CPU, ~60s to load — colors show green/yellow/red in terminal):
+**Expected output** (tested on CPU, ~2–3 min — colors show green/yellow/red in terminal):
 
 ```
-               A                                       B                                    sim  bar
-  [same      ]  pink lego brick into the transparent  pink lego brick into the transparent  100%  ████████████████████
-  [paraphrase]  pink lego brick into the transparent  place the pink block in the box        46%  █████████░░░░░░░░░░░
-  [paraphrase]  pink lego brick into the transparent  pick up the lego and put it in the c   51%  ██████████░░░░░░░░░░
-  [unrelated ]  pink lego brick into the transparent  wave hello                             16%  ███░░░░░░░░░░░░░░░░░
-  [unrelated ]  pink lego brick into the transparent  do nothing                             28%  ██████░░░░░░░░░░░░░░
-  [unrelated ]  pink lego brick into the transparent  move left                              23%  █████░░░░░░░░░░░░░░░
+               anchor                                comparison                           sim  bar
+  [same      ]  pink lego brick into the transparen  pink lego brick into the transparen  100%  ████████████████████
+  [paraphrase]  pink lego brick into the transparen  place the pink block in the box       88%  █████████████████░░░
+  [paraphrase]  pink lego brick into the transparen  pick up the lego and put it in the   97%  ███████████████████░
+  [unrelated ]  pink lego brick into the transparen  wave hello                            67%  █████████████░░░░░░░
+  [unrelated ]  pink lego brick into the transparen  open the drawer                       78%  ████████████████░░░░
+  [unrelated ]  pink lego brick into the transparen  move the arm to the left              84%  █████████████████░░░
 ```
 
-**What to observe:** Same instruction scores 100% (the baseline). Paraphrases of the trained
-task land at **46–51%** — the model knows they're saying the same thing. Unrelated
-instructions drop to **16–28%**. That gap is language conditioning: the model encodes
-semantics, not just surface words.
+**What to observe:** Same instruction scores 100% (baseline). Paraphrases of the trained task
+land at **88–97%** — the action chunk barely changes when you rephrase the same intent.
+Unrelated instructions drop to **67–84%**. That gap is the action head responding to
+instruction semantics: the model isn't just executing a fixed motion, it's conditioning on
+what you asked it to do.
 
 ---
 
@@ -492,11 +515,13 @@ targeted behavior.** Ch5 runs the same loop on a real arm, where it actually mat
    outputs near-zero actions. (b) `policy.reset()` is missing — stale temporal state from a
    previous run is leaking into the action chunk buffer.
 
-2. In Project B, trained-task paraphrases and different-task instructions produce nearly
-   identical joint trajectories. What does that tell you?
-   **Answer:** The model is ignoring language and relying on visual features alone — likely
-   because the image distribution (synthetic) is so far from training (real) that the vision
-   encoder dominates. On real hardware this gap disappears.
+2. In Project B, paraphrases of the trained task score 88–97% action similarity while
+   unrelated instructions drop to 67–84%. What does that tell you, and what is the limitation
+   of this test?
+   **Answer:** The model's action head is responding to instruction meaning — the same intent
+   rephrased produces nearly identical action chunks. The limitation: we used a synthetic
+   noise image, not a real scene. The gap would likely be sharper on a real image because the
+   model has more visual signal to condition on. It's a sanity check, not a full eval.
 
 3. The checkpoint expects `observation.images.up` and `observation.images.side`. You pass
    `observation.image` instead. What happens?
