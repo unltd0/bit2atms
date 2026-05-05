@@ -208,7 +208,17 @@ if __name__ == '__main__':
     main()
 ```
 
-Run each in a separate terminal with `python3 publisher.py` and `python3 subscriber.py`.
+Run each in a separate terminal. On Mac, each terminal needs its own Docker shell (`docker exec -it ros2 bash`).
+
+```bash
+# Terminal 1 (inside container)
+python3 workspace/ros2/ch01/publisher.py
+
+# Terminal 2 (inside container)
+python3 workspace/ros2/ch01/subscriber.py
+```
+
+Note: `rclpy` is not a `pip install` — it's part of ROS2 and only available after sourcing `/opt/ros/jazzy/setup.bash`. Running these scripts outside the container will fail with `ModuleNotFoundError: No module named 'rclpy'`.
 
 ---
 
