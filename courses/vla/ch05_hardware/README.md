@@ -200,6 +200,8 @@ The checkpoint was trained on: **pick up the pink lego brick and place it in the
 
 🟢 **Run** — runs 20 evaluation trials with the pretrained checkpoint
 
+This command loads the checkpoint, opens the cameras, and starts driving the arm. Each episode it feeds camera frames through SmolVLA, gets an action chunk, and sends joint commands to the robot — watch each trial and tally successes by hand.
+
 ```bash workspace/vla/ch05/run_inference.sh
 FOLLOWER_PORT=/dev/ttyUSB0
 
@@ -208,7 +210,6 @@ lerobot-record \
   --robot.port=$FOLLOWER_PORT \
   --robot.id=my_follower \
   --policy.path=lerobot-edinburgh-white-team/smolvla_svla_so101_pickplace \
-  --dataset.repo_id=local/eval_pretrained \
   --dataset.num_episodes=20 \
   --dataset.single_task="pink lego brick into the transparent box" \
   --display_data=true
