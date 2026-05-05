@@ -482,6 +482,152 @@ body {
 }
 
 /* Separator between meta pages and numbered chapters */
+/* ─── Homepage ───────────────────────────────────────────────────── */
+#homepage {
+  display: none;
+  min-height: 100vh;
+  padding: calc(var(--topbar-h) + 60px) 40px 80px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+#homepage.active { display: block; }
+
+.hp-hero {
+  text-align: center;
+  margin-bottom: 64px;
+}
+.hp-hero-icon {
+  width: 56px; height: 56px;
+  background: linear-gradient(135deg, var(--accent2), var(--accentp));
+  border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px;
+  margin: 0 auto 20px;
+}
+.hp-hero h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.5px;
+  margin-bottom: 10px;
+}
+.hp-hero p {
+  font-size: 15px;
+  color: var(--text2);
+  max-width: 520px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.hp-courses {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 20px;
+}
+.hp-course-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.12s;
+  position: relative;
+  overflow: hidden;
+}
+.hp-course-card:hover {
+  border-color: var(--accent);
+  background: var(--bg3);
+  transform: translateY(-2px);
+}
+.hp-course-card-accent {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 14px 14px 0 0;
+}
+.hp-course-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+  letter-spacing: -0.2px;
+}
+.hp-course-desc {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+.hp-course-meta {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.hp-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hp-meta-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text3);
+}
+.hp-meta-value {
+  font-size: 13px;
+  color: var(--text2);
+  font-weight: 500;
+}
+.hp-course-chapters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+.hp-chapter-pill {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  background: var(--bg);
+  white-space: nowrap;
+}
+.hp-start-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 13px/1 var(--font-ui);
+  color: var(--accent);
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: gap 0.15s;
+}
+.hp-start-btn:hover { gap: 10px; }
+
+#btn-home {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font: 600 12px/1 var(--font-ui);
+  color: var(--text2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+#btn-home:hover { background: var(--bg3); color: var(--text); }
+#btn-home.visible { display: flex; }
+
 .sb-divider {
   height: 1px;
   background: var(--border);
@@ -493,6 +639,29 @@ body {
   text-transform: uppercase;
   color: var(--text3);
   padding: 14px 18px 4px;
+}
+.sb-course-pills {
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px 6px;
+  flex-wrap: wrap;
+}
+.sb-course-pill {
+  font: 600 11px/1 var(--font-ui);
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.sb-course-pill:hover { background: var(--bg3); color: var(--text); }
+.sb-course-pill.active {
+  background: rgba(var(--accent-rgb,79,158,255),0.12);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .ch-item {
@@ -1357,11 +1526,15 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
   </button>
   <div class="logo">
     <div class="logo-icon">⬡</div>
-    VLA Learning
+    <span id="logo-text">bit2atms</span>
   </div>
   <div id="breadcrumb"><span class="cur">Overview</span></div>
   <button id="btn-toc" aria-label="Open table of contents">
     <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 4h14M2 9h9M2 14h11"/><circle cx="15" cy="9" r="2"/></svg>
+  </button>
+  <button id="btn-home" aria-label="Home">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7L8 2l6 5M3 7v7h4v-4h2v4h4V7"/></svg>
+    Home
   </button>
   <div id="topbar-right">
     <button class="tb-btn" id="btn-search">
@@ -1432,7 +1605,7 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
 <div id="sidebar-backdrop"></div>
 <div id="sidebar">
   <div class="sb-section">
-    <div class="sb-section-title">Curriculum</div>
+    <div class="sb-section-title" id="sb-course-name">Curriculum</div>
     <div id="chapter-list"></div>
   </div>
   <div class="sb-section" id="bk-section" style="display:none">
@@ -1440,6 +1613,9 @@ h2:hover .anchor-link, h3:hover .anchor-link { opacity: 1; }
     <div id="bookmark-list"></div>
   </div>
 </div>
+
+<!-- Homepage (shown when no course selected) -->
+<div id="homepage"></div>
 
 <!-- Layout grid -->
 <div id="layout">
@@ -1556,6 +1732,90 @@ function extractMeta(markdown) {
   return { title, time };
 }
 
+// ── Homepage ───────────────────────────────────────────────────────────
+function showHomepage() {
+  document.getElementById('homepage').classList.add('active');
+  document.getElementById('layout').style.display = 'none';
+  document.getElementById('sidebar').style.display = 'none';
+  document.getElementById('sidebar-backdrop').style.display = 'none';
+  document.getElementById('progressbar').style.display = 'none';
+  document.getElementById('read-progress').style.display = 'none';
+  document.getElementById('breadcrumb').style.display = 'none';
+  document.getElementById('btn-menu').style.display = 'none';
+  document.getElementById('btn-home').classList.remove('visible');
+  document.getElementById('logo-text').textContent = 'bit2atms';
+  document.title = CONFIG.repoTitle || 'bit2atms';
+  history.replaceState({page:'home'}, '', location.pathname);
+  renderHomepage();
+}
+
+function enterCourseView() {
+  document.getElementById('homepage').classList.remove('active');
+  document.getElementById('layout').style.display = '';
+  document.getElementById('sidebar').style.display = '';
+  document.getElementById('sidebar-backdrop').style.display = '';
+  document.getElementById('progressbar').style.display = '';
+  document.getElementById('read-progress').style.display = '';
+  document.getElementById('breadcrumb').style.display = '';
+  document.getElementById('btn-menu').style.display = '';
+  document.getElementById('btn-home').classList.add('visible');
+  // Update logo and sidebar title to current course
+  const course = CONFIG?.courses?.find(c => c.id === state.courseFilter);
+  if(course){
+    document.getElementById('logo-text').textContent = course.title;
+    document.getElementById('sb-course-name').textContent = course.title;
+  }
+}
+
+function renderHomepage() {
+  const el = document.getElementById('homepage');
+  // Course accent colors map
+  const accentMap = { vla: 'var(--accentg)', ros2: 'var(--accent)' };
+
+  const cards = CONFIG.courses.map(course => {
+    const chapters = CHAPTERS.filter(c => c.courseId === course.id && c.num !== '○' && c.num !== '●');
+    const totalTime = course.totalTime || (chapters.length > 0 ? `${chapters.length} chapters` : '');
+    const hardware = course.hardware || '';
+    const chapterPills = chapters.map(c =>
+      `<span class="hp-chapter-pill">${c.num}. ${c.title}</span>`
+    ).join('');
+    const accentColor = accentMap[course.id] || 'var(--accent)';
+    return `
+      <div class="hp-course-card" data-course="${course.id}">
+        <div class="hp-course-card-accent" style="background:${accentColor}"></div>
+        <div class="hp-course-title">${course.title}</div>
+        <div class="hp-course-desc">${course.description || ''}</div>
+        <div class="hp-course-meta">
+          ${totalTime ? `<div class="hp-meta-item"><div class="hp-meta-label">Time</div><div class="hp-meta-value">${totalTime}</div></div>` : ''}
+          ${hardware ? `<div class="hp-meta-item"><div class="hp-meta-label">Hardware</div><div class="hp-meta-value">${hardware}</div></div>` : ''}
+          <div class="hp-meta-item"><div class="hp-meta-label">Chapters</div><div class="hp-meta-value">${chapters.length}</div></div>
+        </div>
+        <div class="hp-course-chapters">${chapterPills}</div>
+        <button class="hp-start-btn">Start course →</button>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="hp-hero">
+      <div class="hp-hero-icon">⬡</div>
+      <h1>Physical AI Courseware</h1>
+      <p>Project-driven courses on robot manipulation, simulation, and real hardware. Pick a course to get started.</p>
+    </div>
+    <div class="hp-courses">${cards}</div>`;
+
+  el.querySelectorAll('.hp-course-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const courseId = card.dataset.course;
+      const first = CHAPTERS.find(c => c.courseId === courseId);
+      if (first) {
+        state.courseFilter = courseId;
+        enterCourseView();
+        nav(first.id);
+      }
+    });
+  });
+}
+
 async function boot() {
   CONFIG = await fetch('config.json').then(r => r.json());
   document.title = CONFIG.repoTitle || document.title;
@@ -1584,7 +1844,10 @@ async function boot() {
   }));
 
   const defaultChapter = CHAPTERS[0]?.id || 'overview';
-  state.cur = LS.get('vla_cur', defaultChapter);
+  state.cur = LS.get('reader_cur', defaultChapter);
+  // Set courseFilter to the course of the restored chapter, or first course
+  const restoredCh = CHAPTERS.find(c => c.id === state.cur);
+  state.courseFilter = restoredCh?.courseId || CONFIG.courses[0]?.id || null;
   await init();
 }
 
@@ -1597,21 +1860,22 @@ const LS = {
 };
 
 const state = {
-  cur:        'overview',
-  progress:   LS.get('vla_prog',{}),
-  bookmarks:  LS.get('vla_bk',[]),
-  highlights: LS.get('vla_hl',{}),
-  notes:      LS.get('vla_notes',{}),
-  scroll:     LS.get('vla_scroll',{}),
-  cache:      {},
+  cur:          'overview',
+  courseFilter: null,  // courseId of currently selected course
+  progress:     LS.get('reader_prog',{}),
+  bookmarks:    LS.get('reader_bk',[]),
+  highlights:   LS.get('reader_hl',{}),
+  notes:        LS.get('reader_notes',{}),
+  scroll:       LS.get('reader_scroll',{}),
+  cache:        {},
 };
 
 function save(){
-  LS.set('vla_prog',state.progress);
-  LS.set('vla_bk',state.bookmarks);
-  LS.set('vla_hl',state.highlights);
-  LS.set('vla_notes',state.notes);
-  LS.set('vla_scroll',state.scroll);
+  LS.set('reader_prog',state.progress);
+  LS.set('reader_bk',state.bookmarks);
+  LS.set('reader_hl',state.highlights);
+  LS.set('reader_notes',state.notes);
+  LS.set('reader_scroll',state.scroll);
 }
 
 // ── Markdown renderer ──────────────────────────────────────────────────
@@ -1777,25 +2041,22 @@ async function fetchMD(file){
 
 // ── Sidebar ────────────────────────────────────────────────────────────
 function renderSidebar(){
+  // Keep logo and sidebar title in sync with current course
+  const course = CONFIG?.courses?.find(c => c.id === state.courseFilter);
+  if(course){
+    document.getElementById('logo-text').textContent = course.title;
+    document.getElementById('sb-course-name').textContent = course.title;
+  }
+
+  // Filter chapters to selected course
+  const visible = state.courseFilter
+    ? CHAPTERS.filter(c => c.courseId === state.courseFilter)
+    : CHAPTERS;
+
   const list=document.getElementById('chapter-list');
   list.innerHTML='';
-  let lastCourseId=null;
   let addedDivider=false;
-  CHAPTERS.forEach(ch=>{
-    // Course header when course changes (multi-course support)
-    if(ch.courseId && ch.courseId !== lastCourseId){
-      if(lastCourseId!==null){
-        const sep=document.createElement('div');
-        sep.className='sb-divider';
-        list.appendChild(sep);
-      }
-      const hdr=document.createElement('div');
-      hdr.className='sb-course-header';
-      hdr.textContent=ch.courseTitle||ch.courseId;
-      list.appendChild(hdr);
-      lastCourseId=ch.courseId;
-      addedDivider=false;
-    }
+  visible.forEach(ch=>{
     // Add divider before first numbered chapter within a course
     if(!addedDivider && ch.num!=='○' && ch.num!=='●'){
       const div=document.createElement('div');
@@ -1878,10 +2139,14 @@ async function nav(id, anchor, opts={}){
   state.scroll[state.cur]=window.scrollY;
   save();
   state.cur=id;
-  LS.set('vla_cur',id);
-  // Update URL — #chapterId or #chapterId/anchor-slug
+  LS.set('reader_cur',id);
+  // Update courseFilter to match the chapter being navigated to
+  const navCh = CHAPTERS.find(c => c.id === id);
+  if(navCh) state.courseFilter = navCh.courseId;
+  // Update URL — #courseId/chapterId or #courseId/chapterId/anchor
   if(!opts.skipHistory){
-    const hash = anchor ? `${id}/${anchor}` : id;
+    const courseId = navCh?.courseId || '';
+    const hash = anchor ? `${courseId}/${id}/${anchor}` : `${courseId}/${id}`;
     history.pushState({chId:id, anchor:anchor||''}, '', `#${hash}`);
   }
   renderSidebar();
@@ -1978,7 +2243,8 @@ async function loadChapter(id){
       a.addEventListener('click', e=>{
         e.preventDefault();
         const slug = a.getAttribute('href').slice(1);
-        history.pushState({chId:state.cur,anchor:slug},'',`#${state.cur}/${slug}`);
+        const _anchorCh=CHAPTERS.find(c=>c.id===state.cur);
+        history.pushState({chId:state.cur,anchor:slug},'',`#${_anchorCh?.courseId||''}/${state.cur}/${slug}`);
         const el = document.getElementById(slug);
         if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
       });
@@ -2099,7 +2365,8 @@ function buildToc(el){
     a.addEventListener('click',e=>{
       e.preventDefault();
       h.scrollIntoView({behavior:'smooth',block:'start'});
-      history.pushState({chId:state.cur,anchor:h.id},'',`#${state.cur}/${h.id}`);
+      const _tocCh=CHAPTERS.find(c=>c.id===state.cur);
+      history.pushState({chId:state.cur,anchor:h.id},'',`#${_tocCh?.courseId||''}/${state.cur}/${h.id}`);
     });
     toc.appendChild(a);
   });
@@ -2486,20 +2753,39 @@ async function pollChanges(){
 }
 setInterval(pollChanges,3000);
 
-// ── Parse URL hash → {chId, anchor} ────────────────────────────────────
+// ── Parse URL hash → {ch, anchor, courseId} ────────────────────────────
+// Supports: #chId  |  #chId/anchor  |  #courseId/chId  |  #courseId/chId/anchor
 function parseHash(){
-  const raw = location.hash.slice(1);           // e.g. "ch01" or "ch01/coordinate-frames"
-  const [chPart, anchorPart=''] = raw.split('/');
-  const ch = CHAPTERS.find(c => c.id === chPart);
-  return { ch, anchor: anchorPart };
+  const raw = location.hash.slice(1);
+  if(!raw) return { ch: null, anchor: '', courseId: null };
+  const parts = raw.split('/');
+  // Try 3-part: courseId/chapterId/anchor
+  if(parts.length >= 2){
+    const maybeCourse = CONFIG?.courses?.find(c => c.id === parts[0]);
+    if(maybeCourse){
+      const chId = parts[1];
+      const anchor = parts[2] || '';
+      const ch = CHAPTERS.find(c => c.id === chId && c.courseId === parts[0]);
+      return { ch, anchor, courseId: parts[0] };
+    }
+  }
+  // Fallback: legacy 2-part chapterId/anchor (VLA links like #ch01/some-anchor)
+  const ch = CHAPTERS.find(c => c.id === parts[0]);
+  return { ch, anchor: parts[1] || '', courseId: ch?.courseId || null };
 }
 
 // ── Browser back / forward ──────────────────────────────────────────────
 window.addEventListener('popstate', async e => {
-  const { ch, anchor } = parseHash();
+  if(!location.hash || location.hash === '#'){
+    showHomepage();
+    return;
+  }
+  const { ch, anchor, courseId } = parseHash();
   if(ch){
+    enterCourseView();
     state.cur = ch.id;
-    LS.set('vla_cur', ch.id);
+    if(courseId) state.courseFilter = courseId;
+    LS.set('reader_cur', ch.id);
     renderSidebar();
     await loadChapter(ch.id);
     if(anchor){
@@ -2511,15 +2797,29 @@ window.addEventListener('popstate', async e => {
   }
 });
 
+// ── Home button ────────────────────────────────────────────────────────
+document.getElementById('btn-home').addEventListener('click', () => {
+  showHomepage();
+});
+
 // ── Init ───────────────────────────────────────────────────────────────
 async function init(){
   applyAppearance();
-  const { ch, anchor } = parseHash();
+  // No hash or bare # → show homepage
+  if(!location.hash || location.hash === '#'){
+    showHomepage();
+    return;
+  }
+  const { ch, anchor, courseId } = parseHash();
   if(ch){ state.cur = ch.id; }
+  if(courseId){ state.courseFilter = courseId; }
+  enterCourseView();
   renderSidebar();
   await nav(state.cur, anchor || undefined, {skipHistory: true, instant: true});
   // Set canonical URL on first load without pushing a new history entry
-  const initHash = anchor ? `${state.cur}/${anchor}` : state.cur;
+  const curCh = CHAPTERS.find(c => c.id === state.cur);
+  const cid = curCh?.courseId || '';
+  const initHash = anchor ? `${cid}/${state.cur}/${anchor}` : `${cid}/${state.cur}`;
   history.replaceState({chId:state.cur, anchor:anchor||''}, '', `#${initHash}`);
 }
 
