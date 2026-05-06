@@ -10,7 +10,9 @@
 
 A robot has many moving parts: a camera, a lidar, motors *(hardware)* — and a navigation algorithm, a path planner, a state estimator *(software)*. In a normal program you'd wire these together with function calls — but that breaks down fast. The camera runs at 30 Hz, the planner runs at 10 Hz, the motors need commands at 50 Hz. They need to run concurrently, possibly on different computers, and you need to be able to swap one out without rewriting the rest.
 
-Yes, this sounds like a generic messaging problem — Kafka, gRPC, or ZeroMQ could do it. What makes ROS2 different is that it's built *for robots specifically*. In ch02 and ch03 you'll see what that means concretely: standard message types for sensor data (`LaserScan`, `Odometry`, `Twist`), a coordinate transform system (TF) that tracks where every part of the robot is in 3D space, a navigation stack (Nav2), and a simulator (Gazebo) — all speaking the same language out of the box. In ch01 you'll use simple types to learn the patterns; the robot-specific pieces land once the plumbing makes sense.
+Yes, this sounds like a generic messaging problem — Kafka, gRPC, or ZeroMQ could do it. What makes ROS2 different is that it's built *for robots specifically*. In ch02 and ch03 you'll see what that means concretely: standard message types for sensor data (`LaserScan`, `Odometry`, `Twist`), a coordinate transform system (TF) that automatically tracks the position/orientation of every robot part or sensor in 3D space, letting you convert data between different frames (e.g., lidar readings → robot base frame) without manual math, a navigation stack (Nav2), and a simulator (Gazebo) — all speaking the same language out of the box. In ch01 you'll use simple types to learn the patterns; the robot-specific pieces land once the plumbing makes sense.
+
+🟡 **Know**: We’ll see TF in action for the first time in ch2 when we launch a simulated robot, and explain the full TF tree structure there.
 
 ROS2 solves the wiring problem. Each piece of the robot is represented as a **node** — an independent process (a running program). Hardware gets a driver node that wraps it; software just runs as a node directly. Nodes don't call each other directly. Instead they communicate through a shared message bus.
 
@@ -70,32 +72,35 @@ That's the whole mental model. Everything else in this chapter — launch files,
 
 ### Install
 
-**Mac (Docker):**
+**Mac (Docker) — recommended path: build a custom image once, reuse it.**
 
-🟢 **Run** — pulls the official ROS2 image and drops you into a shell
+The repo ships a `Dockerfile` at [resources/ros2/docker/Dockerfile](resources/ros2/docker/Dockerfile) that bakes ROS2 Jazzy + everything ch01–ch03 need (TurtleBot3, Nav2, SLAM Toolbox, RViz, tf2 tools) into a single image. Without this, `docker run --rm` would throw away every `apt install` when the container exits.
+
+🟢 **Run** — one-time build (5–10 min on Apple Silicon via Rosetta)
 
 ```bash
-docker pull --platform linux/amd64 osrf/ros:jazzy-desktop
+cd /path/to/bit2atms
+docker build --platform linux/amd64 -t bit2atms-ros2 -f resources/ros2/docker/Dockerfile .
+```
+
+🟢 **Run** — start a container (re-run any time)
+
+```bash
 docker run -it --rm \
   --platform linux/amd64 \
   --name ros2 \
   -v $(pwd)/workspace/ros2:/workspace/ros2 \
-  osrf/ros:jazzy-desktop \
-  bash
+  bit2atms-ros2
 ```
 
-The `--platform linux/amd64` flag is required on Apple Silicon (M1/M2/M3) — without it Docker runs the image anyway but prints a platform mismatch warning. Performance is fine for this course via Rosetta emulation.
+The image's entrypoint already sources `/opt/ros/jazzy/setup.bash` and sets `TURTLEBOT3_MODEL=burger`, so `ros2` works immediately — no manual sourcing needed.
 
-Inside the container, source the install:
+The `--platform linux/amd64` flag is required on Apple Silicon (M1/M2/M3) — without it Docker prints a platform mismatch warning. Performance is fine for this course via Rosetta emulation.
 
-```bash
-source /opt/ros/jazzy/setup.bash
-```
-
-Add it to `.bashrc` so you don't have to do this every time:
+To open a second shell into the running container:
 
 ```bash
-echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+docker exec -it ros2 bash
 ```
 
 **Linux (native):**
@@ -106,8 +111,12 @@ sudo apt install -y software-properties-common curl
 sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
 sudo sh -c 'echo "deb http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ros2.list'
 sudo apt update
-sudo apt install -y ros-jazzy-desktop python3-colcon-common-extensions
-source /opt/ros/jazzy/setup.bash
+sudo apt install -y ros-jazzy-desktop python3-colcon-common-extensions \
+  ros-jazzy-turtlebot3 ros-jazzy-turtlebot3-gazebo \
+  ros-jazzy-nav2-bringup ros-jazzy-slam-toolbox
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+echo "export TURTLEBOT3_MODEL=burger" >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ### Verify with demo nodes
