@@ -63,16 +63,17 @@ When you run this simulation, there are two entirely separate answers to the que
 **A concrete example.** The robot drives forward 2 meters, then turns 90° left.
 
 - **Gazebo (ground truth):** The robot is at exactly `x=2.00m, y=0.00m, heading=90°`.
-- **Wheel encoders alone (`/odom`):** The left wheel slipped slightly on the floor — the encoder under-reported rotation. It reads `x=1.87m, y=0.03m, heading=88°`. This gets published to `/odom`.
-- **SLAM's estimate (what Foxglove shows):** SLAM takes the `/odom` estimate, grabs a fresh lidar scan, matches it against the map, and corrects: `x=1.97m, y=0.01m, heading=89°`. Better, but still not exactly Gazebo's `2.00m`.
+- **Wheel encoders alone (`/odom`):** The left wheel slipped slightly on the floor — it spun a bit more than the robot actually moved, so the encoder over-reported distance. It reads `x=2.13m, y=0.03m, heading=88°`. This gets published to `/odom`.
+- **SLAM's estimate (what Foxglove shows):** SLAM takes the `/odom` estimate, grabs a fresh lidar scan, matches it against the map, and corrects: `x=2.03m, y=0.01m, heading=89°`. Better, but still not exactly Gazebo's `2.00m`.
 
-All three are different. Odometry alone drifts. SLAM corrects it but imperfect scan matching means the estimate still lags ground truth. The gap is small during normal driving; it grows on fast turns and in featureless corridors where scan matching is hard.
+All three are different — and they diverge differently over time:
 
-**What does Foxglove show?** Foxglove only subscribes to ROS2 topics. It sees the estimated pose (from SLAM or odometry), not Gazebo's internal state. Gazebo's exact pose is never published to ROS2 by default.
+- **Odometry drifts without bound.** It's pure dead reckoning: integrate wheel speeds, never look back. Every revolution adds a tiny error (slip, encoder quantization, wheel-diameter mismatch) that accumulates forever. Drive 100m and you might be off by 2m; drive 1km and you could be off by 20m. There's no correction mechanism.
+- **SLAM stays bounded.** Every new lidar scan (~10 Hz) is matched against the map, and the position estimate is reset to whatever best aligns scan to map. Errors don't accumulate — each correction overwrites the last. The gap to ground truth is noise around zero (a few cm), not drift, *as long as the lidar can see distinctive features*. The gap grows temporarily on fast turns and in featureless corridors where matching is ambiguous, then reconverges as soon as you pass something the lidar can lock onto.
 
-**But we can publish it.** The headless launch file adds Gazebo's `PosePublisher` plugin to the robot and bridges it to the ROS2 topic `/ground_truth_pose_map`. In Foxglove's 3D panel you'll see a **green arrow** — that's where Gazebo says the robot actually is. The **blue robot model** is where SLAM thinks it is. Drive the robot and watch the two diverge slightly, then reconverge as SLAM corrects odometry drift.
+**What does Foxglove show?** Foxglove only subscribes to ROS2 topics — it can't see Gazebo's internal state. By default Gazebo doesn't publish the robot's exact pose to ROS2; it stays inside the simulator. So out of the box, Foxglove only sees the robot's *belief* (SLAM or odometry estimate), not ground truth.
 
-**Rule of thumb:** If the blue robot model (SLAM estimate) and the lidar scan dots don't align with the map walls, localization is wrong. The green ground truth arrow tells you where the robot actually is. Fix localization before sending a Nav2 goal.
+**But we expose it.** Our patched SDF adds Gazebo's `PosePublisher` plugin to the robot, the headless launch bridges it to ROS2 as `/ground_truth_pose`, and a small relay node rewrites the frame_id to `map` and republishes on `/ground_truth_pose_map` so Foxglove can render it. In Foxglove's 3D panel you'll see a **green arrow** — that's where Gazebo says the robot actually is. The **blue robot model** is where SLAM thinks it is. Drive the robot and watch the two diverge slightly, then reconverge as SLAM corrects odometry drift.
 
 **Skip if you can answer:**
 1. What is a TF tree and why does Nav2 need it?
@@ -431,6 +432,8 @@ ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
 
 This seeds AMCL's particle filter. Once AMCL receives the pose it publishes the `map→odom` TF, the costmap unblocks, and the lifecycle manager finishes — you'll see `[lifecycle_manager]: Managed nodes are active` in the Nav2 terminal. In Foxglove, the particle cloud collapses to a tight cluster around the robot; once tight, AMCL is confident and Nav2 is ready.
 
+> **Sanity check before you send a goal.** In Foxglove's 3D panel, the live lidar dots should sit on top of the map walls. If they're floating in free space or cutting across walls, AMCL has the robot in the wrong spot — the green ground truth arrow shows where Gazebo actually has it. Re-publish `/initialpose` near the green arrow and wait for the particle cloud to re-collapse. Sending a goal while mislocalized makes Nav2 plan against the wrong position and drive into a wall.
+
 ![Foxglove with Nav2 running — map, robot, lidar, and costmap all visible](assets/ch02_foxglove_nav2_running.png)
 *Foxglove with Nav2 active. The white interior + black walls is your saved map, the red dots are live lidar scans, the blue cylinder is the robot, and the light grey polygon is Nav2's global costmap (inflated obstacles where the planner won't route). The two right-side plots track `/cmd_vel` and `/odom` while the robot drives.*
 
@@ -548,55 +551,54 @@ Result: TaskResult.SUCCEEDED
 
 ## Appendix — How to reset the stack
 
-Use this when things go wrong — bad map, robot off the map, SLAM/Nav2 in a broken state.
+### Step 1: Kill everything
 
-**Reset Gazebo + SLAM only** (most common — bad map or robot position):
-- Ctrl+C SLAM (T3) and Gazebo (T1)
-- Restart Gazebo: `ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py`
-- **Immediately** start SLAM before the robot moves: `ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true`
-- foxglove_bridge (T2) can stay running throughout
-
-**Reset Nav2 only** (AMCL lost, map/scan misaligned):
-- Ctrl+C Nav2 (T3)
-- Relaunch: `ros2 launch nav2_bringup bringup_launch.py map:=/workspace/ros2/ch02/my_map.yaml use_sim_time:=true`
-- Re-seed the initial pose
-
-**Full reset** (everything broken):
-- Ctrl+C everything: Nav2 or SLAM (T3), foxglove_bridge (T2), Gazebo (T1)
-- Restart in order: T1 Gazebo → T2 foxglove_bridge → T3 SLAM
-- Start SLAM immediately after Gazebo, before the robot moves
-
-**Nuclear option** (DDS state corrupted — symptoms: `Failed to bring up all requested nodes`, ghost nodes appearing in `ros2 node list`, Nav2 lifecycle aborts even after Ctrl+C). Killing ROS nodes leaves zombie endpoints in DDS discovery for 60s+, which can poison the next launch. From your host (not inside the container):
+Run this in any container shell. It kills Gazebo, all ROS2 launches, all Nav2/SLAM nodes, and the ROS2 daemon — leaves you with a clean slate:
 
 ```bash
-docker restart ros2
+pkill -9 -f 'gz |ruby.*gz|ros2 launch|parameter_bridge|robot_state_pub|ground_truth|slam_toolbox|obstacle_detection|nav2|component_container|amcl|controller_server|planner_server|bt_navigator|behavior_server|smoother_server|map_server|lifecycle_manager|waypoint_follower|collision_monitor|velocity_smoother|ros2-daemon' ; sleep 5
 ```
 
-This wipes all in-container state in ~3 seconds. Then re-attach with `docker exec -it ros2 bash` and start again from Project A step 1.
+> **Doesn't work?** If `ros2 node list` still shows ghost nodes after this, DDS state is poisoned. From your host (outside the container): `docker restart ros2` — wipes everything in ~3 seconds.
 
-### Project C clean-restart one-liners
+### Step 2: Start what you need
 
-If you've been running Project A or B and want to start Project C from a clean slate without restarting the container:
+Each project needs a different stack. Each command below goes in its own shell (`docker exec -it ros2 bash`).
+
+**Project A — drive the robot:**
+
+| T | Command |
+|---|---|
+| T1 | `ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py` |
+| T2 | `ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765` |
+| T3 | `ros2 run turtlebot3_teleop teleop_keyboard` |
+
+**Project B — build a map with SLAM:**
+
+| T | Command |
+|---|---|
+| T1 | `ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py` |
+| T2 | `ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765` |
+| T3 | `ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true` |
+| T4 | `python3 /workspace/ros2/ch02/obstacle_detection.py` |
+| T5 | `ros2 run nav2_map_server map_saver_cli -f /workspace/ros2/ch02/my_map --ros-args -p use_sim_time:=true` *(only when map is good)* |
+
+> Start SLAM (T3) **before** the robot moves, otherwise the map origin won't match the spawn point.
+
+**Project C — navigate autonomously:**
+
+| T | Command |
+|---|---|
+| T1 | `ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py` |
+| T2 | `ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765` |
+| T3 | `ros2 launch nav2_bringup bringup_launch.py map:=/workspace/ros2/ch02/my_map.yaml use_sim_time:=true` |
+| T4 | Seed initial pose (see snippet below), then `python3 /workspace/ros2/ch02/send_goal.py` |
+
+Initial pose for T4:
 
 ```bash
-# T1: kill everything ROS-related (including any Project A/B leftovers)
-pkill -9 -f 'gz |ruby.*gz|ros2 launch|parameter_bridge|robot_state_pub|ground_truth|slam_toolbox|obstacle_detection|nav2|component_container|amcl|controller_server|planner_server|bt_navigator|behavior_server|smoother_server|map_server|lifecycle_manager|waypoint_follower|collision_monitor|velocity_smoother|ros2-daemon' ; sleep 5
-
-# T1: relaunch Gazebo (robot back at spawn, odom resets to 0,0)
-ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py
-
-# T2 (new shell): foxglove_bridge
-ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
-
-# T3 (new shell): Nav2 with your saved map
-ros2 launch nav2_bringup bringup_launch.py map:=/workspace/ros2/ch02/my_map.yaml use_sim_time:=true
-
-# T4 (new shell, after seeing the AMCL warnings in T3): seed initial pose
 ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
   '{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.07]}}'
-
-# T4: send a goal
-python3 /workspace/ros2/ch02/send_goal.py
 ```
 
 ---
