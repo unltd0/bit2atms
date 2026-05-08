@@ -73,7 +73,9 @@ All three are different — and they diverge differently over time:
 
 **What does Foxglove show?** Foxglove only subscribes to ROS2 topics — it can't see Gazebo's internal state. By default Gazebo doesn't publish the robot's exact pose to ROS2; it stays inside the simulator. So out of the box, Foxglove only sees the robot's *belief* (SLAM or odometry estimate), not ground truth.
 
-**But we expose it.** Our patched SDF adds Gazebo's `PosePublisher` plugin to the robot, the headless launch bridges it to ROS2 as `/ground_truth_pose`, and a small relay node rewrites the frame_id to `map` and republishes on `/ground_truth_pose_map` so Foxglove can render it. In Foxglove's 3D panel you'll see a **green arrow** — that's where Gazebo says the robot actually is. The **blue robot model** is where SLAM thinks it is. Drive the robot and watch the two diverge slightly, then reconverge as SLAM corrects odometry drift.
+**But we expose it.** Our patched SDF (Simulation Description Format — Gazebo's XML file describing the robot's links, joints, sensors, and plugins) adds Gazebo's `PosePublisher` plugin to the robot, the headless launch bridges it to ROS2 as `/ground_truth_pose`, and a small relay node rewrites the frame_id to `map` and republishes on `/ground_truth_pose_map` so Foxglove can render it. In Foxglove's 3D panel you'll see a **green arrow** — that's where Gazebo says the robot actually is. The **blue robot model** is where SLAM thinks it is. Drive the robot and watch the two diverge slightly, then reconverge as SLAM corrects odometry drift.
+
+> **Curious about the wiring?** Three files set this up: the [patched SDF](https://github.com/unltd0/bit2atms/blob/main/resources/ros2/turtlebot3_burger_gt.sdf) (search for `PosePublisher`), the [headless launch file](https://github.com/unltd0/bit2atms/blob/main/resources/ros2/launch/turtlebot3_world_headless.launch.py) (the `ground_truth_bridge_cmd` block), and the [relay node](https://github.com/unltd0/bit2atms/blob/main/resources/ros2/ground_truth_relay.py) that fixes the frame_id.
 
 **Skip if you can answer:**
 1. What is a TF tree and why does Nav2 need it?
