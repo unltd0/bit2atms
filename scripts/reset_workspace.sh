@@ -100,8 +100,37 @@ ROS2_CHAPTERS=(
 )
 scaffold_course "ros2" "${ROS2_CHAPTERS[@]}"
 
+# ── ROS2 runtime files (bind-mounted into the container) ───────────────────
+# These files must exist in workspace/ when the container starts because
+# resources/ is not bind-mounted. Source-of-truth lives in resources/ros2/;
+# we copy them into workspace/ros2/ here. Existing files are overwritten.
+echo ""
+echo "Copying ROS2 runtime files (resources/ros2 → workspace/ros2)..."
+ROS2_RESOURCE_FILES=(
+  "resources/ros2/launch/turtlebot3_world_headless.launch.py:workspace/ros2/launch/turtlebot3_world_headless.launch.py"
+  "resources/ros2/turtlebot3_burger_bridge.yaml:workspace/ros2/turtlebot3_burger_bridge.yaml"
+  "resources/ros2/turtlebot3_burger_gt.sdf:workspace/ros2/turtlebot3_burger_gt.sdf"
+  "resources/ros2/ground_truth_relay.py:workspace/ros2/ground_truth_relay.py"
+  "resources/ros2/ch02/obstacle_detection.py:workspace/ros2/ch02/obstacle_detection.py"
+  "resources/ros2/ch02/send_goal.py:workspace/ros2/ch02/send_goal.py"
+  "resources/ros2/ch02/nav2_params.yaml:workspace/ros2/ch02/nav2_params.yaml"
+  "resources/ros2/ch02/_restart_stack.sh:workspace/ros2/ch02/_restart_stack.sh"
+)
+for entry in "${ROS2_RESOURCE_FILES[@]}"; do
+  src="$REPO_ROOT/$(echo $entry | cut -d: -f1)"
+  dst="$REPO_ROOT/$(echo $entry | cut -d: -f2)"
+  mkdir -p "$(dirname "$dst")"
+  if [ -f "$src" ]; then
+    cp "$src" "$dst"
+    echo "  copied $dst"
+  else
+    echo "  ⚠️  Source not found: $src"
+  fi
+done
+
 echo ""
 echo "Done. Workspace scaffold ready."
 echo "  workspace/vla/   — VLA course"
 echo "  workspace/ros2/  — ROS2 course"
-echo "Each file is empty — copy code from the reader as you work through each chapter."
+echo "ROS2 runtime files (launch, bridge, scripts) copied from resources/ros2/."
+echo "Empty placeholders are for you to fill in as you work through each chapter."

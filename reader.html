@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Always revalidate reader.html itself with the server so updates show up
+     without a hard reload. Chapter MD is cached separately by fetchMD(). -->
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>Robotics Learning Reader</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -632,6 +635,23 @@ body {
   height: 1px;
   background: var(--border);
   margin: 6px 14px;
+}
+.sb-section-label {
+  font: 600 10px/1 var(--font-ui);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding: 6px 18px 4px;
+}
+.ch-item.resource .ch-badge {
+  background: transparent;
+  color: var(--text3);
+  border: 1px solid var(--border);
+}
+.ch-item.resource.active .ch-badge {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 .sb-course-header {
   font: 600 10px/1 var(--font-ui);
@@ -1820,14 +1840,16 @@ async function boot() {
   CONFIG = await fetch('config.json').then(r => r.json());
   document.title = CONFIG.repoTitle || document.title;
 
-  const rawChapters = CONFIG.courses.flatMap(course =>
-    course.chapters.map(ch => ({ ...ch, courseId: course.id, courseTitle: course.title }))
-  );
+  const rawChapters = CONFIG.courses.flatMap(course => [
+    ...course.chapters.map(ch => ({ ...ch, courseId: course.id, courseTitle: course.title, kind: 'chapter' })),
+    ...(course.resources || []).map(r => ({ ...r, courseId: course.id, courseTitle: course.title, kind: 'resource' }))
+  ]);
 
-  // Fetch all chapter files in parallel to extract title + time from Markdown
+  // Fetch all chapter files in parallel to extract title + time from Markdown.
+  // Resources get their title from config and don't need meta extraction.
   CHAPTERS = await Promise.all(rawChapters.map(async ch => {
-    // Only fetch if title or time is missing from config
-    if (!ch.title || !ch.time) {
+    const isMarkdown = /\.md$/i.test(ch.file);
+    if ((!ch.title || !ch.time) && isMarkdown) {
       try {
         const text = await fetch(resolveFileUrl(ch.file)).then(r => r.ok ? r.text() : '');
         const meta = extractMeta(text);
@@ -1840,7 +1862,7 @@ async function boot() {
         return { ...ch, title: ch.title || ch.id };
       }
     }
-    return ch;
+    return { ...ch, title: ch.title || ch.id };
   }));
 
   const defaultChapter = CHAPTERS[0]?.id || 'overview';
@@ -1925,7 +1947,8 @@ const LANG_META = {
   plaintext:  ['Text',       'lang-text'],
 };
 
-function buildCodeBlock(code, key, displayLabel, wsPath){
+function buildCodeBlock(code, key, displayLabel, wsPath, opts){
+  opts = opts || {};
   const meta = LANG_META[key];
   const langClass = meta ? meta[1] : 'lang-default';
   let highlighted, detectedLang = key;
@@ -1940,7 +1963,8 @@ function buildCodeBlock(code, key, displayLabel, wsPath){
   }
   const pathAttr = wsPath ? `data-wspath="${wsPath}"` : '';
   const pathBtn  = wsPath ? `<button class="code-copy" onclick="event.stopPropagation();copyPath(this)" ${pathAttr} title="Copy workspace path">${wsPath}</button>` : '';
-  return `<div class="code-block-wrap">
+  const collapsedClass = opts.collapsed ? ' collapsed' : '';
+  return `<div class="code-block-wrap${collapsedClass}">
     <div class="code-header" onclick="toggleCode(this)">
       <button class="code-lang-btn" onclick="event.stopPropagation();copyFilename(this,'${displayLabel}')" title="Copy filename">
         <span class="code-lang-dot ${langClass}"></span>
@@ -1963,39 +1987,53 @@ async function resolveCodeFilePlaceholders(container){
     const key = el.dataset.lang;
     const label = el.dataset.label;
     const wsPath = el.dataset.wspath || '';
+    const collapsed = el.dataset.collapsed === '1';
     try {
       const r = await fetch(resolveFileUrl(src));
       const code = r.ok ? await r.text() : `# Could not load ${src}`;
-      el.outerHTML = buildCodeBlock(code, key, label, wsPath);
+      el.outerHTML = buildCodeBlock(code, key, label, wsPath, {collapsed});
     } catch(e) {
-      el.outerHTML = buildCodeBlock(`# Could not load ${src}`, key, label, wsPath);
+      el.outerHTML = buildCodeBlock(`# Could not load ${src}`, key, label, wsPath, {collapsed});
     }
   }));
 }
 
 renderer.code = function(code, lang){
-  // Support "lang Title e.g." — first word is language, rest is display title
-  const parts = (lang||'').trim().split(/\s+/);
+  // Info string syntax:
+  //   ```<lang>                       — plain code block
+  //   ```<lang> <Title>               — code block with custom header label
+  //   ```<lang> <path/to/file.ext>    — fetch and embed file (courses/, resources/) or label inline (workspace/)
+  //   ```<lang>+collapsed <path...>   — same, default-collapsed (good for long source files)
+  const rawLang = (lang||'').trim();
+  // Split off the optional "+flag1+flag2" suffix from the language token
+  const flagMatch = rawLang.match(/^(\S*?)((?:\+\w+)+)(\s|$)/);
+  const flags = {};
+  let cleaned = rawLang;
+  if(flagMatch){
+    flagMatch[2].slice(1).split('+').forEach(f => flags[f] = true);
+    cleaned = (flagMatch[1] + (flagMatch[3] || '')) + rawLang.slice(flagMatch[0].length);
+  }
+  const parts = cleaned.trim().split(/\s+/);
   const key = parts[0].toLowerCase();
   const title = parts.length > 1 ? parts.slice(1).join(' ') : null;
   const meta = LANG_META[key];
   const displayLabel = title || (meta ? meta[0] : (key || 'Code'));
-  const langClass    = meta ? meta[1] : 'lang-default';
 
-  // If title looks like a file path, either fetch it (courses/) or render inline (workspace/)
+  // If title looks like a file path, either fetch it (courses/, resources/) or render inline (workspace/)
   if(title && /\.\w+$/.test(title.split(/\s+/).pop())){
     const filePath = title.trim();
     const fileName = filePath.split('/').pop();
     // workspace/ paths are student scratchpad files — render inline code with path label
     if(filePath.startsWith('workspace/')){
-      return buildCodeBlock(code, key, fileName, filePath);
+      return buildCodeBlock(code, key, fileName, filePath, {collapsed: !!flags.collapsed});
     }
-    // courses/ paths are committed files — fetch and display
+    // courses/ and resources/ paths are committed files — fetch and display
     const wsPath = filePath.replace(/^courses\/([^/]+)\/([^/]+?)(?:_[^/]+)?\/(?:code\/)?([^/]+)$/, 'workspace/$1/$2/$3');
-    return `<div class="code-file-placeholder" data-src="${filePath}" data-lang="${key}" data-label="${fileName}" data-wspath="${wsPath}"></div>`;
+    const collapsedAttr = flags.collapsed ? ' data-collapsed="1"' : '';
+    return `<div class="code-file-placeholder" data-src="${filePath}" data-lang="${key}" data-label="${fileName}" data-wspath="${wsPath}"${collapsedAttr}></div>`;
   }
 
-  return buildCodeBlock(code, key, displayLabel);
+  return buildCodeBlock(code, key, displayLabel, '', {collapsed: !!flags.collapsed});
 };
 
 marked.use({ renderer, gfm:true, breaks:false });
@@ -2030,9 +2068,14 @@ function toggleCode(header){
 }
 
 // ── Fetch ──────────────────────────────────────────────────────────────
+// When running on a local dev server (python -m http.server etc.),
+// bypass the browser HTTP cache so chapter edits are picked up on reload.
+const IS_LOCAL_DEV = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname);
+
 async function fetchMD(file){
   if(state.cache[file]) return state.cache[file];
-  const r=await fetch(resolveFileUrl(file));
+  const init = IS_LOCAL_DEV ? {cache: 'no-store'} : undefined;
+  const r=await fetch(resolveFileUrl(file), init);
   if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   const t=await r.text();
   state.cache[file]=t;
@@ -2056,19 +2099,32 @@ function renderSidebar(){
   const list=document.getElementById('chapter-list');
   list.innerHTML='';
   let addedDivider=false;
+  let addedResourcesHeader=false;
   visible.forEach(ch=>{
     // Add divider before first numbered chapter within a course
-    if(!addedDivider && ch.num!=='○' && ch.num!=='●'){
+    if(!addedDivider && ch.kind!=='resource' && ch.num!=='○' && ch.num!=='●'){
       const div=document.createElement('div');
       div.className='sb-divider';
       list.appendChild(div);
       addedDivider=true;
     }
 
+    // Add a "RESOURCES" header before the first resource in this course
+    if(!addedResourcesHeader && ch.kind==='resource'){
+      const hdr=document.createElement('div');
+      hdr.className='sb-divider';
+      list.appendChild(hdr);
+      const lbl=document.createElement('div');
+      lbl.className='sb-section-label';
+      lbl.textContent='Resources';
+      list.appendChild(lbl);
+      addedResourcesHeader=true;
+    }
+
     const prog=state.progress[ch.id]||'';
     const active=ch.id===state.cur;
     const el=document.createElement('div');
-    el.className=`ch-item${active?' active':''}${prog==='done'?' done':''}${prog==='in-progress'?' in-progress':''}`;
+    el.className=`ch-item${active?' active':''}${prog==='done'?' done':''}${prog==='in-progress'?' in-progress':''}${ch.kind==='resource'?' resource':''}`;
     el.dataset.id=ch.id;
     el.title=ch.title; // tooltip for truncated names
 
@@ -2183,7 +2239,14 @@ async function loadChapter(id){
   document.getElementById('illus-list').innerHTML='';
 
   try {
-    const md=await fetchMD(ch.file);
+    let md=await fetchMD(ch.file);
+    // Non-Markdown resources (e.g. Dockerfile, .yaml) are wrapped as a fenced code block
+    if (!/\.md$/i.test(ch.file)) {
+      const ext = (ch.file.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase();
+      const lang = ext === 'yml' ? 'yaml' : ext;
+      const filename = ch.file.split('/').pop();
+      md = `# ${ch.title || filename}\n\n\`${ch.file}\`\n\n\`\`\`${lang}\n${md}\n\`\`\`\n`;
+    }
     const html=marked.parse(md);
     contentEl.innerHTML=html;
 
@@ -2238,16 +2301,38 @@ async function loadChapter(id){
     // Scroll spy
     setupScrollSpy();
 
-    // Intercept heading anchor-link clicks (#) to update URL in chId/anchor format
-    contentEl.querySelectorAll('.anchor-link').forEach(a=>{
+    // Intercept ANY in-page anchor click (#slug) — both the heading "#" icons
+    // (.anchor-link) and prose-level cross-references — and rewrite the URL to
+    // the chId/anchor format so reload/share preserves the chapter context.
+    contentEl.querySelectorAll('a[href^="#"]').forEach(a=>{
+      const href = a.getAttribute('href');
+      if(!href || href.length < 2) return;
       a.addEventListener('click', e=>{
         e.preventDefault();
-        const slug = a.getAttribute('href').slice(1);
+        const slug = href.slice(1);
         const _anchorCh=CHAPTERS.find(c=>c.id===state.cur);
         history.pushState({chId:state.cur,anchor:slug},'',`#${_anchorCh?.courseId||''}/${state.cur}/${slug}`);
         const el = document.getElementById(slug);
         if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
       });
+    });
+
+    // Intercept relative links that point to other chapters or resources in CHAPTERS,
+    // and route them through nav() instead of letting the browser navigate away.
+    const curDir = ch.file.replace(/\/[^/]+$/, '/');
+    contentEl.querySelectorAll('a[href]').forEach(a=>{
+      if(a.classList.contains('anchor-link')) return;
+      const href = a.getAttribute('href');
+      if(!href || /^(https?:\/\/|mailto:|#)/.test(href)) return;
+      // Resolve href relative to the current chapter's directory
+      const resolved = new URL(href, 'https://x/' + curDir).pathname.replace(/^\//,'');
+      const target = CHAPTERS.find(c => c.file === resolved);
+      if(target){
+        a.addEventListener('click', e=>{
+          e.preventDefault();
+          nav(target.id);
+        });
+      }
     });
 
   } catch(err){
