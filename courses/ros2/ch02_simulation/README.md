@@ -75,7 +75,16 @@ All three are different — and they diverge differently over time:
 
 **But we expose it.** Our patched SDF (Simulation Description Format — Gazebo's XML file describing the robot's links, joints, sensors, and plugins) adds Gazebo's `PosePublisher` plugin to the robot, the headless launch bridges it to ROS2 as `/ground_truth_pose`, and a small relay node rewrites the frame_id to `map` and republishes on `/ground_truth_pose_map` so Foxglove can render it. In Foxglove's 3D panel you'll see a **green arrow** — that's where Gazebo says the robot actually is. The **blue robot model** is where SLAM thinks it is. Drive the robot and watch the two diverge slightly, then reconverge as SLAM corrects odometry drift.
 
-> **Curious about the wiring?** Three files set this up: the [patched SDF](https://github.com/unltd0/bit2atms/blob/main/resources/ros2/turtlebot3_burger_gt.sdf) (search for `PosePublisher`), the [headless launch file](https://github.com/unltd0/bit2atms/blob/main/resources/ros2/launch/turtlebot3_world_headless.launch.py) (the `ground_truth_bridge_cmd` block), and the [relay node](https://github.com/unltd0/bit2atms/blob/main/resources/ros2/ground_truth_relay.py) that fixes the frame_id.
+**Curious about the wiring?** Three files set this up — click any header to expand:
+
+```xml+collapsed resources/ros2/turtlebot3_burger_gt.sdf
+```
+
+```python+collapsed resources/ros2/launch/turtlebot3_world_headless.launch.py
+```
+
+```python+collapsed resources/ros2/ground_truth_relay.py
+```
 
 **Skip if you can answer:**
 1. What is a TF tree and why does Nav2 need it?
@@ -182,15 +191,12 @@ You'll see topics streaming in the left panel but an empty or bare 3D view — t
 
 **Load the pre-built layout:** In Foxglove, go to the layout menu in the top bar → **Import from file…** → select `resources/ros2/foxglove/ch02_layout.json` from your local repo clone.
 
-> **Verify the import worked:** right-click the publish icon (arrow/hand, bottom of the 3D panel's right toolbar) — the menu should show **Publish 2D pose (/goal_pose)** as one of the options. If both pose options point to `/initialpose`, you're looking at an older cached copy of `ch02_layout` (Foxglove keeps every imported version under the same name). Open the layout menu, expand **Personal**, delete every `ch02_layout` entry, then re-import the file. Foxglove will load the freshly-imported one.
->
-> ![Right-click publish menu showing the correct /goal_pose option](assets/ch02_foxglove_publish_menu.png)
-> *Right-click the publish icon to see this menu. The middle option must read `Publish 2D pose (/goal_pose)` — that's how clicks in the 3D scene reach Nav2.*
+After importing you should see the three-panel layout: 3D scene on the left, two plots on the right (`/cmd_vel` and `/odom`). The red dots in the 3D panel are the lidar scan — each dot is where a laser beam hit a wall. The blue cylinder is the robot. The ⚠ on the plots is normal until you start driving.
 
-After importing you should see the three-panel layout. At this point — before SLAM and before driving — this is what to expect:
+**Verify the import worked.** Right-click the publish icon (arrow/hand, bottom of the 3D panel's right toolbar) — the menu should include **Publish 2D pose (/goal_pose)**. If both pose options point to `/initialpose`, you're looking at an older cached copy of `ch02_layout` (Foxglove keeps every imported version under the same name). Open the layout menu, expand **Personal**, delete every `ch02_layout` entry, then re-import the file.
 
-![Foxglove after connecting with ch02_layout loaded — lidar dots visible, no map yet](assets/ch02_foxglove_connected.png)
-*Foxglove right after connecting. The red dots are the lidar scan — each dot is where a laser beam hit a wall or obstacle. The shape traces the TurtleBot3 world walls around the robot. The blue cylinder is the robot. No map or ground grid yet — those appear once SLAM is running. The ⚠ on the plots is normal; cmd_vel and odom have no data until you start driving.*
+![Right-click publish menu — the middle option must read /goal_pose](assets/ch02_foxglove_publish_menu.png)
+*The screenshot above shows what the layout looks like once Project C is running too — map (white interior, black walls), green ground-truth arrow, blue robot model, and the costmap (light grey polygon). On a fresh Project A run the map and costmap aren't there yet.*
 
 ### 4. Drive the robot
 

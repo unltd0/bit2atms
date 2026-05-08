@@ -1944,7 +1944,8 @@ const LANG_META = {
   plaintext:  ['Text',       'lang-text'],
 };
 
-function buildCodeBlock(code, key, displayLabel, wsPath){
+function buildCodeBlock(code, key, displayLabel, wsPath, opts){
+  opts = opts || {};
   const meta = LANG_META[key];
   const langClass = meta ? meta[1] : 'lang-default';
   let highlighted, detectedLang = key;
@@ -1959,7 +1960,8 @@ function buildCodeBlock(code, key, displayLabel, wsPath){
   }
   const pathAttr = wsPath ? `data-wspath="${wsPath}"` : '';
   const pathBtn  = wsPath ? `<button class="code-copy" onclick="event.stopPropagation();copyPath(this)" ${pathAttr} title="Copy workspace path">${wsPath}</button>` : '';
-  return `<div class="code-block-wrap">
+  const collapsedClass = opts.collapsed ? ' collapsed' : '';
+  return `<div class="code-block-wrap${collapsedClass}">
     <div class="code-header" onclick="toggleCode(this)">
       <button class="code-lang-btn" onclick="event.stopPropagation();copyFilename(this,'${displayLabel}')" title="Copy filename">
         <span class="code-lang-dot ${langClass}"></span>
@@ -1982,39 +1984,53 @@ async function resolveCodeFilePlaceholders(container){
     const key = el.dataset.lang;
     const label = el.dataset.label;
     const wsPath = el.dataset.wspath || '';
+    const collapsed = el.dataset.collapsed === '1';
     try {
       const r = await fetch(resolveFileUrl(src));
       const code = r.ok ? await r.text() : `# Could not load ${src}`;
-      el.outerHTML = buildCodeBlock(code, key, label, wsPath);
+      el.outerHTML = buildCodeBlock(code, key, label, wsPath, {collapsed});
     } catch(e) {
-      el.outerHTML = buildCodeBlock(`# Could not load ${src}`, key, label, wsPath);
+      el.outerHTML = buildCodeBlock(`# Could not load ${src}`, key, label, wsPath, {collapsed});
     }
   }));
 }
 
 renderer.code = function(code, lang){
-  // Support "lang Title e.g." — first word is language, rest is display title
-  const parts = (lang||'').trim().split(/\s+/);
+  // Info string syntax:
+  //   ```<lang>                       — plain code block
+  //   ```<lang> <Title>               — code block with custom header label
+  //   ```<lang> <path/to/file.ext>    — fetch and embed file (courses/, resources/) or label inline (workspace/)
+  //   ```<lang>+collapsed <path...>   — same, default-collapsed (good for long source files)
+  const rawLang = (lang||'').trim();
+  // Split off the optional "+flag1+flag2" suffix from the language token
+  const flagMatch = rawLang.match(/^(\S*?)((?:\+\w+)+)(\s|$)/);
+  const flags = {};
+  let cleaned = rawLang;
+  if(flagMatch){
+    flagMatch[2].slice(1).split('+').forEach(f => flags[f] = true);
+    cleaned = (flagMatch[1] + (flagMatch[3] || '')) + rawLang.slice(flagMatch[0].length);
+  }
+  const parts = cleaned.trim().split(/\s+/);
   const key = parts[0].toLowerCase();
   const title = parts.length > 1 ? parts.slice(1).join(' ') : null;
   const meta = LANG_META[key];
   const displayLabel = title || (meta ? meta[0] : (key || 'Code'));
-  const langClass    = meta ? meta[1] : 'lang-default';
 
-  // If title looks like a file path, either fetch it (courses/) or render inline (workspace/)
+  // If title looks like a file path, either fetch it (courses/, resources/) or render inline (workspace/)
   if(title && /\.\w+$/.test(title.split(/\s+/).pop())){
     const filePath = title.trim();
     const fileName = filePath.split('/').pop();
     // workspace/ paths are student scratchpad files — render inline code with path label
     if(filePath.startsWith('workspace/')){
-      return buildCodeBlock(code, key, fileName, filePath);
+      return buildCodeBlock(code, key, fileName, filePath, {collapsed: !!flags.collapsed});
     }
-    // courses/ paths are committed files — fetch and display
+    // courses/ and resources/ paths are committed files — fetch and display
     const wsPath = filePath.replace(/^courses\/([^/]+)\/([^/]+?)(?:_[^/]+)?\/(?:code\/)?([^/]+)$/, 'workspace/$1/$2/$3');
-    return `<div class="code-file-placeholder" data-src="${filePath}" data-lang="${key}" data-label="${fileName}" data-wspath="${wsPath}"></div>`;
+    const collapsedAttr = flags.collapsed ? ' data-collapsed="1"' : '';
+    return `<div class="code-file-placeholder" data-src="${filePath}" data-lang="${key}" data-label="${fileName}" data-wspath="${wsPath}"${collapsedAttr}></div>`;
   }
 
-  return buildCodeBlock(code, key, displayLabel);
+  return buildCodeBlock(code, key, displayLabel, '', {collapsed: !!flags.collapsed});
 };
 
 marked.use({ renderer, gfm:true, breaks:false });

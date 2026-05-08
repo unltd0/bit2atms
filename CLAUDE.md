@@ -1,185 +1,104 @@
 # bit2atms — Physical AI Courseware
 
-Open-source, follow-along courses on Physical AI: robot manipulation, sim-to-real transfer, Vision-Language-Action models, and more.
+Open-source, follow-along courses on Physical AI: robot manipulation, sim-to-real, VLA models, and more.
 
 ## Ground rules
 
-- **Never `git commit` or `git push` without explicit user permission.** Make all file changes, then stop and ask before committing or pushing.
-- **Before every single commit — no exceptions — explicitly show the user what will be committed and ask for confirmation.** Do not batch multiple commits without re-confirming each one. "Push" is also a separate confirmation from "commit".
-
----
+- **Never `git commit` or `git push` without explicit user permission.**
+- **Before every commit:** show what's staged and ask for confirmation. Each commit is its own confirmation. "Push" is separate from "commit".
 
 ## Quick links
 
 - **Live site**: https://unltd0.github.io/bit2atms/reader.html
 - **Repo**: https://github.com/unltd0/bit2atms
 
----
-
 ## Run locally
 
 ```bash
-git clone https://github.com/unltd0/bit2atms.git
-cd bit2atms
-python3 -m http.server 8080
-# open http://localhost:8080/reader.html
+python3 -m http.server 8080  # then open http://localhost:8080/reader.html
 ```
 
-No build step. The reader is a single HTML file that fetches Markdown at runtime.
-
-Alternatively, open `reader.html` directly as a `file://` URL — content is then fetched from `raw.githubusercontent.com` (requires internet).
-
----
+No build step. `reader.html` fetches Markdown at runtime — over HTTP it uses relative paths, over `file://` it pulls from `raw.githubusercontent.com`.
 
 ## Publish
 
-Pushing to `main` publishes automatically via GitHub Pages.
-
-```bash
-git add .
-git commit -m "your message"
-git push
-```
-
-Changes are live at https://unltd0.github.io/bit2atms/reader.html within ~60 seconds of push.
-
-**GitHub Pages setup** (one-time, already done): Settings → Pages → Source: `main` branch, `/` root. The `.nojekyll` file at repo root ensures `.md` files are served as static assets.
-
----
-
-## Repo structure
-
-```
-bit2atms/
-├── reader.html                      # Single-file interactive reader (no build needed)
-├── config.json                      # Course + chapter manifest — the reader's source of truth
-├── .nojekyll                        # Disables Jekyll so GitHub Pages serves .md files
-├── courses/
-│   ├── vla/                         # Vision-Language-Action course
-│   │   ├── README.md
-│   │   └── ch01_mujoco/
-│   │       ├── README.md
-│   │       └── assets/              # Images referenced in this chapter's README
-│   └── ros2/                        # ROS2 course
-│       ├── README.md
-│       ├── ch01_fundamentals/
-│       │   └── README.md
-│       └── ch02_simulation/
-│           ├── README.md
-│           └── assets/              # Screenshots/images used in this chapter
-├── resources/
-│   └── ros2/                        # Files students download and use directly
-│       ├── docker/
-│       │   ├── Dockerfile
-│       │   └── README.md            # Full setup guide (config.json points here)
-│       ├── launch/                  # Launch files for the container
-│       ├── foxglove/                # Foxglove layout JSON files
-│       ├── turtlebot3_burger_gt.sdf # Patched SDF with ground truth plugin
-│       └── ground_truth_relay.py    # Relay node (frame_id fix)
-└── workspace/
-    └── ros2/                        # Docker bind-mount target — runtime scaffold
-        ├── launch/                  # Synced from resources/ros2/launch/
-        └── ch02/                    # Chapter-specific runtime scripts
-```
-
----
+`git push` to `main` → live within ~60s via GitHub Pages. `.nojekyll` at root makes Pages serve `.md` files raw.
 
 ## Folder conventions
 
-### `courses/<id>/chXX/assets/`
-Screenshots and images **referenced inside that chapter's README**. Not for students to download — just for display in the reader. Commit images here; reference them as relative paths: `![alt](assets/image.png)`.
+| Path | Purpose |
+|---|---|
+| `courses/<id>/chXX/` | Single `README.md` per chapter, plain Markdown, no frontmatter. |
+| `courses/<id>/chXX/assets/` | Images **referenced from that chapter's README** via `![alt](assets/x.png)`. Not for student download. |
+| `resources/<id>/` | Files students **download or read directly**: Dockerfiles, launch files, SDFs, scripts, layouts. The chapter README can also embed them as collapsible code blocks (see below). |
+| `workspace/<id>/` | Bind-mount target. Two roles: (1) student scratchpad, (2) runtime scaffold — files the container needs at startup must be pre-placed. Source-of-truth lives in `resources/<id>/`; `scripts/reset_workspace.sh` copies them in. |
 
-### `resources/<id>/`
-Files students **download and use directly**: Dockerfiles, launch files, SDF models, Python scripts, Foxglove layouts. When a resource has a README explaining setup (e.g. the Docker image), add a `config.json` resource entry pointing to that README — not to the raw file. Example:
-```json
-{ "id": "ros2-docker", "num": "▶", "title": "Docker image (all chapters)", "file": "resources/ros2/docker/README.md", "color": "accentp" }
+`config.json`: course/chapter manifest. Resource entries must point to a `README.md`, not a raw file (the reader only renders Markdown).
+
+## Reader features used by chapters
+
+The reader extends standard Markdown. Authors should know these:
+
+### Code blocks with file paths
+
+The fenced-code info string accepts a path after the language. Behaviour depends on the path prefix:
+
+| Syntax | Behaviour |
+|---|---|
+| ` ```python ` | Plain code block. |
+| ` ```python my_node.py ` | Plain code block, but header label = `my_node.py`. |
+| ` ```python workspace/ros2/ch02/foo.py ` | Inline body, header shows the workspace path (clickable to copy). For "save this file as…" snippets. |
+| ` ```python courses/ros2/ch02_simulation/code/foo.py ` | Body fetched from that path, syntax-highlighted, header = filename. For displaying committed source. |
+| ` ```python resources/ros2/ground_truth_relay.py ` | Same — fetches and displays the file. Use for any committed file under `resources/`. |
+
+### `+collapsed` flag (default-collapsed code blocks)
+
+Append `+collapsed` to the language token to render the block collapsed by default. Click the header to expand. Works on any code block — inline or file-fetch.
+
+```text
+```python+collapsed resources/ros2/ground_truth_relay.py
+```
 ```
 
-### `workspace/<id>/`
-Bind-mounted into Docker at `/workspace/<id>/`. Two purposes:
-1. **Learner scratchpad** — students create their own files here as they work through projects.
-2. **Runtime scaffold** — any files the container needs at startup (launch files, scripts, SDFs) must be pre-placed here, because `resources/` is not mounted. Keep `workspace/` in sync with `resources/` for any files the container consumes.
+Use for long source files referenced from prose ("here's the wiring if you want to see it"), where forcing the reader to scroll past the full file would interrupt the flow.
 
-### `config.json`
-Resource entries (`"resources": [...]` under a course) must point to a `README.md`, not a raw file like a Dockerfile. The reader renders Markdown — pointing to a Dockerfile renders raw text.
+### Auto-embedded YouTube
 
----
+A YouTube URL on its own line auto-embeds as an iframe.
 
 ## Adding a course
 
-1. Create `courses/<id>/` with `OVERVIEW.md`, `README.md`, and chapter folders
-2. Add an entry to `config.json` under `courses[]` — the reader picks it up automatically
-3. Add a `workspace/<id>/` folder — learners create their own files as they work through projects
-4. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full walkthrough
+1. Create `courses/<id>/` with `README.md` + chapter folders.
+2. Add a `courses[]` entry to `config.json` — title and time are read from the chapter's `README.md`, no need to duplicate.
+3. Add `workspace/<id>/` if students need a scratchpad/runtime area.
 
-### config.json chapter entry shape
+Chapter entry shape:
 
 ```json
 { "id": "ch01", "num": "01", "file": "courses/<id>/ch01_topic/README.md", "color": "accent" }
 ```
 
-`title` and `time` are read automatically from each chapter's `README.md` — no need to duplicate them here.
+Color options: `accent` `accentg` `accentp` `accento` `accenty` `accentr`.
 
-Color options: `accent` `accentg` `accentp` `accento` `accenty` `accentr`
+## Workspace scaffold
 
----
+`scripts/reset_workspace.sh` creates placeholder files under `workspace/<course>/` and copies runtime files from `resources/<course>/` (the source-of-truth) into `workspace/<course>/`. Update the `*_CHAPTERS` and `ROS2_RESOURCE_FILES` arrays in the script when chapter filenames change or new runtime files are added.
 
-## Reader details
+- `bash scripts/reset_workspace.sh` — backup existing workspace, then reset
+- `bash scripts/reset_workspace.sh --add-only` — only create missing files
+- `FORCE=1 bash scripts/reset_workspace.sh` — reset without backup prompt
 
-- **Single HTML file** — `reader.html` at repo root
-- **Config-driven** — loads `config.json` at boot, no hardcoded chapter list
-- **Environment detection** — auto-switches between relative paths (GitHub Pages / local HTTP) and `raw.githubusercontent.com` URLs (`file://`)
-- **Default theme**: paper · **Default font**: sans
-- **Themes**: paper, dusk, slate, forest, nord (user-selectable, saved to localStorage)
-- **Features**: syntax highlighting, TOC, bookmarks, progress tracking, full-text search, live-reload in local HTTP mode
+## Testing the reader with Playwright
 
-To change defaults, edit `applyAppearance()` in `reader.html`:
-
-```js
-const theme = LS.get('vla_theme', 'paper');   // change 'paper' to any theme id
-const font  = LS.get('vla_font',  'sans');    // 'serif' | 'sans' | 'mono'
-```
-
----
-
-## Testing with Playwright MCP
-
-Add the Playwright MCP server to this project in Claude Code:
-
-```bash
-claude mcp add playwright -- npx -y @playwright/mcp@latest
-```
-
-Then in a Claude Code session, start the local server and ask Claude to test the reader visually — it can navigate chapters, check theming, verify content loads, and screenshot the result.
-
-Example prompts:
-- "Start the server on 8080 and check that all 12 chapters load in the reader"
-- "Take a screenshot of the reader on chapter 5 and verify the sidebar is correct"
-- "Test that the paper theme applies on first load with no localStorage"
-
----
+The Playwright MCP is configured. Useful prompts:
+- "Start localhost:8080 and screenshot ch02 to verify the embed blocks render collapsed."
+- "Navigate every chapter and report any console errors or missing assets."
 
 ## Course content guidelines
 
-See [courses/vla/course_guideline_for_claude.md](courses/vla/course_guideline_for_claude.md) for the full guideline (audience, tone, what to include/exclude) — use it when reviewing or generating VLA course content.
+Per-chapter rules (audience, tone, what to include): [courses/vla/course_guideline_for_claude.md](courses/vla/course_guideline_for_claude.md).
 
-### Keeping the workspace scaffold in sync
-
-`scripts/reset_workspace.sh` creates empty placeholder files for every chapter. When chapter filenames change, **update the `CHAPTERS` array in that script to match**. The ch02 entry must list exactly the files referenced in the chapter:
-
-```bash
-"ch02 explore_env.py train_sac_her.py reward_ablation.py curriculum.py"
-```
-
-Usage:
-- `bash scripts/reset_workspace.sh` — backup existing files, then reset
-- `bash scripts/reset_workspace.sh --add-only` — only create missing files, touch nothing else
-- `FORCE=1 bash scripts/reset_workspace.sh` — reset without backup prompt
-
-
-
-- Each chapter is a single `README.md` — plain Markdown, no front matter
-- YouTube URLs on their own line auto-embed in the reader
-- Link liberally to papers, repos, and external docs — this is a curated guide, not a walled garden
-- Every chapter should have a **Projects** section telling learners where to create their files (e.g. `learning/ch01_mujoco/`)
-- State hardware requirements explicitly: `Laptop only` / `GPU helpful` / `GPU 8 GB+` / `Physical robot`
+- Each chapter is one `README.md`. Plain Markdown, no frontmatter.
+- Link liberally to papers, repos, external docs — this is a curated guide, not a walled garden.
+- Every chapter has a **Projects** section pointing students at `workspace/<id>/chXX/`.
+- State hardware up front: `Laptop only` / `GPU helpful` / `GPU 8GB+` / `Physical robot`.
