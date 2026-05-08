@@ -115,6 +115,7 @@ ROS2_RESOURCE_FILES=(
   "resources/ros2/ch02/send_goal.py:workspace/ros2/ch02/send_goal.py"
   "resources/ros2/ch02/nav2_params.yaml:workspace/ros2/ch02/nav2_params.yaml"
   "resources/ros2/ch02/_restart_stack.sh:workspace/ros2/ch02/_restart_stack.sh"
+  "resources/ros2/ch03/real_nav_goal.py:workspace/ros2/ch03/real_nav_goal.py"
 )
 for entry in "${ROS2_RESOURCE_FILES[@]}"; do
   src="$REPO_ROOT/$(echo $entry | cut -d: -f1)"
