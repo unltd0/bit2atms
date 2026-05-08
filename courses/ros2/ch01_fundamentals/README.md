@@ -54,6 +54,47 @@ That's the whole mental model. Everything else in this chapter — launch files,
 
 ---
 
+## Where do these nodes run?
+
+Driver nodes — the ones that actually talk to motors and sensors — have to run on a machine that's physically wired to the robot. That's either:
+
+- the robot's **MCU** (microcontroller — e.g. ESP32, Teensy, Arduino, RP2040, STM32) itself, running [micro-ROS](https://micro.ros.org/) firmware that participates in the ROS2 graph directly, or
+- an **SBC** (single-board computer like a Raspberry Pi or Jetson) connected to the MCU over USB serial, running a driver node that translates between the MCU's wire protocol and ROS2 topics.
+
+Everything else — planners, SLAM, visualization, ML policies — is **just OS processes**. They can live on any number of **host VMs** on the same network as the SBC: a dev VM on your desk, a GPU server in another room, a fleet operator's laptop. They join the ROS2 graph over WiFi/Ethernet via DDS (the wire protocol under ROS2): same `ROS_DOMAIN_ID`, same network, no further config.
+
+```
+   ┌── DEV VM ────┐  ┌── GPU SERVER ──┐  ┌── (any host) ──┐
+   │  Foxglove    │  │  perception    │  │      …         │
+   │  nav2, slam  │  │  policy        │  │                │
+   └──────────────┘  └────────────────┘  └────────────────┘
+          ▲                  ▲                   ▲
+          └──────────────────┴── DDS over WiFi/Ethernet ──┐
+                                                          │
+              ┌── SBC (RPi/Jetson) ────────────────────┐  │
+              │   driver nodes (own the USB)           │◄─┘
+              └────────────────────────────────────────┘
+                                │ USB serial
+                                ▼
+                          ┌── MCU ──┐
+                          │ motors  │  (or runs micro-ROS,
+                          │ sensors │   joining the graph
+                          └─────────┘   directly)
+```
+
+Two notes:
+- **Mobile robots** put the SBC on the chassis (TurtleBot3 = RPi onboard). **Desk robots** can skip the SBC and let the dev VM be the machine wired to the MCU (SO-101 = USB cable to your laptop). Same architecture; the SBC is just packaging when wires can't reach.
+- **In ch02** you'll run everything in one Docker container on the dev VM — sim only, no robot. The architecture above starts mattering in ch03.
+
+Deeper background (micro-ROS in detail, what ROS2 ships vs what you write, per-layer placement table): see [Appendix — Deployment, the longer version](#appendix-deployment-the-longer-version).
+
+**Skip the rest if you can answer:**
+1. Why does the driver node need to run on the machine that's USB-cabled to the MCU?
+2. What does the MCU do that Linux can't?
+3. If the vendor doesn't ship a ROS2 driver for your sensor, what's your job?
+
+---
+
 ## Projects
 
 | # | Project | What you build |
@@ -699,3 +740,45 @@ Note: `ros2 bag record` creates a folder called `my_bag/`, not a single file. `r
 1. [ROS2 Jazzy docs — Concepts](https://docs.ros.org/en/jazzy/Concepts.html) — mental model for nodes, topics, services, actions
 2. [Writing a simple publisher/subscriber (Python)](https://docs.ros.org/en/jazzy/Tutorials/Beginner-Client-Libraries/Writing-A-Simple-Py-Publisher-And-Subscriber.html) — official step-by-step
 3. [Understanding ROS2 actions](https://docs.ros.org/en/jazzy/Tutorials/Beginner-CLI-Tools/Understanding-ROS2-Actions/Understanding-ROS2-Actions.html) — when and why to use actions
+
+---
+
+## Appendix — Deployment, the longer version
+
+Extra detail for [Where do these nodes run?](#where-do-these-nodes-run). Read this when you're deploying onto real hardware (ch03 onwards) or staring at "where should this node run?".
+
+### micro-ROS: when the MCU itself runs ROS2
+
+Default architecture: the MCU speaks a custom serial protocol; a driver node on the SBC translates. **micro-ROS** is the alternative — a stripped-down ROS2 client library that runs on the MCU itself. The MCU then publishes/subscribes to real ROS2 topics directly. A small `micro_ros_agent` process on a host bridges micro-ROS's serial transport to standard DDS so the rest of the network sees normal topics.
+
+```
+default:    MCU ──serial protocol──► driver node ──► ROS2 graph
+micro-ROS:  MCU ──ROS2 topics (XRCE-DDS over serial)──► agent ──► ROS2 graph
+```
+
+Use it when **you control the MCU firmware** and want to skip writing a custom protocol + driver-node pair (the agent is generic). Skip it when you're using a robot with vendor-supplied firmware — you can't run micro-ROS on the OpenCR or on Dynamixel servos. ([micro.ros.org](https://micro.ros.org/))
+
+### What ROS2 gives you, what you still write
+
+ROS2 ships:
+- **DDS auto-discovery** across machines on the same network and `ROS_DOMAIN_ID`.
+- **Standard message types** (`sensor_msgs`, `geometry_msgs`, `nav_msgs`…) so nodes from different vendors interoperate.
+- **Transport** — TCP/UDP/shared-memory, chosen by DDS based on whether peers are local or remote.
+
+You still write:
+- **Driver nodes**, if the vendor doesn't ship one. For TurtleBot3, ROBOTIS ships `turtlebot3_node` (host side) + OpenCR firmware (MCU side) — you don't write either. For an off-brand lidar, you'd wrap its serial protocol in a node.
+- **Application logic** — nodes that decide *what the robot does* given the sensor stream.
+- **MCU firmware**, only if you built the robot yourself. Existing robots come with firmware.
+
+### Per-layer placement table (TurtleBot3 example)
+
+A worked example. The pattern (drivers next to hardware, heavy compute next to GPU/CPU, viz next to the human) generalizes.
+
+| Layer | Pinned to | Why |
+|---|---|---|
+| Sensor & motor drivers | Robot SBC (RPi/Jetson) | Drivers need direct USB/serial access to the physical hardware. Streaming raw sensor frames over the network is too much bandwidth and too much latency. |
+| Real-time motor control | OpenCR MCU | The SBC runs Linux (non-real-time). kHz-rate closed-loop wheel control needs deterministic timing — that has to live on the microcontroller. The SBC just sends `Twist`-style velocity commands and the MCU translates them to motor voltages. |
+| Planning, SLAM, Nav2 | Dev VM (or GPU server, or the SBC if it's powerful enough) | CPU/RAM-hungry, but don't care about a few ms of WiFi latency. Almost always easier to iterate on a beefy box than to redeploy to a Pi every change. |
+| Perception nets, ML policies | GPU server (or beefy dev VM) | Need a GPU. Run on whichever machine in your network has one. |
+| Visualization (Foxglove, rviz2) | Wherever the human is | The robot has no monitor. Foxglove subscribes to topics over the same DDS network and renders them on your screen. |
+| Recording (`ros2 bag`) | Anywhere with disk space | Most teams record on the SBC for the rawest data, then copy bags off later. Some record on the dev VM. |

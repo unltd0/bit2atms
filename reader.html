@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Always revalidate reader.html itself with the server so updates show up
+     without a hard reload. Chapter MD is cached separately by fetchMD(). -->
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>Robotics Learning Reader</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2065,9 +2068,14 @@ function toggleCode(header){
 }
 
 // ── Fetch ──────────────────────────────────────────────────────────────
+// When running on a local dev server (python -m http.server etc.),
+// bypass the browser HTTP cache so chapter edits are picked up on reload.
+const IS_LOCAL_DEV = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname);
+
 async function fetchMD(file){
   if(state.cache[file]) return state.cache[file];
-  const r=await fetch(resolveFileUrl(file));
+  const init = IS_LOCAL_DEV ? {cache: 'no-store'} : undefined;
+  const r=await fetch(resolveFileUrl(file), init);
   if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   const t=await r.text();
   state.cache[file]=t;
@@ -2293,11 +2301,15 @@ async function loadChapter(id){
     // Scroll spy
     setupScrollSpy();
 
-    // Intercept heading anchor-link clicks (#) to update URL in chId/anchor format
-    contentEl.querySelectorAll('.anchor-link').forEach(a=>{
+    // Intercept ANY in-page anchor click (#slug) — both the heading "#" icons
+    // (.anchor-link) and prose-level cross-references — and rewrite the URL to
+    // the chId/anchor format so reload/share preserves the chapter context.
+    contentEl.querySelectorAll('a[href^="#"]').forEach(a=>{
+      const href = a.getAttribute('href');
+      if(!href || href.length < 2) return;
       a.addEventListener('click', e=>{
         e.preventDefault();
-        const slug = a.getAttribute('href').slice(1);
+        const slug = href.slice(1);
         const _anchorCh=CHAPTERS.find(c=>c.id===state.cur);
         history.pushState({chId:state.cur,anchor:slug},'',`#${_anchorCh?.courseId||''}/${state.cur}/${slug}`);
         const el = document.getElementById(slug);
