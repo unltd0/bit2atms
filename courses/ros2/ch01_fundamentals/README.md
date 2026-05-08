@@ -61,13 +61,13 @@ Driver nodes — the ones that actually talk to motors and sensors — have to r
 - the robot's **MCU** (microcontroller — e.g. ESP32, Teensy, Arduino, RP2040, STM32) itself, running [micro-ROS](https://micro.ros.org/) firmware that participates in the ROS2 graph directly, or
 - an **SBC** (single-board computer like a Raspberry Pi or Jetson) connected to the MCU over USB serial, running a driver node that translates between the MCU's wire protocol and ROS2 topics.
 
-Everything else — planners, SLAM, visualization, ML policies — is **just OS processes**. They can live on any number of **host VMs** on the same network as the SBC: a dev VM on your desk, a GPU server in another room, a fleet operator's laptop. They join the ROS2 graph over WiFi/Ethernet via DDS (the wire protocol under ROS2): same `ROS_DOMAIN_ID`, same network, no further config.
+Everything else — planners, SLAM, visualization, ML policies — is **just OS processes**. They can live on any number of **host VMs** on the same network as the SBC: a laptop on your desk, a Linux server in another room, a fleet operator's machine. They join the ROS2 graph over WiFi/Ethernet via DDS (the wire protocol under ROS2): same `ROS_DOMAIN_ID`, same network, no further config.
 
 ```
-   ┌── DEV VM ────┐  ┌── GPU SERVER ──┐  ┌── (any host) ──┐
-   │  Foxglove    │  │  perception    │  │      …         │
-   │  nav2, slam  │  │  policy        │  │                │
-   └──────────────┘  └────────────────┘  └────────────────┘
+   ┌── LAPTOP / VM ┐  ┌── GPU SERVER ──┐  ┌── (any host) ──┐
+   │  Foxglove     │  │  perception    │  │      …         │
+   │  nav2, slam   │  │  policy        │  │                │
+   └───────────────┘  └────────────────┘  └────────────────┘
           ▲                  ▲                   ▲
           └──────────────────┴── DDS over WiFi/Ethernet ──┐
                                                           │
@@ -83,8 +83,8 @@ Everything else — planners, SLAM, visualization, ML policies — is **just OS 
 ```
 
 Two notes:
-- **Mobile robots** put the SBC on the chassis (TurtleBot3 = RPi onboard). **Desk robots** can skip the SBC and let the dev VM be the machine wired to the MCU (SO-101 = USB cable to your laptop). Same architecture; the SBC is just packaging when wires can't reach.
-- **In ch02** you'll run everything in one Docker container on the dev VM — sim only, no robot. The architecture above starts mattering in ch03.
+- **Mobile robots** put the SBC on the chassis (TurtleBot3 = RPi onboard). **Desk robots** can skip the SBC entirely — a VM (your laptop, a Linux server, whatever you have) gets USB-cabled to the MCU and runs the driver nodes itself, alongside everything else (planner, visualization, application logic) on the same machine (SO-101 = USB cable to your laptop). Same architecture; the SBC is just packaging when wires can't reach.
+- **In ch02** you'll run everything in one Docker container on a single VM (your laptop is fine) — sim only, no robot. The architecture above starts mattering in ch03.
 
 Deeper background (micro-ROS in detail, what ROS2 ships vs what you write, per-layer placement table): see [Appendix — Deployment, the longer version](#appendix-deployment-the-longer-version).
 
@@ -778,7 +778,7 @@ A worked example. The pattern (drivers next to hardware, heavy compute next to G
 |---|---|---|
 | Sensor & motor drivers | Robot SBC (RPi/Jetson) | Drivers need direct USB/serial access to the physical hardware. Streaming raw sensor frames over the network is too much bandwidth and too much latency. |
 | Real-time motor control | OpenCR MCU | The SBC runs Linux (non-real-time). kHz-rate closed-loop wheel control needs deterministic timing — that has to live on the microcontroller. The SBC just sends `Twist`-style velocity commands and the MCU translates them to motor voltages. |
-| Planning, SLAM, Nav2 | Dev VM (or GPU server, or the SBC if it's powerful enough) | CPU/RAM-hungry, but don't care about a few ms of WiFi latency. Almost always easier to iterate on a beefy box than to redeploy to a Pi every change. |
-| Perception nets, ML policies | GPU server (or beefy dev VM) | Need a GPU. Run on whichever machine in your network has one. |
+| Planning, SLAM, Nav2 | A VM on the network (laptop, Linux server, GPU server, or the SBC if it's powerful enough) | CPU/RAM-hungry, but don't care about a few ms of WiFi latency. Almost always easier to iterate on a beefy box than to redeploy to a Pi every change. |
+| Perception nets, ML policies | GPU server (or any VM with a GPU) | Need a GPU. Run on whichever machine in your network has one. |
 | Visualization (Foxglove, rviz2) | Wherever the human is | The robot has no monitor. Foxglove subscribes to topics over the same DDS network and renders them on your screen. |
-| Recording (`ros2 bag`) | Anywhere with disk space | Most teams record on the SBC for the rawest data, then copy bags off later. Some record on the dev VM. |
+| Recording (`ros2 bag`) | Anywhere with disk space | Most teams record on the SBC for the rawest data, then copy bags off later. Some record on a host VM. |
