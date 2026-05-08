@@ -3,8 +3,8 @@
     "3D!ch02main": {
       "cameraState": {
         "perspective": true,
-        "distance": 8,
-        "phi": 60,
+        "distance": 4,
+        "phi": 25,
         "thetaOffset": 0,
         "targetOffset": [0, 0, 0],
         "target": [0, 0, 0],
@@ -13,8 +13,8 @@
         "near": 0.5,
         "far": 5000
       },
-      "followMode": "follow-pose",
-      "followTf": "base_footprint",
+      "followMode": "follow-position",
+      "followTf": "base_link",
       "scene": {
         "labelScaleFactor": 0.4,
         "transforms": {
@@ -88,9 +88,9 @@
           "order": 2,
           "sourceType": "param",
           "parameter": "/robot_state_publisher.robot_description",
-          "displayMode": "collision",
+          "displayMode": "visual",
           "fallbackColor": "#33aaff",
-          "opacity": 0.85,
+          "opacity": 1.0,
           "showOutline": true,
           "showAxis": false,
           "axisScale": 1

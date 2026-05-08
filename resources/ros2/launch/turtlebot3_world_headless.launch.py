@@ -12,9 +12,6 @@
 #      which bridges cmd_vel as geometry_msgs/Twist (not TwistStamped), so Nav2's
 #      default velocity output drives the robot without extra configuration.
 #
-# Note on Foxglove URDF: use displayMode: "collision" in Foxglove's URDF layer.
-# Foxglove ignores the scale attribute on STL meshes (TurtleBot3 uses 0.001 scale),
-# and the .dae versions are placeholder cubes. Collision primitives are in meters.
 import os
 
 from ament_index_python.packages import get_package_share_directory

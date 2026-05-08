@@ -189,11 +189,11 @@ This exposes all ROS2 topics over WebSocket on port 8765. Foxglove on your machi
 
 You'll see topics streaming in the left panel but an empty or bare 3D view — that's expected until you load the layout.
 
-**Load the pre-built layout:** In Foxglove, go to the layout menu in the top bar → **Import from file…** → select `resources/ros2/foxglove/ch02_layout.json` from your local repo clone.
+**Load the pre-built layout:** In Foxglove, go to the layout menu in the top bar → **Import from file…** → select `resources/ros2/foxglove/ch02_layout_v3.json` from your local repo clone.
 
 After importing you should see the three-panel layout: 3D scene on the left, two plots on the right (`/cmd_vel` and `/odom`). The red dots in the 3D panel are the lidar scan — each dot is where a laser beam hit a wall. The blue cylinder is the robot. The ⚠ on the plots is normal until you start driving.
 
-**Verify the import worked.** Right-click the publish icon (arrow/hand, bottom of the 3D panel's right toolbar) — the menu should include **Publish 2D pose (/goal_pose)**. If both pose options point to `/initialpose`, you're looking at an older cached copy of `ch02_layout` (Foxglove keeps every imported version under the same name). Open the layout menu, expand **Personal**, delete every `ch02_layout` entry, then re-import the file.
+**Verify the import worked.** Right-click the publish icon (arrow/hand, bottom of the 3D panel's right toolbar) — the menu should include **Publish 2D pose (/goal_pose)**. If both pose options point to `/initialpose`, you're looking at an older cached copy of `ch02_layout_v3` (Foxglove keeps every imported version under the same name). Open the layout menu, expand **Personal**, delete every `ch02_layout_v3` entry, then re-import the file.
 
 ![Right-click publish menu — the middle option must read /goal_pose](assets/ch02_foxglove_publish_menu.png)
 *The screenshot above shows what the layout looks like once Project C is running too — map (white interior, black walls), green ground-truth arrow, blue robot model, and the costmap (light grey polygon). On a fresh Project A run the map and costmap aren't there yet.*
@@ -284,6 +284,8 @@ T1 (Gazebo), T2 (foxglove_bridge) running. T3 for SLAM. T4 for auto-exploration.
 
 ### 1. Launch SLAM Toolbox
 
+Make sure Gazebo (T1) and foxglove_bridge (T2) are still running from Project A. If they're not, start them first — see [Appendix — How to reset the stack](#appendix-how-to-reset-the-stack) for the commands. Foxglove on your machine should still be connected to `ws://localhost:8765` with the `ch02_layout_v3` loaded; if you closed it, reconnect and re-import (Project A step 3).
+
 🟢 **Run** — T3
 
 ```bash
@@ -362,37 +364,27 @@ free_thresh: 0.25
 
 The files are saved to `workspace/ros2/ch02/` which is bind-mounted to your host, so they persist after the container exits.
 
-**Before moving to Project C:** restart Gazebo so the robot is back at the spawn position. Stop SLAM (T3), stop obstacle_detection (T4), then Ctrl+C Gazebo (T1) and relaunch it:
-
-```bash
-ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py
-```
-
-T2 (foxglove_bridge) can stay running.
-
 ---
 
 ## Project C — Nav2 Autonomous Navigation
 
-**Goal:** Load the map from Project B, localize the robot, and send it to goals autonomously.
+**Goal:** Load the map from Project B, tell Nav2 where the robot is, send it to goals autonomously.
 
-**How Nav2 works:** Nav2 is a full navigation stack. It loads your saved map, runs AMCL to estimate where the robot is within that map, plans a collision-free path to the goal, and sends velocity commands to drive there.
-
-Saved map + `/scan` + `/odom` → AMCL (localization) → planner → controller → `/cmd_vel`
-
-AMCL (Adaptive Monte Carlo Localization) uses a particle filter: it maintains hundreds of hypotheses about where the robot might be, weights them against lidar scan observations, and collapses to a tight cluster around the most likely pose. A spread-out particle cloud means AMCL is uncertain — Nav2 plans using that uncertain estimate and may drive into walls.
-
-**SLAM vs. AMCL:** SLAM builds the map while exploring without prior knowledge. AMCL figures out where the robot is within an already-built map. They solve different problems and can't both run at the same time — both publish the `map → odom` TF transform and they'll fight.
+Nav2 takes the saved map + `/scan` + `/odom`, runs AMCL to keep track of where the robot is, plans a collision-free path to your goal, and writes velocity commands to `/cmd_vel`. (See [Key concepts](#key-concepts) for the SLAM-vs-AMCL refresher; the full per-node breakdown is in [Appendix — What each Nav2 node does](#appendix-what-each-nav2-node-does).)
 
 ### 1. Reset before starting
 
-Before launching Nav2, restart Gazebo so the robot is back at the spawn position — see **Appendix — How to reset the stack**. T2 (foxglove_bridge) can stay running.
+Coming from Project B with SLAM and the exploration script running, you need a clean slate:
 
-Once Gazebo is back up, T3 and T4 should be stopped (SLAM and obstacle_detection off).
+1. Stop SLAM (T3, Ctrl+C) and obstacle_detection (T4, Ctrl+C).
+2. Restart Gazebo so the robot is back at the spawn position: Ctrl+C T1, then relaunch with `ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py`.
+3. T2 (foxglove_bridge) can stay running. On your machine, Foxglove should still be connected with `ch02_layout_v3` loaded; if you closed it, reconnect to `ws://localhost:8765` and re-import the layout (Project A step 3).
+
+Full kill commands and per-project start sequences are in [Appendix — How to reset the stack](#appendix-how-to-reset-the-stack).
 
 > **Don't have a saved map?** If you skipped Project B or your saved map is unusable, copy the reference map from `resources/ros2/ch02/my_map_reference.{yaml,pgm}` into `workspace/ros2/ch02/` and rename to `my_map.{yaml,pgm}` (or just point Nav2 at the reference yaml directly). The reference was generated with the same world and exploration script, so it works for Project C without re-running SLAM.
 
-### 2. Launch Nav2
+### 2. Launch Nav2 and seed AMCL
 
 🟢 **Run** — T3
 
@@ -402,123 +394,91 @@ ros2 launch nav2_bringup bringup_launch.py \
   use_sim_time:=true
 ```
 
-`use_sim_time:=true` is required — Nav2 must use Gazebo's clock, not wall time.
-
-Nav2 starts 8+ nodes: `amcl`, `map_server`, `planner_server`, `controller_server`, `bt_navigator`, `behavior_server`, `smoother_server`, `waypoint_follower`, and `lifecycle_manager`. The lifecycle manager brings them up in order.
-
-Startup takes ~5 seconds, then you'll see repeated warnings:
+After ~5 seconds the launch settles into repeated warnings:
 
 ```
 [amcl]: AMCL cannot publish a pose or update the transform. Please set the initial pose...
 [global_costmap]: Timed out waiting for transform from base_link to map...
 ```
 
-**This is expected.** AMCL can't publish the `map` TF until it knows where the robot is. The costmap is waiting for that TF. Move on to step 3 and set the initial pose — once AMCL gets it, the `map` TF appears, the costmap unblocks, and Nav2 finishes activating. You'll see:
+That's expected. Both warnings stop as soon as you publish an initial pose.
 
-```text
-[lifecycle_manager]: Managed nodes are active
-```
+In Foxglove's 3D panel right now you should see:
+- The **lidar scan** (red dots) tracing the hexagonal arena walls.
+- The **blue robot model** — a small cylinder at the centre of the lidar pattern.
 
-🟡 **Know** — verify all nodes are alive
+The map and the green ground-truth arrow are **not visible yet** — they live in the `map` frame, which doesn't exist until AMCL publishes its first transform. That happens as soon as you set the initial pose.
 
-```bash
-ros2 node list | grep -E "amcl|planner|controller|bt_navigator"
-```
+🟢 **Run** — in Foxglove:
 
-### 3. Set the initial pose
+1. In the 3D panel's right toolbar (right edge of the panel), **right-click the publish icon** (the arrow/hand symbol at the bottom of the toolbar). A menu appears.
+2. Click **Publish 2D pose estimate (/initialpose)**. The publish tool is now armed.
+3. In the 3D scene, **click on the blue robot model**. A cyan arrow appears with its base anchored at your click. **Move the cursor a short distance in any direction** (the arrow's tip follows the cursor — that's the heading you're publishing), then **click again** to publish.
 
-AMCL starts with no idea where the robot is in the map. Seed it from the terminal:
+Within a couple of seconds:
+- T3 prints `[lifecycle_manager]: Managed nodes are active`.
+- The **map** appears (white interior, black walls).
+- The **green ground-truth arrow** appears (Gazebo's exact robot position).
+- A scattered cloud of small arrows (AMCL's particle filter) appears around the robot, then collapses to a tight cluster.
+- The lidar dots line up with the map walls.
 
-🟢 **Run** — T4
-
-```bash
-ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
-  '{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.07]}}'
-```
-
-> **Why `(0, 0)` and not `(-2.0, -0.5)`?** The robot spawns at `(-2.0, -0.5)` in Gazebo's world frame, but AMCL works in the *map* frame. When the robot spawns, its odometry resets to `(0, 0)` and the map→odom transform starts as identity — so the robot is at map-frame `(0, 0)`, regardless of its Gazebo world coordinates.
-
-This seeds AMCL's particle filter. Once AMCL receives the pose it publishes the `map→odom` TF, the costmap unblocks, and the lifecycle manager finishes — you'll see `[lifecycle_manager]: Managed nodes are active` in the Nav2 terminal. In Foxglove, the particle cloud collapses to a tight cluster around the robot; once tight, AMCL is confident and Nav2 is ready.
-
-> **Sanity check before you send a goal.** In Foxglove's 3D panel, the live lidar dots should sit on top of the map walls. If they're floating in free space or cutting across walls, AMCL has the robot in the wrong spot — the green ground truth arrow shows where Gazebo actually has it. Re-publish `/initialpose` near the green arrow and wait for the particle cloud to re-collapse. Sending a goal while mislocalized makes Nav2 plan against the wrong position and drive into a wall.
+If the lidar dots **don't** line up with the map walls, AMCL is mislocalized — the robot model is in a place the laser scan can't possibly come from. Redo step 3, this time clicking on the green arrow's position instead of the blue robot's: the green arrow is ground truth, so AMCL initialised at that point will line up correctly.
 
 ![Foxglove with Nav2 running — map, robot, lidar, and costmap all visible](assets/ch02_foxglove_nav2_running.png)
 *Foxglove with Nav2 active. The white interior + black walls is your saved map, the red dots are live lidar scans, the blue cylinder is the robot, and the light grey polygon is Nav2's global costmap (inflated obstacles where the planner won't route). The two right-side plots track `/cmd_vel` and `/odom` while the robot drives.*
 
-### 4. Send a goal from Foxglove
+### 3. Send a goal from Foxglove
 
-The layout defaults to **2D pose → `/goal_pose`**. To send a goal:
+The publish tool is currently set to `/initialpose` from step 2 — switch it to `/goal_pose`:
 
-1. In the 3D panel's right toolbar, click the **publish icon** (arrow/hand, bottom of toolbar) to activate it
-2. **Right-click** the publish icon → select **Publish 2D pose (/goal_pose)**
-3. Left-click a spot on the **map** and drag to set the direction the robot should face when it arrives — release to publish
+🟢 **Run** — in Foxglove:
 
-> Once the publish tool is active, any left-click in the 3D panel sends a goal immediately. Make sure AMCL is localized before clicking.
+1. **Right-click the publish icon** in the 3D panel's right toolbar.
+2. Click **Publish 2D pose (/goal_pose)**.
+3. **Click on the destination** in the 3D scene — somewhere on the map's white interior (free space). A magenta arrow appears with its **base anchored at your click point**; the tip follows your cursor.
+4. **Move the cursor in the direction you want the robot to face on arrival**, then **click again** to publish. The arrow disappears and the goal is sent.
 
-`bt_navigator` receives this on `/goal_pose` and starts navigating.
+The robot drives to the **base** of the arrow (the position you clicked first); the **tip** is the heading. If your click landed outside the map (in the dark/grey area beyond the white interior) Nav2 silently does nothing — the planner can't route into unknown space. Click well inside the white area.
 
-Nav2 will:
-1. Call the planner to find a path (shown as a line in Foxglove)
-2. Start the controller to drive along the path
-3. Stop when within the goal tolerance (~0.25 m)
+![Goal-publishing flow: pick /goal_pose, click + aim with the magenta arrow, robot navigates to the base of the arrow](assets/ch02_foxglove_goal_flow.png)
+*Goal flow: arm `/goal_pose` from the right-click menu → click in free space and aim with the magenta arrow (base = goal position, tip = heading) → click again to publish → robot drives to the base.*
 
-Watch in Foxglove:
-- The robot model moves
-- The lidar dots (red) stay consistent with the map walls — if they drift, AMCL is losing track
-- `/cmd_vel` plot shows velocity commands from the controller
-- `/odom` plot tracks position toward the goal
+> If the right-click menu has no `/goal_pose` option, your `ch02_layout_v3` is stale. Delete cached copies and re-import — see [Project A step 3](#3-connect-foxglove).
 
-🔴 **Work** — send the robot to three different locations in the arena. For the third, pick a location behind a wall that requires the robot to navigate around a corner. Observe how the global planner routes around the obstacle.
+What you should see in Foxglove:
+- A coloured **path line** appears from the robot to your goal — the planner's route.
+- The blue robot model starts moving along it.
+- The `/cmd_vel` plot shows non-zero linear/angular velocities.
+- The `/odom` plot tracks the robot's `(x, y)` toward the goal.
+- The robot stops when it's within ~0.25 m of the goal — that's the configured tolerance.
 
-### 5. Send a goal from Python
+🔴 **Work** — send the robot to three different goals. For the third, pick a destination behind a wall so the planner has to route around a corner.
 
-The `nav2_simple_commander` package wraps Nav2's action interface. `send_goal.py` is already in your workspace if you ran `reset_workspace.sh`; otherwise save the snippet below to `/workspace/ros2/ch02/send_goal.py`:
+### 4. Send a goal from Python
 
-```python
-from geometry_msgs.msg import PoseStamped
-from nav2_simple_commander.robot_navigator import BasicNavigator
-import rclpy
+`send_goal.py` is already in your workspace (via `reset_workspace.sh`). Run it:
 
-def main() -> None:
-    rclpy.init()
-    nav = BasicNavigator()
-
-    goal = PoseStamped()
-    goal.header.frame_id = 'map'  # coordinates are in the map frame
-    goal.pose.position.x = 1.0   # meters from map origin (see my_map.yaml)
-    goal.pose.position.y = 0.5
-    goal.pose.orientation.w = 1.0  # w=1 = no rotation (facing +x)
-
-    nav.goToPose(goal)
-    while not nav.isTaskComplete():
-        feedback = nav.getFeedback()
-        if feedback:
-            print(f'Distance remaining: {feedback.distance_remaining:.2f} m')
-
-    print('Result:', nav.getResult())
-    rclpy.shutdown()
-
-if __name__ == '__main__':
-    main()
-```
-
-🟢 **Run** — T5
+🟢 **Run** — T4
 
 ```bash
 python3 /workspace/ros2/ch02/send_goal.py
 ```
 
-Expected output:
+Expected:
 
 ```text
 Distance remaining: 1.32 m
 Distance remaining: 1.18 m
 ...
-Distance remaining: 0.05 m
 Result: TaskResult.SUCCEEDED
 ```
 
-🔴 **Work** — extend this to visit three waypoints in sequence using `nav.followWaypoints(poses)`. Build three `PoseStamped` objects and pass them as a list. The robot visits each in order without stopping at intermediate ones.
+It uses `nav2_simple_commander.BasicNavigator` to send a goal at `(1.0, 0.5)` and stream feedback. Source:
+
+```python+collapsed resources/ros2/ch02/send_goal.py
+```
+
+🔴 **Work** — extend it to visit three waypoints using `nav.followWaypoints(poses)`. Build three `PoseStamped` objects and pass them as a list — the robot visits each in order without stopping at intermediate ones.
 
 ---
 
@@ -600,9 +560,9 @@ Each project needs a different stack. Each command below goes in its own shell (
 | T1 | `ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py` |
 | T2 | `ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765` |
 | T3 | `ros2 launch nav2_bringup bringup_launch.py map:=/workspace/ros2/ch02/my_map.yaml use_sim_time:=true` |
-| T4 | Seed initial pose (see snippet below), then `python3 /workspace/ros2/ch02/send_goal.py` |
+| T4 | Seed initial pose, then `python3 /workspace/ros2/ch02/send_goal.py` |
 
-Initial pose for T4:
+Seed the initial pose either by clicking in Foxglove (Project C step 2) or by publishing it from a terminal — useful for scripting:
 
 ```bash
 ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
@@ -644,6 +604,3 @@ The default launch sets `frame_prefix='/'` in `robot_state_publisher`. This prod
 **Ground truth pose.**
 The patched launch also adds Gazebo's `PosePublisher` plugin to the robot model and bridges its output to `/ground_truth_pose` → `/ground_truth_pose_map`. This is what the green arrow in Foxglove shows. See [resources/ros2/launch/turtlebot3_world_headless.launch.py](../../../resources/ros2/launch/turtlebot3_world_headless.launch.py) for the full implementation.
 
-## Appendix — Why does the robot model look blocky in Foxglove?
-
-Foxglove's URDF layer ignores the `scale` attribute on STL mesh tags. TurtleBot3's STL meshes are in millimeter coordinates with a `scale="0.001"` tag — without that scale being applied, the robot renders 1000× too large. The alternative `.dae` meshes in the package are placeholder unit cubes. The pre-built layout works around this by using `displayMode: "collision"`, which renders the URDF's box and cylinder collision primitives instead — these are defined in meters and render at the correct scale. The result is a blocky but correctly-sized robot.
