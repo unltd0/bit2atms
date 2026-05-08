@@ -1,7 +1,7 @@
 # Chapter 2 — Simulation
 
-**Time:** Half day
-**Hardware:** Laptop only
+**Time:** Half day  
+**Hardware:** Laptop only  
 **Prerequisites:** Chapter 1
 
 ---
@@ -10,46 +10,74 @@
 
 Simulation lets you iterate fast — no cable, no batteries, no broken hardware. This chapter puts a robot in a 3D physics simulator, teaches you to see the world through its sensors, builds a map with SLAM, and sends the robot to a goal autonomously.
 
-The tools you'll use here — Gazebo, RViz, Nav2, SLAM Toolbox — are the same ones you use on real hardware in ch03. Learning them in sim first means ch03 is just swapping the data source from simulator to real motors and lidar.
+The tools you'll use here — Gazebo (headless), Foxglove, SLAM Toolbox, Nav2 — are the same tools you'll use on real hardware in ch03. Learning them in sim first means ch03 is just swapping the data source.
 
-### The vocabulary
+### How this chapter works
 
-**Differential-drive robot** — A robot with two independently-driven wheels (plus usually a passive caster for balance). Steering works by spinning the wheels at different speeds: same speed forward = drive straight, opposite directions = spin in place, slight difference = curve. It's the simplest practical drive system, used by Roombas, warehouse robots, and most research platforms. The `Twist` message you saw in ch01 (`linear.x` + `angular.z`) maps directly to "wheel speeds" through a kinematics formula the robot's driver handles internally.
+Gazebo runs **headless** (no GUI window) inside Docker. Foxglove — a free, cross-platform desktop app — connects via WebSocket and visualizes everything: robot model, lidar scans, map, Nav2 paths.
 
-**TurtleBot3** — A small, cheap, well-documented differential-drive robot designed for ROS education. It exists as physical hardware and as a fully-modeled Gazebo robot — same topics, same TF tree (Same physical structure - so same relative positioning of all components wrt to the robot body), same drivers. The "Burger" variant (used in this chapter) has a 360° lidar on top and two wheels. We use it because everything just works out of the box: ROS2 ships official packages for the robot model, the simulation worlds, and Nav2 configurations.
+```
+Docker container                           Your machine
+┌───────────────────────────────────────┐  ┌──────────────────────────────┐
+│  Gazebo headless (physics + sensors)  │  │  Foxglove Desktop (free app) │
+│  ros_gz bridge (Gazebo ↔ ROS2)        │  │                              │
+│  SLAM Toolbox / Nav2                  │  │  connects to                 │
+│  foxglove_bridge (port 8765)          │◄─┤  ws://localhost:8765         │
+└───────────────────────────────────────┘  └──────────────────────────────┘
+```
+
+**Why headless?** Running Gazebo's GUI requires OpenGL from the host GPU. Passing GPU access through Docker to a Linux container is unreliable across platforms (especially on ARM Macs). Headless Gazebo sidesteps this entirely: physics, sensors, and ROS2 bridges never needed graphics — only the GUI did. Foxglove replaces what the GUI would show, and then some.
+
+This setup works on Mac (Intel and Apple Silicon), Windows, and Linux — any machine that can run Docker.
+
+### Key concepts
+
+**Differential-drive robot** — Two independently-driven wheels (plus a passive caster). Steering is done by spinning wheels at different speeds: same speed = straight, opposite directions = spin in place, slight difference = curve. The `TwistStamped` message (`linear.x` + `angular.z`) maps to wheel speeds through a kinematics formula the driver handles internally.
+
+**TurtleBot3 Burger** — A small, well-documented differential-drive robot designed for ROS education. It exists as physical hardware and as a Gazebo model with the same topics, same TF tree, same drivers. The Burger variant has a 360° lidar on top and two driven wheels. We use it because everything works out of the box.
 
 ![TurtleBot3 Burger physical robot](https://emanual.robotis.com/assets/images/platform/turtlebot3/hardware_setup/turtlebot3_burger.png)
 
-**Gazebo** — Open-source 3D physics simulator made for robotics. It models gravity, friction, collisions, and sensors (lidar, cameras, IMU) so you can test robot code without hardware. Think Unity, but for robots, and pre-wired to ROS2 topics. Gazebo publishes simulated sensor data to the same topic names a real robot would (`/scan`, `/odom`, `/camera/image_raw`), so your code doesn't need to know whether it's running against sim or hardware.
+**Gazebo** — Open-source 3D physics simulator for robotics. It models gravity, friction, collisions, and sensors (lidar, IMU, cameras). In this chapter Gazebo runs headless — no GUI window, just physics and sensor data.
 
-![Gazebo simulator with TurtleBot3 spawned in the world](https://emanual.robotis.com/assets/images/platform/turtlebot3/simulation/turtlebot3_world_sim.png)
+**Foxglove** — A cross-platform robot visualization tool (free). It connects to ROS2 over WebSocket via `foxglove_bridge` and renders the robot model, lidar scans, map, TF tree, and Nav2 paths. Think of it as a modern RViz that runs anywhere.
 
-**RViz** — A 3D visualization tool for ROS2 data. It doesn't simulate anything — it just renders whatever's on your topics: lidar scan points, camera images, the map, the TF tree, planned paths.
+**SLAM** (Simultaneous Localization and Mapping) — The robot builds a map of its environment while figuring out where it is inside that map, at the same time, using only its sensors. No GPS, no pre-existing map.
 
-![Gazebo (left, ground truth) and RViz (right, robot's belief) running side-by-side with TurtleBot3](https://emanual.robotis.com/assets/images/platform/turtlebot3/simulation/turtlebot3_gazebo_rviz.png)
+**AMCL** (Adaptive Monte Carlo Localization) — Once you have a map, AMCL figures out where the robot is within it. It maintains hundreds of hypotheses ("maybe I'm here, maybe I'm there"), weights them against live lidar scans, and collapses to the most likely position. Unlike SLAM, it needs a map to already exist.
 
-**TF (Transform Library) / TF Tree** — ROS2’s system for tracking all coordinate frames on a robot in a hierarchical parent-child tree (no cycles, one root). For TurtleBot3, the tree looks like: `map → odom → base_footprint → base_link → base_scan / wheel_left_link / wheel_right_link`. TF lets you automatically convert data between frames (e.g., lidar distance readings in the lidar’s frame → robot’s base frame) so every node gets data in the frame it expects. Nav2 *requires* a valid TF tree to know where the robot is relative to the map, and where obstacles are relative to the robot.
+**Nav2** — The ROS2 navigation stack. Given a map (from SLAM) and a goal position, it runs AMCL to localize, plans a path, and drives the robot there autonomously.
 
-### Ground truth vs. belief — one of the most important ideas in this chapter
+**TF tree** — ROS2's system for tracking all coordinate frames on a robot. For TurtleBot3, the tree is: `map → odom → base_footprint → base_link → base_scan / wheel_left_link / wheel_right_link`. TF lets any node convert sensor data between frames automatically. Nav2 requires a valid, connected TF tree.
 
-> **Gazebo shows you what's actually happening in the world. RViz shows you what the robot *believes* is happening.**
+### Ground truth vs. belief
 
-These two views are almost never identical, and the gap between them is where every robotics bug lives.
+When you run this simulation, there are two entirely separate answers to the question "where is the robot?":
 
-**A concrete example.** You're running SLAM. In **Gazebo** you see the robot sitting in the middle of the arena, exactly where you placed it. In **RViz** you see the robot rendered slightly to the left of where the lidar scan dots line up with the map walls. Same robot, same instant in time — different positions on screen.
+**Ground truth** — Gazebo computed the robot's exact position by simulating the physics. It knows precisely where the robot is because it put it there and calculated every movement. This information stays inside the Gazebo process.
 
-What's going on:
-- **Gazebo's position** is ground truth — the simulator knows the robot's exact pose because it computed it.
-- **RViz's position** comes from `/odom` (odometry — wheel encoders integrated over time) corrected by SLAM's scan matching. After 30 seconds of driving, wheel slip and integration error mean the odometry estimate has drifted ~10 cm from reality. SLAM tries to correct this by aligning the latest lidar scan against the map — but if scan matching is imperfect, the corrected pose still lags ground truth.
+**The robot's belief** — The robot's software stack (SLAM, Nav2) has no access to Gazebo's internal state. Instead it estimates its position the same way a real robot would: from noisy sensors. Wheel encoders tell it how far each wheel turned (but wheels slip). The lidar gives it 360 distance readings (but with ±1cm Gaussian noise added by the simulator). SLAM matches those scans against a growing map to refine the estimate. The result is close to ground truth, but never exactly equal.
 
-You can only spot this gap because you have both views. On real hardware, there's no Gazebo — but there is the real robot's actual physical position AND RViz's estimated belief. If the lidar scan doesn't line up with map walls in RViz, the robot is actually somewhere else in the physical space, and Nav2 will plan into walls.
+**Why simulate noisy sensors instead of just giving the robot the exact pose?** Because the whole point of simulation is to test code that will later run on a real robot — and on a real robot, there's no Gazebo. If you fed the exact pose to SLAM and Nav2 in simulation, they'd work perfectly in sim but fail on hardware where no such oracle exists. So the simulator deliberately generates realistic sensor noise and the robot's stack has to deal with it, just like in the real world.
 
-**Rule of thumb:** Gazebo shows ground truth (the robot's actual position), RViz shows the robot's belief. If they disagree, the robot's belief is wrong — fix the localization (e.g., set 2D Pose Estimate) before sending Nav2 a goal.
+**A concrete example.** The robot drives forward 2 meters, then turns 90° left.
+
+- **Gazebo (ground truth):** The robot is at exactly `x=2.00m, y=0.00m, heading=90°`.
+- **Wheel encoders alone (`/odom`):** The left wheel slipped slightly on the floor — the encoder under-reported rotation. It reads `x=1.87m, y=0.03m, heading=88°`. This gets published to `/odom`.
+- **SLAM's estimate (what Foxglove shows):** SLAM takes the `/odom` estimate, grabs a fresh lidar scan, matches it against the map, and corrects: `x=1.97m, y=0.01m, heading=89°`. Better, but still not exactly Gazebo's `2.00m`.
+
+All three are different. Odometry alone drifts. SLAM corrects it but imperfect scan matching means the estimate still lags ground truth. The gap is small during normal driving; it grows on fast turns and in featureless corridors where scan matching is hard.
+
+**What does Foxglove show?** Foxglove only subscribes to ROS2 topics. It sees the estimated pose (from SLAM or odometry), not Gazebo's internal state. Gazebo's exact pose is never published to ROS2 by default.
+
+**But we can publish it.** The headless launch file adds Gazebo's `PosePublisher` plugin to the robot and bridges it to the ROS2 topic `/ground_truth_pose_map`. In Foxglove's 3D panel you'll see a **green arrow** — that's where Gazebo says the robot actually is. The **blue robot model** is where SLAM thinks it is. Drive the robot and watch the two diverge slightly, then reconverge as SLAM corrects odometry drift.
+
+**Rule of thumb:** If the blue robot model (SLAM estimate) and the lidar scan dots don't align with the map walls, localization is wrong. The green ground truth arrow tells you where the robot actually is. Fix localization before sending a Nav2 goal.
 
 **Skip if you can answer:**
 1. What is a TF tree and why does Nav2 need it?
 2. What does SLAM produce, and what does Nav2 do with that output?
-3. A robot has a `/cmd_vel` topic. What message type does it expect and what fields matter?
+3. What's the difference between SLAM and AMCL?
 
 ---
 
@@ -57,321 +85,305 @@ You can only spot this gap because you have both views. On real hardware, there'
 
 | # | Project | What you build |
 |---|---------|----------------|
-| A | Gazebo + TurtleBot3 | Spawn a robot, drive it, inspect TF in RViz |
-| B | SLAM Toolbox | Drive around, watch a map build in real time |
+| A | Stack setup + robot interaction | Spawn robot, launch visualization, drive and observe |
+| B | SLAM Toolbox | Drive around, watch a map build in real time, save it |
 | C | Nav2 Autonomous Navigation | Send a goal, watch the robot plan and execute |
 
 ---
 
-## Project A — Gazebo & TurtleBot3
+## Setup
 
-**Problem:** Get a simulated robot running and understand its sensor/TF structure.
+**Prerequisites:** The `bit2atms-ros2` Docker container must be running with port 8765 published (`-p 8765:8765`). If you haven't built and started it yet, follow the **Docker image** resource in the sidebar — it covers build, run, and verify for all chapters. Also install [Foxglove](https://foxglove.dev/download) (free, Mac/Windows/Linux) if you haven't already.
 
-**Approach:** Use the official TurtleBot3 Gazebo package — one command spawns the robot in a pre-built world.
 
-### Setup
+### Terminal plan for this chapter
 
-If you followed ch01, you already have the `bit2atms-ros2` Docker image — it ships with everything ch02 needs (TurtleBot3, Gazebo, Nav2, SLAM Toolbox, RViz, tf2 tools) pre-installed. ch01's container start command was headless; for ch02 you need to add display forwarding so Gazebo and RViz windows render on your Mac screen.
+You'll need up to 5 shells inside the container. Open each with `docker exec -it ros2 bash` from a new terminal on your machine.
 
-#### Step 1 — Set up X11 display forwarding (Mac only, one-time per host reboot)
+| Terminal | Use |
+|---|---|
+| T1 | Gazebo headless (long-running) |
+| T2 | foxglove_bridge (long-running) |
+| T3 | SLAM Toolbox / Nav2 |
+| T4 | Auto-exploration / teleop / inspection |
+| T5 | Map save / Python scripts |
 
-*Option A — XQuartz (native Mac window):*
-1. Install [XQuartz](https://www.xquartz.org) if not already installed.
-2. Open XQuartz.app (must be running for `xhost` to work).
-3. Enable network connections: XQuartz menu → Settings (or Preferences) → Security tab → Check "Allow connections from network clients".
-4. Quit XQuartz fully (Cmd+Q) and reopen it — the setting only takes effect after a full restart.
-5. From a Mac terminal (not inside the container):
-   ```bash
-   export DISPLAY=:0
-   xhost +localhost
-   # Expected output: localhost being added to access control list
-   ```
+---
 
-*Option B — Linux VM or remote Linux machine (more reliable):* SSH with X forwarding (`ssh -X user@host`), or just use a Linux machine natively. Gazebo on Docker-Mac is fragile; if Option A fails, Linux is the better path for ch02 and ch03.
+## Project A — Stack Setup & Robot Interaction
 
-#### Step 2 — Start the container with display forwarding
+**Goal:** Get the full stack running, connect Foxglove, drive the robot, and observe how sensor data responds to motion.
 
-🟢 **Run** — from the Mac terminal, in the repo root
+### 1. Launch the headless simulation
+
+🟢 **Run** — T1, leave running
 
 ```bash
-docker run -it --rm \
-  --platform linux/amd64 \
-  -e DISPLAY=host.docker.internal:0 \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v $(pwd)/workspace/ros2:/workspace/ros2 \
-  --name ros2 \
-  bit2atms-ros2
+ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py
 ```
 
-You're now inside the container. Everything below runs inside it.
+This starts:
+- Gazebo server (headless — no GUI window)
+- TurtleBot3 Burger spawned in the default world
+- `robot_state_publisher` publishing the TF tree
 
-If the image isn't found (`bit2atms-ros2` doesn't exist), build it from the repo root first:
+Within a few seconds, sensor topics appear: `/scan` (~10 Hz), `/odom` (47 Hz), `/imu` (185 Hz), `/tf` (65 Hz).
+
+You'll see several warnings in the launch output — all are expected and harmless:
+
+- `Server directory does not exist [/root/.gz/fuel/...]` — Gazebo looks for a local model cache on first run. It doesn't exist yet; Gazebo falls back to downloading models as needed. Ignore it.
+- `XML Element[gz_frame_id] ... not defined in SDF` — our patched SDF uses a `<gz_frame_id>` tag that's valid in newer Gazebo but not yet in the SDF spec schema. Gazebo copies it through anyway and the sensor works correctly.
+- `Unable to open display: . Trying to run in headless mode.` — this is the headless mode **succeeding**, not failing. Gazebo found no display (expected inside Docker) and switched to headless rendering. Physics and sensors run normally.
+
+🟡 **Know** — T4, verify topics
 
 ```bash
-docker build --platform linux/amd64 -t bit2atms-ros2 -f resources/ros2/docker/Dockerfile .
-```
-
-#### Step 3 — Verify the packages are present (inside the container)
-
-🟢 **Run**
-
-```bash
-ros2 pkg list | grep -E "turtlebot3_gazebo|nav2_bringup|slam_toolbox"
+ros2 topic list | grep -E '/scan|/odom|/cmd_vel'
+ros2 topic hz /scan     # expect ~10 Hz
 ```
 
 Expected output:
 
-```text
-nav2_bringup
-slam_toolbox
-turtlebot3_gazebo
+```
+/cmd_vel
+/odom
+/scan
 ```
 
-If any are missing, the image is stale. Exit (`exit`), rebuild it from the repo root with `docker build ... -f resources/ros2/docker/Dockerfile .`, and re-run `docker run`.
+```
+average rate: 9.625
+    min: 0.000s max: 0.209s std dev: 0.09674s window: 33
+average rate: 9.416
+    ...
+```
 
-The workspace folder `/workspace/ros2/ch02/` is already scaffolded by `scripts/reset_workspace.sh` (run from the repo root) — if for some reason it doesn't exist, `mkdir -p /workspace/ros2/ch02` inside the container creates it on the host via the bind mount.
+If you see `WARNING: topic [/scan] does not appear to be published yet` on the first call, Gazebo is still initializing — wait a couple of seconds and run it again.
 
-#### Linux native (alternative — skip if you used Docker above)
+### 2. Launch foxglove_bridge
 
-If you're on Linux and didn't go through the Docker path, install the extra packages directly:
+🟢 **Run** — T2, leave running
 
 ```bash
-sudo apt update
-sudo apt install -y \
-  ros-jazzy-turtlebot3 ros-jazzy-turtlebot3-gazebo \
-  ros-jazzy-nav2-bringup ros-jazzy-slam-toolbox \
-  ros-jazzy-rviz2 ros-jazzy-tf2-tools
-echo "export TURTLEBOT3_MODEL=burger" >> ~/.bashrc
-source ~/.bashrc
-mkdir -p ~/workspace/ros2/ch02
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
 ```
 
-### Terminal plan for this project
+This exposes all ROS2 topics over WebSocket on port 8765. Foxglove on your machine connects here.
 
-You'll need up to four shells inside the container. Open extra ones with `docker exec -it ros2 bash` from a new Mac terminal.
+### 3. Connect Foxglove
 
-| Terminal | Use |
-|---|---|
-| T1 | Gazebo (long-running) |
-| T2 | Teleop (long-running) |
-| T3 | Inspection commands (`tf2_echo`, `topic list/hz/echo`) |
-| T4 | RViz (long-running) |
+1. Open Foxglove on your machine
+2. Click **Open connection** → **Foxglove WebSocket** → enter `ws://localhost:8765`
+3. Click **Open**
 
-### Launch the simulation
+You'll see topics streaming in the left panel but an empty or bare 3D view — that's expected until you load the layout.
 
-🟢 **Run** — T1, leave running for the rest of Project A
+**Load the pre-built layout:** In Foxglove, go to the layout menu in the top bar → **Import from file…** → select `resources/ros2/foxglove/ch02_layout.json` from your local repo clone.
 
-```bash
-ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
-```
+> **Verify the import worked:** right-click the publish icon (arrow/hand, bottom of the 3D panel's right toolbar) — the menu should show **Publish 2D pose (/goal_pose)** as one of the options. If both pose options point to `/initialpose`, you're looking at an older cached copy of `ch02_layout` (Foxglove keeps every imported version under the same name). Open the layout menu, expand **Personal**, delete every `ch02_layout` entry, then re-import the file. Foxglove will load the freshly-imported one.
+>
+> ![Right-click publish menu showing the correct /goal_pose option](assets/ch02_foxglove_publish_menu.png)
+> *Right-click the publish icon to see this menu. The middle option must read `Publish 2D pose (/goal_pose)` — that's how clicks in the 3D scene reach Nav2.*
 
-Gazebo opens with a TurtleBot3 Burger in a small arena. The robot is already publishing sensor data — lidar scans on `/scan`, odometry on `/odom`, camera on `/camera/image_raw`.
+After importing you should see the three-panel layout. At this point — before SLAM and before driving — this is what to expect:
 
-![TurtleBot3 in the Gazebo simulation world](https://emanual.robotis.com/assets/images/platform/turtlebot3/simulation/turtlebot3_world_sim.png)
+![Foxglove after connecting with ch02_layout loaded — lidar dots visible, no map yet](assets/ch02_foxglove_connected.png)
+*Foxglove right after connecting. The red dots are the lidar scan — each dot is where a laser beam hit a wall or obstacle. The shape traces the TurtleBot3 world walls around the robot. The blue cylinder is the robot. No map or ground grid yet — those appear once SLAM is running. The ⚠ on the plots is normal; cmd_vel and odom have no data until you start driving.*
 
-🟡 **Know** — T3, verify topics are flowing
+### 4. Drive the robot
 
-```bash
-ros2 topic list | grep -E '/scan|/odom|/cmd_vel'
-ros2 topic hz /scan       # should be ~5 Hz on TurtleBot3
-```
-
-**What this launch file does:** It starts the Gazebo simulator with a TurtleBot3 Burger model in a small arena world. Specifically, it launches:
-- Gazebo simulator with the `turtlebot3_world` (a small arena with walls)
-- TurtleBot3 model (geometry, joints, mass)
-- Sensor plugins that publish `/scan` (lidar), `/odom` (odometry), `/camera/image_raw`
-- `robot_state_publisher` for the TF tree (`base_link`, `base_scan`, wheels)
-
-One command gives you a robot running in a simulated world.
-
-### Drive it
-
-🟢 **Run** — T2, leave teleop running
+🟢 **Run** — T3
 
 ```bash
 ros2 run turtlebot3_teleop teleop_keyboard
 ```
 
-W/A/S/D drives, space stops. **The terminal running teleop must have keyboard focus** — click on the T2 window before pressing keys. Behind the scenes, teleop publishes `geometry_msgs/msg/Twist` to `/cmd_vel`:
+`W`/`X` increases/decreases forward speed, `A`/`D` turns, `S` stops. **The terminal running teleop must have keyboard focus** — click the T3 window before pressing keys.
 
-```text
-linear:
-  x: 0.22  # forward speed in m/s
-  y: 0.0
-  z: 0.0
-angular:
-  x: 0.0
-  y: 0.0
-  z: 0.5   # rotation rate in rad/s (yaw)
-```
+While driving, observe in Foxglove:
 
-Only `linear.x` and `angular.z` matter for a differential-drive robot — the other fields are zero.
+- **3D panel**: the robot model moves, and the red lidar dots follow the robot's new position relative to walls
+- **cmd_vel plot**: linear.x spikes when you press W, angular.z spikes on A/D
+- **odom plot**: x and y track cumulative position — drive forward 1 meter and watch x increase by ~1.0
 
-🟡 **Know** — T3, confirm `/cmd_vel` while you drive in T2
+🔴 **Work** — drive the robot in a full circle and come back to roughly the starting position. Then run:
 
 ```bash
-ros2 topic echo /cmd_vel
+ros2 topic echo /odom --once | grep -A5 "position"
 ```
 
-Press Ctrl+C in T3 when done — leave Gazebo (T1) and teleop (T2) running.
+The x/y position won't be exactly 0/0 even if you eyeball it correctly. That's odometry drift — wheel slip accumulates over time. The map in Project B exists partly to correct this.
 
-### Inspect the TF tree
+### 5. Inspect the TF tree
 
-You already know what TF is from the intro vocabulary. Recall the TurtleBot3 chain: `map → odom → base_footprint → base_link → base_scan / wheels`. `map` only appears once SLAM runs; before that the chain starts at `odom`.
+🟡 **Know** — T4
 
-🟡 **Know** — T3
+The TF tree is a live chain of coordinate frames on the robot. Every sensor and link has a frame; TF tracks how they relate to each other so any node can convert data between frames automatically.
+
+Print the current frames:
 
 ```bash
-# Generate frames.pdf showing the full tree (saved in /workspace/ros2/ch02 so it persists)
-cd /workspace/ros2/ch02
-ros2 run tf2_tools view_frames
-
-# Print a single transform live (source → target)
-ros2 run tf2_ros tf2_echo odom base_footprint
+ros2 topic echo /tf --once
 ```
 
-🟢 **Run** — T4, open RViz to visualize TF + sensor data interactively
+Example output:
 
-```bash
-ros2 run rviz2 rviz2
+```
+transforms:
+- header:
+    frame_id: odom
+  child_frame_id: base_footprint
+  transform:
+    translation:
+      x: 1.010
+      y: 0.305
+      z: 0.0
+    rotation:
+      x: 0.0
+      y: 0.0
+      z: 0.923
+      w: 0.384
 ```
 
-In RViz: set "Fixed Frame" to `odom`, then Add → TF. You'll see the chain `odom → base_footprint → base_link → base_scan → wheel_left/right`. After Project B (SLAM), `map` will appear as the new root.
+This says: `base_footprint` is 1.01m ahead and 0.31m to the left of `odom`, rotated ~134° — that's the robot's current estimated position. The chain continues: `odom → base_footprint → base_link → base_scan` and the wheel frames.
 
-![TurtleBot3 with TF visualization in RViz](https://emanual.robotis.com/assets/images/platform/turtlebot3/simulation/turtlebot3_gazebo_rviz.png)
+Notice there's no `map` frame yet — SLAM adds it in Project B. Without `map`, Nav2 can't run.
 
-**Before moving to Project B:** close this RViz window — Project B starts a fresh RViz with different displays. Leave Gazebo (T1) and teleop (T2) running.
+In Foxglove's 3D panel you can see the TF frames as coloured axes (red/green/blue arrows) on the robot. Drive the robot and watch the wheel frames rotate.
+
+![Foxglove 3D panel zoomed in on robot: blue TurtleBot3 collision model, red lidar scan dots, TF axes, SLAM map walls](assets/ch02_robot_closeup.png)
+*Zoomed in on the robot. The coloured axes are TF coordinate frames. Red dots: current lidar scan hits.*
 
 ---
 
 ## Project B — SLAM Toolbox
 
-**Problem:** The robot needs a map to navigate. SLAM (Simultaneous Localization and Mapping) builds one while the robot drives.
+**Goal:** Build a map of the environment by driving around, then save it for Nav2.
 
-**Approach:** SLAM Toolbox listens to `/scan` (lidar) and `/odom`, stitches scans together into a 2D occupancy grid, and publishes the growing map to `/map`.
+The simulation world is a hexagonal arena with 6 green box obstacles around the perimeter and small cylinder pillars inside:
 
-```
-/scan + /odom → SLAM Toolbox → /map (occupancy grid, updates live)
-```
+![TurtleBot3 World — hexagonal arena with green box obstacles and cylinder pillars](https://emanual.robotis.com/assets/images/platform/turtlebot3/simulation/turtlebot3_world_sim.png)
 
-### Terminal plan for this project
+**What is SLAM?** Simultaneous Localization and Mapping. The robot doesn't know the map — it builds one from scratch while figuring out where it is at the same time. SLAM Toolbox uses lidar scans + odometry: it matches each new scan against a sliding window of previous scans to detect overlap, then stitches them into a 2D occupancy grid.
 
-Carrying over from Project A: T1 still has Gazebo, T2 still has teleop, and you closed Project A's RViz at the end of that section. T3 was used for one-off inspection — reuse it for SLAM. T4 will host a fresh RViz with SLAM-specific displays.
+It takes `/scan` (lidar) and `/odom` (wheel odometry) as input and produces two outputs: `/map` (a 2D occupancy grid that updates live) and the `map → odom` TF transform (SLAM's running correction for accumulated odometry drift).
 
-| Terminal | Use |
-|---|---|
-| T1 | Gazebo (still running from Project A) |
-| T2 | Teleop (still running from Project A) |
-| T3 | SLAM Toolbox |
-| T4 | RViz (fresh, with SLAM-specific displays) |
+### Terminal plan
 
-If Gazebo isn't still running in T1, start it again: `ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py`. Restarting Gazebo resets the world to its default state — fine for now since we haven't saved a map yet.
+T1 (Gazebo), T2 (foxglove_bridge) running. T3 for SLAM. T4 for auto-exploration. T5 for map save.
 
-### Launch SLAM
+> **Start SLAM before the robot moves.** If the robot drove around in Project A, restart Gazebo first (Ctrl+C T1, relaunch), then immediately launch SLAM. The map origin is set at the robot's position when SLAM first starts — if it has already moved, the saved map won't align with the spawn point and Nav2 localization breaks.
+
+### 1. Launch SLAM Toolbox
 
 🟢 **Run** — T3
 
 ```bash
-ros2 launch slam_toolbox online_async_launch.py
+ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true
 ```
 
-**What this launch file does:** It starts the SLAM Toolbox node that:
-- Subscribes to `/scan` (lidar) and `/odom` (odometry)
-- Publishes the growing `/map` occupancy grid as you drive
-- Publishes the `map → odom` TF transform (this adds `map` as the root of your TF tree)
+`use_sim_time:=true` tells SLAM to use Gazebo's clock rather than wall time. Within ~8 seconds, `/map` appears and the 3D panel in Foxglove shows the occupancy grid. The ground grid and robot model also appear now — SLAM publishes the `map` TF frame that Foxglove needs to anchor the scene.
 
-🟢 **Run** — T4, open a fresh RViz to watch the map build
+You'll also see a **green arrow** appear — that's `/ground_truth_pose_map`, Gazebo's exact robot position. As you drive and odometry drift accumulates, the green arrow (ground truth) and the blue robot model (SLAM estimate) will separate slightly, then reconverge as SLAM corrects itself.
+
+![Foxglove right after SLAM starts: map beginning to build, green ground truth arrow offset from blue robot model](assets/ch02_slam_started.png)
+*SLAM just started. The map is beginning to fill in (white = free space, black = obstacles, grey = unknown). The **green arrow** is Gazebo's ground truth — notice it's slightly offset from the blue robot model (SLAM's estimate). That gap is normal: odometry drift accumulated before SLAM started. It will shrink as SLAM corrects itself while you drive.*
+
+### 2. Build the map with auto-exploration
+
+🟢 **Run** — T4 (new shell: `docker exec -it ros2 bash`)
 
 ```bash
-ros2 run rviz2 rviz2
+python3 /workspace/ros2/ch02/obstacle_detection.py
 ```
 
-In RViz:
-- Set "Fixed Frame" to `map`
-- Add → Map → topic `/map`
-- Add → LaserScan → topic `/scan` (helpful to see what SLAM is seeing)
-- Add → TF (optional — confirms `map → odom → base_footprint` chain)
+> **No file there?** From your repo root on the host, run `bash scripts/reset_workspace.sh --add-only` once. That copies `resources/ros2/ch02/obstacle_detection.py` (the source-of-truth) into `workspace/ros2/ch02/`, which is bind-mounted into the container. The same script also seeds `send_goal.py`, `nav2_params.yaml`, and the launch file.
 
-### Drive and map
+This drives the robot automatically at 0.15 m/s — slow enough for clean scan matching. When it detects a wall closer than 0.4m, it stops, picks a random direction, and turns for 1.5 seconds before driving forward again. Let it run for 3–4 minutes and watch the map fill in Foxglove.
 
-🔴 **Work** — drive the robot around the full arena (using T2's teleop) until the map covers it completely
+**Reading the map in Foxglove:**
+- **White** — free space (lidar beams passed through, confirmed open)
+- **Black** — obstacle (lidar hit a wall or object)
+- **Grey** — unknown (lidar hasn't reached there yet)
 
-Drive slowly. Watch the map fill in as the lidar sees new walls. The colors mean:
-- **Grey** — unknown (lidar hasn't seen it)
-- **White** — free space (lidar passed through)
-- **Black** — obstacle (lidar hit a wall)
+The goal is to get the grey zone as small as possible. The auto-exploration script will bounce around the arena and fill it in — you'll see the white area grow and grey shrink over time.
 
-Spinning fast makes scan matching fail and the map drifts. If that happens, restart SLAM (Ctrl+C in T3, re-launch).
+![SLAM map mid-exploration: partial white coverage, large grey unknown zone remaining](assets/ch02_slam_inprogress.png)
+*Mid-exploration. The right side is mostly mapped (white free space, black walls). The left and centre are still grey — the robot hasn't reached there yet. Keep the script running.*
 
-![SLAM map being built in RViz as robot explores](https://emanual.robotis.com/assets/images/platform/turtlebot3/slam/slam_running_for_mapping.png)
+**Signs the map has gone bad:** stray black dots scattered across open space, walls that appear doubled or jagged. If this happens, just restart SLAM — no need to restart Gazebo:
 
-### Save the map
+```bash
+# In T3: Ctrl+C the SLAM launch, then:
+ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true
+```
 
-Update the terminal plan: T1–T4 are all busy, so open T5 with `docker exec -it ros2 bash` from a new Mac terminal.
+This wipes the map and starts fresh. Gazebo, the robot, and foxglove_bridge keep running. The robot's position resets to zero in the new map — that's fine, just let the exploration script keep going.
 
-| Terminal | Use |
-|---|---|
-| T1 | Gazebo |
-| T2 | Teleop |
-| T3 | SLAM Toolbox |
-| T4 | RViz |
-| T5 | One-shot commands (map save, etc.) |
+🔴 **Work** — let it run until the grey unknown zone is mostly gone, then proceed to save.
 
-Save into the workspace folder (mounted from your host) so the file persists outside the container.
+### 3. Save the map
+
+Open T5 with `docker exec -it ros2 bash`.
+
+When the grey zone is mostly gone — interior of the arena is white, obstacles are solid black — stop the exploration script and save:
+
+![SLAM map complete enough to save: interior mapped, obstacles visible, some grey at boundaries](assets/ch02_map_complete.png)
+*Good enough to save. The interior is mapped, all obstacles are visible. Some grey remains at the outer boundary — that's behind the walls and unreachable. Nav2 only needs the interior.*
 
 🟢 **Run** — T5
 
 ```bash
-ros2 run nav2_map_server map_saver_cli -f /workspace/ros2/ch02/my_map
-# Creates my_map.pgm (image) and my_map.yaml (metadata)
+ros2 run nav2_map_server map_saver_cli -f /workspace/ros2/ch02/my_map --ros-args -p use_sim_time:=true
 ```
 
-The `.pgm` is the occupancy grid as a greyscale image — open it in any image viewer. The `.yaml` records the resolution (meters per pixel) and the origin (where pixel (0,0) is in map coordinates) — Nav2 reads it to translate between pixel space and metric space.
+This creates two files:
+- `my_map.pgm` — the occupancy grid as a greyscale image (open it in any image viewer)
+- `my_map.yaml` — metadata Nav2 reads to convert between pixel coordinates and metric coordinates
 
-```text
+```yaml
 # my_map.yaml
 image: my_map.pgm
 mode: trinary
-resolution: 0.05         # 5 cm per pixel
+resolution: 0.05       # 5 cm per pixel
 origin: [-1.92, -0.55, 0]
 negate: 0
 occupied_thresh: 0.65
 free_thresh: 0.25
 ```
 
+The files are saved to `workspace/ros2/ch02/` which is bind-mounted to your host, so they persist after the container exits.
+
+**Before moving to Project C:** restart Gazebo so the robot is back at the spawn position. Stop SLAM (T3), stop obstacle_detection (T4), then Ctrl+C Gazebo (T1) and relaunch it:
+
+```bash
+ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py
+```
+
+T2 (foxglove_bridge) can stay running.
+
 ---
 
 ## Project C — Nav2 Autonomous Navigation
 
-**Problem:** Drive the robot to a goal without manual control.
+**Goal:** Load the map from Project B, localize the robot, and send it to goals autonomously.
 
-**Approach:** Nav2 is the full autonomous navigation stack — it takes the map from Project B, localizes the robot within it (AMCL), plans a path, and executes it. You send a goal once; Nav2 handles the rest.
+**How Nav2 works:** Nav2 is a full navigation stack. It loads your saved map, runs AMCL to estimate where the robot is within that map, plans a collision-free path to the goal, and sends velocity commands to drive there.
 
-```
-/map + /scan + /odom → AMCL (localization) → Nav2 planner → /cmd_vel
-```
+Saved map + `/scan` + `/odom` → AMCL (localization) → planner → controller → `/cmd_vel`
 
-### Reset the terminals
+AMCL (Adaptive Monte Carlo Localization) uses a particle filter: it maintains hundreds of hypotheses about where the robot might be, weights them against lidar scan observations, and collapses to a tight cluster around the most likely pose. A spread-out particle cloud means AMCL is uncertain — Nav2 plans using that uncertain estimate and may drive into walls.
 
-Project B left you with Gazebo (T1), teleop (T2), SLAM (T3), RViz (T4), and a one-shot shell (T5). For Project C you need to:
+**SLAM vs. AMCL:** SLAM builds the map while exploring without prior knowledge. AMCL figures out where the robot is within an already-built map. They solve different problems and can't both run at the same time — both publish the `map → odom` TF transform and they'll fight.
 
-- **T3 — Ctrl+C to stop SLAM Toolbox.** Nav2 ships its own AMCL localization. Leaving SLAM running causes both SLAM and AMCL to fight over the `map → odom` transform.
-- **T4 — close the RViz window** (or Ctrl+C). Nav2 ships a Nav2-configured RViz with the right displays already added.
-- Leave T1 (Gazebo) and T2 (teleop) running.
+### 1. Reset before starting
 
-### Terminal plan for this project
+Before launching Nav2, restart Gazebo so the robot is back at the spawn position — see **Appendix — How to reset the stack**. T2 (foxglove_bridge) can stay running.
 
-| Terminal | Use |
-|---|---|
-| T1 | Gazebo (still running) |
-| T2 | Teleop (still running, optional — you can also drive via Nav2 goals) |
-| T3 | Nav2 stack |
-| T4 | Nav2-configured RViz |
-| T5 | `send_goal.py` (later) |
+Once Gazebo is back up, T3 and T4 should be stopped (SLAM and obstacle_detection off).
 
-### Launch Nav2
+> **Don't have a saved map?** If you skipped Project B or your saved map is unusable, copy the reference map from `resources/ros2/ch02/my_map_reference.{yaml,pgm}` into `workspace/ros2/ch02/` and rename to `my_map.{yaml,pgm}` (or just point Nav2 at the reference yaml directly). The reference was generated with the same world and exploration script, so it works for Project C without re-running SLAM.
 
-On Jazzy, the canonical launcher is `nav2_bringup` rather than the old `turtlebot3_navigation2`:
+### 2. Launch Nav2
 
 🟢 **Run** — T3
 
@@ -381,88 +393,97 @@ ros2 launch nav2_bringup bringup_launch.py \
   use_sim_time:=true
 ```
 
-`use_sim_time:=true` is required when running against Gazebo — Nav2 trusts the simulator's clock rather than wall time.
+`use_sim_time:=true` is required — Nav2 must use Gazebo's clock, not wall time.
 
-Expected output (last few lines once Nav2 is fully up):
+Nav2 starts 8+ nodes: `amcl`, `map_server`, `planner_server`, `controller_server`, `bt_navigator`, `behavior_server`, `smoother_server`, `waypoint_follower`, and `lifecycle_manager`. The lifecycle manager brings them up in order.
+
+Startup takes ~5 seconds, then you'll see repeated warnings:
+
+```
+[amcl]: AMCL cannot publish a pose or update the transform. Please set the initial pose...
+[global_costmap]: Timed out waiting for transform from base_link to map...
+```
+
+**This is expected.** AMCL can't publish the `map` TF until it knows where the robot is. The costmap is waiting for that TF. Move on to step 3 and set the initial pose — once AMCL gets it, the `map` TF appears, the costmap unblocks, and Nav2 finishes activating. You'll see:
 
 ```text
-[lifecycle_manager-12] [INFO] Managed nodes are active
-[lifecycle_manager-12] [INFO] Creating bond timer...
-[bt_navigator-9] [INFO] Begin navigating from current location
+[lifecycle_manager]: Managed nodes are active
 ```
 
-If you see `Managed nodes are active`, AMCL/planner/controller are all alive. Total startup takes ~10 seconds.
-
-**What this launch file does:** It starts the full Nav2 stack:
-- `amcl` — particle filter localization on the loaded map
-- `map_server` — loads the saved `.yaml` map, publishes `/map`
-- `planner_server` — global path planner (NavFn / A*)
-- `controller_server` — local path follower (DWB)
-- `behavior_tree_navigator` — orchestrates plan → follow → recover
-- `behavior_server` — recovery behaviors (spin, back-up, wait)
-- `waypoint_follower` — handles `followWaypoints`
-- `lifecycle_manager` — brings all the above up in order
-
-🟢 **Run** — T4, open RViz with the Nav2 view
+🟡 **Know** — verify all nodes are alive
 
 ```bash
-ros2 launch nav2_bringup rviz_launch.py
+ros2 node list | grep -E "amcl|planner|controller|bt_navigator"
 ```
 
-**What this launch file does:** Opens RViz preconfigured with the Nav2 layout — map, robot model, particle cloud, planned path, costmap, and goal/initial-pose tool buttons.
+### 3. Set the initial pose
 
-RViz opens with the map loaded. The robot appears as a green arrow — but its pose may be wrong initially.
+AMCL starts with no idea where the robot is in the map. Seed it from the terminal:
 
-**Set the initial pose:** Look at where the robot is in **Gazebo** (ground truth), then in RViz click "2D Pose Estimate", click that same spot on the map, and drag in the direction the robot is facing. AMCL uses this as a starting point — once the robot moves a little, AMCL refines it from lidar observations. If the Gazebo and RViz robot positions don't match after this, AMCL is misaligned and Nav2 will plan into walls.
+🟢 **Run** — T4
 
-![RViz showing the 2D Pose Estimate tool — click and drag to set the robot's starting pose](https://docs.nav2.org/_images/rviz-set-initial-pose.png)
+```bash
+ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+  '{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.07]}}'
+```
 
-### Send a goal from RViz
+> **Why `(0, 0)` and not `(-2.0, -0.5)`?** The robot spawns at `(-2.0, -0.5)` in Gazebo's world frame, but AMCL works in the *map* frame. When the robot spawns, its odometry resets to `(0, 0)` and the map→odom transform starts as identity — so the robot is at map-frame `(0, 0)`, regardless of its Gazebo world coordinates.
 
-Click "Nav2 Goal" in the RViz toolbar, click a destination on the map, drag to set the heading. The robot plans a path (shown as a green line) and drives there.
+This seeds AMCL's particle filter. Once AMCL receives the pose it publishes the `map→odom` TF, the costmap unblocks, and the lifecycle manager finishes — you'll see `[lifecycle_manager]: Managed nodes are active` in the Nav2 terminal. In Foxglove, the particle cloud collapses to a tight cluster around the robot; once tight, AMCL is confident and Nav2 is ready.
 
-![Sending a navigation goal — robot plans a path and follows it](https://docs.nav2.org/_images/navigate-to-pose.png)
+![Foxglove with Nav2 running — map, robot, lidar, and costmap all visible](assets/ch02_foxglove_nav2_running.png)
+*Foxglove with Nav2 active. The white interior + black walls is your saved map, the red dots are live lidar scans, the blue cylinder is the robot, and the light grey polygon is Nav2's global costmap (inflated obstacles where the planner won't route). The two right-side plots track `/cmd_vel` and `/odom` while the robot drives.*
 
-If the robot drives into a wall, AMCL likely lost track — see Self-Check Q3.
+### 4. Send a goal from Foxglove
 
-### Send a goal from Python
+The layout defaults to **2D pose → `/goal_pose`**. To send a goal:
 
-The `nav2_simple_commander` package wraps Nav2's action interface so you don't have to deal with action clients directly.
+1. In the 3D panel's right toolbar, click the **publish icon** (arrow/hand, bottom of toolbar) to activate it
+2. **Right-click** the publish icon → select **Publish 2D pose (/goal_pose)**
+3. Left-click a spot on the **map** and drag to set the direction the robot should face when it arrives — release to publish
 
-🔴 **Work** — extend this to use `nav.followWaypoints([p1, p2, p3])` to visit three waypoints in sequence
+> Once the publish tool is active, any left-click in the 3D panel sends a goal immediately. Make sure AMCL is localized before clicking.
 
-Save this to `/workspace/ros2/ch02/send_goal.py`:
+`bt_navigator` receives this on `/goal_pose` and starts navigating.
+
+Nav2 will:
+1. Call the planner to find a path (shown as a line in Foxglove)
+2. Start the controller to drive along the path
+3. Stop when within the goal tolerance (~0.25 m)
+
+Watch in Foxglove:
+- The robot model moves
+- The lidar dots (red) stay consistent with the map walls — if they drift, AMCL is losing track
+- `/cmd_vel` plot shows velocity commands from the controller
+- `/odom` plot tracks position toward the goal
+
+🔴 **Work** — send the robot to three different locations in the arena. For the third, pick a location behind a wall that requires the robot to navigate around a corner. Observe how the global planner routes around the obstacle.
+
+### 5. Send a goal from Python
+
+The `nav2_simple_commander` package wraps Nav2's action interface. `send_goal.py` is already in your workspace if you ran `reset_workspace.sh`; otherwise save the snippet below to `/workspace/ros2/ch02/send_goal.py`:
 
 ```python
-# /workspace/ros2/ch02/send_goal.py
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator
 import rclpy
 
-# 1. BasicNavigator wraps Nav2's action interface in a synchronous API
 def main() -> None:
     rclpy.init()
     nav = BasicNavigator()
-    nav.waitUntilNav2Active()  # Nav2 takes ~10s to start — block until it's ready
 
-    # 2. Build a goal pose
-    #   header.frame_id: which frame the coordinates are in ('map' = world frame)
-    #   position.x/y: meters from the map origin (see my_map.yaml)
-    #   orientation: quaternion; w=1 means no rotation (facing +x in map frame)
     goal = PoseStamped()
-    goal.header.frame_id = 'map'
-    goal.pose.position.x = 1.0
+    goal.header.frame_id = 'map'  # coordinates are in the map frame
+    goal.pose.position.x = 1.0   # meters from map origin (see my_map.yaml)
     goal.pose.position.y = 0.5
-    goal.pose.orientation.w = 1.0
+    goal.pose.orientation.w = 1.0  # w=1 = no rotation (facing +x)
 
-    # 3. Send goal and stream feedback until done
     nav.goToPose(goal)
     while not nav.isTaskComplete():
         feedback = nav.getFeedback()
         if feedback:
             print(f'Distance remaining: {feedback.distance_remaining:.2f} m')
 
-    # 4. Result is one of: SUCCEEDED, CANCELED, FAILED
     print('Result:', nav.getResult())
     rclpy.shutdown()
 
@@ -479,48 +500,140 @@ python3 /workspace/ros2/ch02/send_goal.py
 Expected output:
 
 ```text
-[bt_navigator]: ... goal accepted ...
 Distance remaining: 1.32 m
 Distance remaining: 1.18 m
-Distance remaining: 0.84 m
 ...
 Distance remaining: 0.05 m
 Result: TaskResult.SUCCEEDED
 ```
 
-**Hint for the waypoint exercise:** `BasicNavigator` has `followWaypoints(poses: list[PoseStamped])` instead of `goToPose`. Build three `PoseStamped` objects, pass them as a list. The robot visits each in order without stopping at intermediate ones.
+🔴 **Work** — extend this to visit three waypoints in sequence using `nav.followWaypoints(poses)`. Build three `PoseStamped` objects and pass them as a list. The robot visits each in order without stopping at intermediate ones.
 
 ---
 
 ## Self-Check
 
-1. What does SLAM Toolbox need as input? — **Answer:** Lidar scans (`/scan`) and odometry (`/odom`). It uses scan matching against a sliding window of previous scans to build the map and refine the robot's pose.
-2. AMCL vs SLAM — what's the difference? — **Answer:** SLAM builds the map while exploring (no prior knowledge). AMCL localizes the robot on a known map using a particle filter. Nav2 uses AMCL because navigation assumes the map is already built.
-3. The robot drives into a wall. What's wrong? — **Answer:** AMCL is mislocalized. In RViz, the AMCL particle cloud (red arrows around the robot) should be tight; if it's spread out or in the wrong place, the robot doesn't know where it is. Click "2D Pose Estimate" again to reseed it.
-4. What is `/cmd_vel` and who publishes to it? — **Answer:** A `geometry_msgs/msg/Twist` message. For a differential-drive robot only `linear.x` (forward m/s) and `angular.z` (yaw rad/s) matter. During teleop the teleop node publishes; during autonomous nav, Nav2's controller publishes; both are interchangeable from the robot's perspective.
-5. You save a map but Nav2 can't load it. Why? — **Answer:** Most likely you passed a relative path to `map:=`. Use an absolute path (e.g. `/workspace/ros2/ch02/my_map.yaml`). Also: the `.pgm` and `.yaml` must be in the same directory, and the yaml's `image:` field must match the `.pgm` filename exactly.
+1. What does SLAM Toolbox need as input, and what does it produce? — **Answer:** Input: `/scan` (lidar) and `/odom` (odometry). Output: `/map` (occupancy grid) and the `map → odom` TF transform, which corrects accumulated odometry drift.
+2. What's the difference between SLAM and AMCL? — **Answer:** SLAM builds a map while exploring with no prior knowledge. AMCL localizes the robot on a pre-built map using a particle filter. They both publish `map → odom` — running both at the same time causes a TF conflict.
+3. The robot drives into a wall. What's wrong? — **Answer:** AMCL is mislocalized. In Foxglove's 3D panel the particle cloud will be spread out or in the wrong location. Re-seed the initial pose and drive near a distinctive feature to help AMCL converge.
+4. Nav2 completes the goal but the robot ends up in the wrong place. Why? — **Answer:** The map-to-reality match may have drifted. If the robot's lidar scan dots don't align with the map walls in Foxglove, AMCL's estimate is off. The planner planned to the right metric coordinate, but the robot's belief of that coordinate's physical location was wrong.
+5. You save a map but Nav2 can't load it. Why? — **Answer:** Most likely a path issue — use the absolute path `/workspace/ros2/ch02/my_map.yaml`. Also check that `my_map.pgm` and `my_map.yaml` are in the same directory and the `image:` field in the yaml matches the `.pgm` filename exactly.
 
 ---
 
 ## Common Mistakes
 
-- **`Package 'turtlebot3_gazebo' not found` in Docker**: You're probably running the bare `osrf/ros:jazzy-desktop` image and `apt install`-ed inside a `--rm` container — packages vanish when the container exits. Rebuild the custom image: `docker build --platform linux/amd64 -t bit2atms-ros2 -f resources/ros2/docker/Dockerfile .` from the repo root, then start with `bit2atms-ros2` instead. On a persistent container, re-source: `source /opt/ros/jazzy/setup.bash`.
-- **SLAM drifts on fast turns**: Drive slowly. Scan matching breaks when the lidar scan and the odometry estimate disagree by too much. If the map is corrupted, kill and restart SLAM Toolbox.
-- **Nav2 localizes wrong**: Always set 2D Pose Estimate before sending a goal. AMCL's initial uncertainty is high; a wrong pose makes Nav2 plan into walls.
-- **Forgetting `use_sim_time:=true`**: When running Nav2 against Gazebo, you must pass `use_sim_time:=true` or Nav2's clock and the simulator's clock disagree. Symptom: TF transforms appear "in the future" or "too old".
-- **Map origin mismatch**: If you drove the robot before starting SLAM, the `odom` frame has drifted. The map will be saved with that drift baked in. Restart Gazebo to reset odom to identity, then start SLAM immediately.
-- **Mac: no Gazebo window**: XQuartz must be running and `xhost +localhost` must be set on the host **before** starting the Docker container. If you forgot, exit the container, fix it, and re-run `docker run`.
-- **Relative paths in launches**: Always pass absolute container paths (`/workspace/ros2/ch02/my_map.yaml`) to launch arguments — Nav2 resolves them from its install directory, not your cwd.
+- **Container started without `-p 8765:8765`**: Foxglove can't reach the bridge. You must restart the container with the port flag — it can't be added retroactively. Check with `docker port ros2`.
+- **Forgetting `use_sim_time:=true`**: SLAM and Nav2 both need this when running against Gazebo. Without it, TF transforms appear "in the future" or "too old" and everything breaks.
+- **SLAM and Nav2 running simultaneously**: Both publish the `map → odom` TF transform. They'll fight and the TF tree becomes inconsistent. Stop SLAM before launching Nav2.
+- **Sending a Nav2 goal before setting the initial pose**: AMCL starts with high uncertainty. The robot will plan and drive based on a wrong location estimate. Always seed `/initialpose` first and wait for the particle cloud to converge.
+- **SLAM map drifts on fast turns**: Drive slowly (~0.15 m/s). Scan matching fails when the rotation between two scans is too large. If the map looks doubled, restart SLAM.
+- **Map origin mismatch**: If you drove the robot before starting SLAM, odometry has drifted from zero. The saved map encodes that drift. Restart Gazebo to reset odometry, then start SLAM immediately.
+- **Foxglove shows "Invalid topic" for URDF**: The URDF layer needs `sourceType: "param"` pointing to `/robot_state_publisher.robot_description`, not a topic. The pre-built layout already has this configured.
 
 ---
 
 ## Resources
 
-1. [Gazebo Sim — getting started](https://gazebosim.org/docs/latest/getstarted/) — sim concepts (worlds, models, plugins) without ROS2
-2. [RViz user guide](https://github.com/ros2/rviz/blob/jazzy/docs/user_guide/index.md) — visualizing topics, frames, and robot models
-3. [TurtleBot3 simulation docs](https://emanual.robotis.com/docs/en/platform/turtlebot3/simulation/) — full setup guide for Gazebo + TurtleBot3
-4. [SLAM Toolbox](https://github.com/SteveMacenski/slam_toolbox) — how online async mapping works and configuration options
-5. [Nav2 docs — Concepts](https://navigation.ros.org/concepts/index.html) — costmaps, planners, controllers, recovery behaviors
-6. [Nav2 first-time setup](https://navigation.ros.org/getting_started/index.html) — what each parameter in the bringup does
-7. [nav2_simple_commander API](https://github.com/ros-navigation/navigation2/tree/main/nav2_simple_commander) — `goToPose`, `followWaypoints`, `followPath`, cancel/feedback patterns
-8. [TF2 tutorials](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Tf2-Main.html) — when you need to write your own static or dynamic transforms
+1. [Gazebo Sim — getting started](https://gazebosim.org/docs/latest/getstarted/) — sim concepts (worlds, models, plugins)
+2. [TurtleBot3 simulation docs](https://emanual.robotis.com/docs/en/platform/turtlebot3/simulation/) — full setup guide for Gazebo + TurtleBot3
+3. [SLAM Toolbox](https://github.com/SteveMacenski/slam_toolbox) — how online async mapping works and tuning parameters
+4. [Nav2 concepts](https://navigation.ros.org/concepts/index.html) — costmaps, planners, controllers, recovery behaviors
+5. [Nav2 first-time setup](https://navigation.ros.org/getting_started/index.html) — what each parameter in bringup does
+6. [nav2_simple_commander API](https://github.com/ros-navigation/navigation2/tree/main/nav2_simple_commander) — `goToPose`, `followWaypoints`, feedback patterns
+7. [TF2 tutorials](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Tf2-Main.html) — writing static and dynamic transforms
+8. [Foxglove docs](https://docs.foxglove.dev/) — panel configuration, layout import/export, custom extensions
+
+---
+
+## Appendix — How to reset the stack
+
+Use this when things go wrong — bad map, robot off the map, SLAM/Nav2 in a broken state.
+
+**Reset Gazebo + SLAM only** (most common — bad map or robot position):
+- Ctrl+C SLAM (T3) and Gazebo (T1)
+- Restart Gazebo: `ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py`
+- **Immediately** start SLAM before the robot moves: `ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true`
+- foxglove_bridge (T2) can stay running throughout
+
+**Reset Nav2 only** (AMCL lost, map/scan misaligned):
+- Ctrl+C Nav2 (T3)
+- Relaunch: `ros2 launch nav2_bringup bringup_launch.py map:=/workspace/ros2/ch02/my_map.yaml use_sim_time:=true`
+- Re-seed the initial pose
+
+**Full reset** (everything broken):
+- Ctrl+C everything: Nav2 or SLAM (T3), foxglove_bridge (T2), Gazebo (T1)
+- Restart in order: T1 Gazebo → T2 foxglove_bridge → T3 SLAM
+- Start SLAM immediately after Gazebo, before the robot moves
+
+**Nuclear option** (DDS state corrupted — symptoms: `Failed to bring up all requested nodes`, ghost nodes appearing in `ros2 node list`, Nav2 lifecycle aborts even after Ctrl+C). Killing ROS nodes leaves zombie endpoints in DDS discovery for 60s+, which can poison the next launch. From your host (not inside the container):
+
+```bash
+docker restart ros2
+```
+
+This wipes all in-container state in ~3 seconds. Then re-attach with `docker exec -it ros2 bash` and start again from Project A step 1.
+
+### Project C clean-restart one-liners
+
+If you've been running Project A or B and want to start Project C from a clean slate without restarting the container:
+
+```bash
+# T1: kill everything ROS-related (including any Project A/B leftovers)
+pkill -9 -f 'gz |ruby.*gz|ros2 launch|parameter_bridge|robot_state_pub|ground_truth|slam_toolbox|obstacle_detection|nav2|component_container|amcl|controller_server|planner_server|bt_navigator|behavior_server|smoother_server|map_server|lifecycle_manager|waypoint_follower|collision_monitor|velocity_smoother|ros2-daemon' ; sleep 5
+
+# T1: relaunch Gazebo (robot back at spawn, odom resets to 0,0)
+ros2 launch /workspace/ros2/launch/turtlebot3_world_headless.launch.py
+
+# T2 (new shell): foxglove_bridge
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
+
+# T3 (new shell): Nav2 with your saved map
+ros2 launch nav2_bringup bringup_launch.py map:=/workspace/ros2/ch02/my_map.yaml use_sim_time:=true
+
+# T4 (new shell, after seeing the AMCL warnings in T3): seed initial pose
+ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+  '{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.07]}}'
+
+# T4: send a goal
+python3 /workspace/ros2/ch02/send_goal.py
+```
+
+---
+
+## Appendix — What each Nav2 node does
+
+Nav2 starts 8+ nodes managed by a lifecycle manager that brings them up in dependency order.
+
+| Node | Role |
+|---|---|
+| `amcl` | Figures out where the robot is on the map using a particle filter |
+| `map_server` | Loads the `.yaml` map file, publishes `/map` |
+| `planner_server` | Global path planner (A*) — finds a route from current pose to goal |
+| `controller_server` | Local path follower — drives the robot along the planned path |
+| `bt_navigator` | Behavior tree orchestrator — plan → follow → recover |
+| `behavior_server` | Recovery behaviors: spin in place, back up, wait |
+| `smoother_server` | Smooths the planned path for more natural driving |
+| `waypoint_follower` | Handles sequential waypoint goals |
+| `lifecycle_manager` | Starts all nodes in dependency order |
+
+The planner runs once to find a global route. The controller runs continuously to follow it, reacting to new obstacles. If the controller gets stuck, `bt_navigator` triggers a recovery (spin, back up), then re-plans.
+
+---
+
+## Appendix — Why a patched launch file?
+
+The default `turtlebot3_gazebo` launch file has two problems for a headless Docker setup:
+
+**1. GUI process kills the whole launch on exit.**
+The default launch starts `gzclient` (Gazebo's GUI). When there's no display, the GUI fails to open and exits immediately. Because the launch file sets `on_exit_shutdown=true`, that exit shuts down the entire launch — including the physics server. The patched launch simply doesn't start `gzclient`.
+
+**2. Broken TF frame IDs.**
+The default launch sets `frame_prefix='/'` in `robot_state_publisher`. This produces frame IDs like `/base_link` with a leading slash. tf2 explicitly rejects frame IDs that start with `/` — the result is a broken TF tree and Foxglove can't resolve any transforms. The patched launch sets `frame_prefix=''`.
+
+**Ground truth pose.**
+The patched launch also adds Gazebo's `PosePublisher` plugin to the robot model and bridges its output to `/ground_truth_pose` → `/ground_truth_pose_map`. This is what the green arrow in Foxglove shows. See [resources/ros2/launch/turtlebot3_world_headless.launch.py](../../../resources/ros2/launch/turtlebot3_world_headless.launch.py) for the full implementation.
+
+## Appendix — Why does the robot model look blocky in Foxglove?
+
+Foxglove's URDF layer ignores the `scale` attribute on STL mesh tags. TurtleBot3's STL meshes are in millimeter coordinates with a `scale="0.001"` tag — without that scale being applied, the robot renders 1000× too large. The alternative `.dae` meshes in the package are placeholder unit cubes. The pre-built layout works around this by using `displayMode: "collision"`, which renders the URDF's box and cylinder collision primitives instead — these are defined in meters and render at the correct scale. The result is a blocky but correctly-sized robot.

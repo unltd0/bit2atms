@@ -633,6 +633,23 @@ body {
   background: var(--border);
   margin: 6px 14px;
 }
+.sb-section-label {
+  font: 600 10px/1 var(--font-ui);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding: 6px 18px 4px;
+}
+.ch-item.resource .ch-badge {
+  background: transparent;
+  color: var(--text3);
+  border: 1px solid var(--border);
+}
+.ch-item.resource.active .ch-badge {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
 .sb-course-header {
   font: 600 10px/1 var(--font-ui);
   letter-spacing: .08em;
@@ -1820,14 +1837,16 @@ async function boot() {
   CONFIG = await fetch('config.json').then(r => r.json());
   document.title = CONFIG.repoTitle || document.title;
 
-  const rawChapters = CONFIG.courses.flatMap(course =>
-    course.chapters.map(ch => ({ ...ch, courseId: course.id, courseTitle: course.title }))
-  );
+  const rawChapters = CONFIG.courses.flatMap(course => [
+    ...course.chapters.map(ch => ({ ...ch, courseId: course.id, courseTitle: course.title, kind: 'chapter' })),
+    ...(course.resources || []).map(r => ({ ...r, courseId: course.id, courseTitle: course.title, kind: 'resource' }))
+  ]);
 
-  // Fetch all chapter files in parallel to extract title + time from Markdown
+  // Fetch all chapter files in parallel to extract title + time from Markdown.
+  // Resources get their title from config and don't need meta extraction.
   CHAPTERS = await Promise.all(rawChapters.map(async ch => {
-    // Only fetch if title or time is missing from config
-    if (!ch.title || !ch.time) {
+    const isMarkdown = /\.md$/i.test(ch.file);
+    if ((!ch.title || !ch.time) && isMarkdown) {
       try {
         const text = await fetch(resolveFileUrl(ch.file)).then(r => r.ok ? r.text() : '');
         const meta = extractMeta(text);
@@ -1840,7 +1859,7 @@ async function boot() {
         return { ...ch, title: ch.title || ch.id };
       }
     }
-    return ch;
+    return { ...ch, title: ch.title || ch.id };
   }));
 
   const defaultChapter = CHAPTERS[0]?.id || 'overview';
@@ -2056,19 +2075,32 @@ function renderSidebar(){
   const list=document.getElementById('chapter-list');
   list.innerHTML='';
   let addedDivider=false;
+  let addedResourcesHeader=false;
   visible.forEach(ch=>{
     // Add divider before first numbered chapter within a course
-    if(!addedDivider && ch.num!=='○' && ch.num!=='●'){
+    if(!addedDivider && ch.kind!=='resource' && ch.num!=='○' && ch.num!=='●'){
       const div=document.createElement('div');
       div.className='sb-divider';
       list.appendChild(div);
       addedDivider=true;
     }
 
+    // Add a "RESOURCES" header before the first resource in this course
+    if(!addedResourcesHeader && ch.kind==='resource'){
+      const hdr=document.createElement('div');
+      hdr.className='sb-divider';
+      list.appendChild(hdr);
+      const lbl=document.createElement('div');
+      lbl.className='sb-section-label';
+      lbl.textContent='Resources';
+      list.appendChild(lbl);
+      addedResourcesHeader=true;
+    }
+
     const prog=state.progress[ch.id]||'';
     const active=ch.id===state.cur;
     const el=document.createElement('div');
-    el.className=`ch-item${active?' active':''}${prog==='done'?' done':''}${prog==='in-progress'?' in-progress':''}`;
+    el.className=`ch-item${active?' active':''}${prog==='done'?' done':''}${prog==='in-progress'?' in-progress':''}${ch.kind==='resource'?' resource':''}`;
     el.dataset.id=ch.id;
     el.title=ch.title; // tooltip for truncated names
 
@@ -2183,7 +2215,14 @@ async function loadChapter(id){
   document.getElementById('illus-list').innerHTML='';
 
   try {
-    const md=await fetchMD(ch.file);
+    let md=await fetchMD(ch.file);
+    // Non-Markdown resources (e.g. Dockerfile, .yaml) are wrapped as a fenced code block
+    if (!/\.md$/i.test(ch.file)) {
+      const ext = (ch.file.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase();
+      const lang = ext === 'yml' ? 'yaml' : ext;
+      const filename = ch.file.split('/').pop();
+      md = `# ${ch.title || filename}\n\n\`${ch.file}\`\n\n\`\`\`${lang}\n${md}\n\`\`\`\n`;
+    }
     const html=marked.parse(md);
     contentEl.innerHTML=html;
 
@@ -2248,6 +2287,24 @@ async function loadChapter(id){
         const el = document.getElementById(slug);
         if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
       });
+    });
+
+    // Intercept relative links that point to other chapters or resources in CHAPTERS,
+    // and route them through nav() instead of letting the browser navigate away.
+    const curDir = ch.file.replace(/\/[^/]+$/, '/');
+    contentEl.querySelectorAll('a[href]').forEach(a=>{
+      if(a.classList.contains('anchor-link')) return;
+      const href = a.getAttribute('href');
+      if(!href || /^(https?:\/\/|mailto:|#)/.test(href)) return;
+      // Resolve href relative to the current chapter's directory
+      const resolved = new URL(href, 'https://x/' + curDir).pathname.replace(/^\//,'');
+      const target = CHAPTERS.find(c => c.file === resolved);
+      if(target){
+        a.addEventListener('click', e=>{
+          e.preventDefault();
+          nav(target.id);
+        });
+      }
     });
 
   } catch(err){

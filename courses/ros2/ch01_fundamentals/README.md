@@ -45,7 +45,7 @@ Use actions for anything that takes time: navigate to a point, run a calibration
 
 That's the whole mental model. Everything else in this chapter — launch files, CLI tools, bags — is plumbing on top of this.
 
-**Mac users:** You'll use Docker. Every command that needs ROS2 runs inside a container. Linux users install natively.
+**Mac and Windows:** Use Docker — every command that needs ROS2 runs inside a container. Linux users can install natively or use Docker.
 
 **Skip if you can answer:**
 1. What's the difference between a topic and a service?
@@ -68,56 +68,7 @@ That's the whole mental model. Everything else in this chapter — launch files,
 
 **Problem:** Get ROS2 running and verify two nodes can communicate.
 
-**Approach:** Docker on Mac, native install on Linux. Then run the built-in demo nodes before writing your own.
-
-### Install
-
-**Mac (Docker) — recommended path: build a custom image once, reuse it.**
-
-The repo ships a `Dockerfile` at [resources/ros2/docker/Dockerfile](resources/ros2/docker/Dockerfile) that bakes ROS2 Jazzy + everything ch01–ch03 need (TurtleBot3, Nav2, SLAM Toolbox, RViz, tf2 tools) into a single image. Without this, `docker run --rm` would throw away every `apt install` when the container exits.
-
-🟢 **Run** — one-time build (5–10 min on Apple Silicon via Rosetta)
-
-```bash
-cd /path/to/bit2atms
-docker build --platform linux/amd64 -t bit2atms-ros2 -f resources/ros2/docker/Dockerfile .
-```
-
-🟢 **Run** — start a container (re-run any time)
-
-```bash
-docker run -it --rm \
-  --platform linux/amd64 \
-  --name ros2 \
-  -v $(pwd)/workspace/ros2:/workspace/ros2 \
-  bit2atms-ros2
-```
-
-The image's entrypoint already sources `/opt/ros/jazzy/setup.bash` and sets `TURTLEBOT3_MODEL=burger`, so `ros2` works immediately — no manual sourcing needed.
-
-The `--platform linux/amd64` flag is required on Apple Silicon (M1/M2/M3) — without it Docker prints a platform mismatch warning. Performance is fine for this course via Rosetta emulation.
-
-To open a second shell into the running container:
-
-```bash
-docker exec -it ros2 bash
-```
-
-**Linux (native):**
-
-```bash
-# Add ROS2 apt repo
-sudo apt install -y software-properties-common curl
-sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
-sudo sh -c 'echo "deb http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ros2.list'
-sudo apt update
-sudo apt install -y ros-jazzy-desktop python3-colcon-common-extensions \
-  ros-jazzy-turtlebot3 ros-jazzy-turtlebot3-gazebo \
-  ros-jazzy-nav2-bringup ros-jazzy-slam-toolbox
-echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
-echo "export TURTLEBOT3_MODEL=burger" >> ~/.bashrc
-source ~/.bashrc
-```
+**Approach:** Docker (Mac/Windows/Linux) or native install on Linux. Build and start the container using the **Docker image** resource in the sidebar — it covers build, run, and verify steps for all chapters. Come back here once you have a shell with `ros2` working.
 
 ### Verify with demo nodes
 
@@ -739,7 +690,7 @@ Note: `ros2 bag record` creates a folder called `my_bag/`, not a single file. `r
 - **Forgetting to source after colcon build**: After every `colcon build`, run `source /workspace/ros2/ch01/install/setup.bash`. Without it, ROS2 can't find your package or generated types even if the build succeeded.
 - **Wrong queue size**: A queue of 1 drops messages if the subscriber is slow. Use 10 as a default; reduce only when memory is a constraint.
 - **Topic name typos**: `/status` and `/Status` are different topics. `ros2 topic list` is your first debugging step.
-- **Mac: `docker exec` vs new terminal**: On Mac, a new terminal window doesn't have ROS2. Use `docker exec -it ros2 bash` to get a shell inside the running container.
+- **`docker exec` vs new terminal**: A new terminal window on your machine doesn't have ROS2. Use `docker exec -it ros2 bash` to get a shell inside the running container.
 
 ---
 

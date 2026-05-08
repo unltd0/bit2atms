@@ -1,0 +1,177 @@
+{
+  "configById": {
+    "3D!ch02main": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 8,
+        "phi": 60,
+        "thetaOffset": 0,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_footprint",
+      "scene": {
+        "labelScaleFactor": 0.4,
+        "transforms": {
+          "showLabel": false,
+          "axisSize": 0.02,
+          "axisDivisions": 0,
+          "lineWidth": 1
+        }
+      },
+      "transforms": {
+        "frame:map": { "visible": true },
+        "frame:odom": { "visible": false },
+        "frame:base_footprint": { "visible": false },
+        "frame:base_link": { "visible": true },
+        "frame:base_scan": { "visible": true },
+        "frame:wheel_left_link": { "visible": true },
+        "frame:wheel_right_link": { "visible": true },
+        "frame:caster_back_link": { "visible": false },
+        "frame:imu_link": { "visible": false }
+      },
+      "topics": {
+        "/map": {
+          "visible": true,
+          "frameLocked": true,
+          "colorMode": "map",
+          "alpha": 0.8,
+          "minColor": "#ffffff",
+          "maxColor": "#000000",
+          "unknownColor": "#444444",
+          "invalidColor": "#ff00ff"
+        },
+        "/scan": {
+          "visible": true,
+          "pointSize": 4,
+          "pointShape": "circle",
+          "decayTime": 0,
+          "colorField": "intensity",
+          "colorMode": "flat",
+          "flatColor": "#ff4d4d",
+          "minRange": 0.12,
+          "maxRange": 3.49
+        },
+        "/tf": { "visible": false },
+        "/odom": { "visible": false },
+        "/ground_truth_pose_map": {
+          "visible": true,
+          "type": "arrow",
+          "arrowScale": [0.25, 0.05, 0.05],
+          "color": "#00ff88"
+        }
+      },
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "frameLocked": true,
+          "label": "Grid",
+          "instanceId": "grid",
+          "order": 1,
+          "size": 10,
+          "divisions": 10,
+          "color": "#222222",
+          "frameId": "map"
+        },
+        "robot": {
+          "layerId": "foxglove.Urdf",
+          "visible": true,
+          "frameLocked": true,
+          "label": "TurtleBot3",
+          "instanceId": "robot",
+          "order": 2,
+          "sourceType": "param",
+          "parameter": "/robot_state_publisher.robot_description",
+          "displayMode": "collision",
+          "fallbackColor": "#33aaff",
+          "opacity": 0.85,
+          "showOutline": true,
+          "showAxis": false,
+          "axisScale": 1
+        }
+      },
+      "publish": {
+        "type": "goal",
+        "poseTopic": "/goal_pose",
+        "poseEstimateTopic": "/initialpose",
+        "goalTopic": "/goal_pose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26
+      },
+      "imageMode": {}
+    },
+    "Plot!cmdvel": {
+      "paths": [
+        {
+          "value": "/cmd_vel.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "linear.x"
+        },
+        {
+          "value": "/cmd_vel.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "angular.z"
+        }
+      ],
+      "minYValue": -1,
+      "maxYValue": 1,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "title": "/cmd_vel"
+    },
+    "Plot!odom": {
+      "paths": [
+        {
+          "value": "/odom.pose.pose.position.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "x"
+        },
+        {
+          "value": "/odom.pose.pose.position.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "y"
+        }
+      ],
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "title": "/odom position"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": "3D!ch02main",
+    "second": {
+      "first": "Plot!cmdvel",
+      "second": "Plot!odom",
+      "direction": "column",
+      "splitPercentage": 50
+    },
+    "direction": "row",
+    "splitPercentage": 70
+  }
+}

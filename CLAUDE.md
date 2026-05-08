@@ -51,16 +51,57 @@ Changes are live at https://unltd0.github.io/bit2atms/reader.html within ~60 sec
 
 ```
 bit2atms/
-├── reader.html          # Single-file interactive reader (no build needed)
-├── config.json          # Course + chapter manifest — the reader's source of truth
-├── .nojekyll            # Disables Jekyll so GitHub Pages serves .md files
+├── reader.html                      # Single-file interactive reader (no build needed)
+├── config.json                      # Course + chapter manifest — the reader's source of truth
+├── .nojekyll                        # Disables Jekyll so GitHub Pages serves .md files
 ├── courses/
-│   └── vla/             # Vision-Language-Action course
-│       ├── README.md    # Full curriculum guide (single source of truth)
-│       └── ch01_transforms/README.md … ch10_capstone/README.md
+│   ├── vla/                         # Vision-Language-Action course
+│   │   ├── README.md
+│   │   └── ch01_mujoco/
+│   │       ├── README.md
+│   │       └── assets/              # Images referenced in this chapter's README
+│   └── ros2/                        # ROS2 course
+│       ├── README.md
+│       ├── ch01_fundamentals/
+│       │   └── README.md
+│       └── ch02_simulation/
+│           ├── README.md
+│           └── assets/              # Screenshots/images used in this chapter
+├── resources/
+│   └── ros2/                        # Files students download and use directly
+│       ├── docker/
+│       │   ├── Dockerfile
+│       │   └── README.md            # Full setup guide (config.json points here)
+│       ├── launch/                  # Launch files for the container
+│       ├── foxglove/                # Foxglove layout JSON files
+│       ├── turtlebot3_burger_gt.sdf # Patched SDF with ground truth plugin
+│       └── ground_truth_relay.py    # Relay node (frame_id fix)
 └── workspace/
-    └── vla/             # Learner scratchpad — create files here as you work through projects
+    └── ros2/                        # Docker bind-mount target — runtime scaffold
+        ├── launch/                  # Synced from resources/ros2/launch/
+        └── ch02/                    # Chapter-specific runtime scripts
 ```
+
+---
+
+## Folder conventions
+
+### `courses/<id>/chXX/assets/`
+Screenshots and images **referenced inside that chapter's README**. Not for students to download — just for display in the reader. Commit images here; reference them as relative paths: `![alt](assets/image.png)`.
+
+### `resources/<id>/`
+Files students **download and use directly**: Dockerfiles, launch files, SDF models, Python scripts, Foxglove layouts. When a resource has a README explaining setup (e.g. the Docker image), add a `config.json` resource entry pointing to that README — not to the raw file. Example:
+```json
+{ "id": "ros2-docker", "num": "▶", "title": "Docker image (all chapters)", "file": "resources/ros2/docker/README.md", "color": "accentp" }
+```
+
+### `workspace/<id>/`
+Bind-mounted into Docker at `/workspace/<id>/`. Two purposes:
+1. **Learner scratchpad** — students create their own files here as they work through projects.
+2. **Runtime scaffold** — any files the container needs at startup (launch files, scripts, SDFs) must be pre-placed here, because `resources/` is not mounted. Keep `workspace/` in sync with `resources/` for any files the container consumes.
+
+### `config.json`
+Resource entries (`"resources": [...]` under a course) must point to a `README.md`, not a raw file like a Dockerfile. The reader renders Markdown — pointing to a Dockerfile renders raw text.
 
 ---
 
