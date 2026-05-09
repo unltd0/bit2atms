@@ -45,6 +45,21 @@ Use actions for anything that takes time: navigate to a point, run a calibration
 
 That's the whole mental model. Everything else in this chapter — launch files, CLI tools, bags — is plumbing on top of this.
 
+**The `ros2` CLI** is the one command you'll type all day. It's a dispatcher — `ros2 <verb> <subcommand>` — and a handful of verbs cover ~90% of what you need:
+
+| Command | What it does |
+|---|---|
+| `ros2 run <pkg> <exe>` | Start a single node from a package. |
+| `ros2 launch <pkg> <file>` | Start many nodes (with params/remaps) from a launch file. Use this once you have a system, not just one node. |
+| `ros2 node list` / `info <node>` | See what nodes are alive; inspect their pubs/subs/services. |
+| `ros2 topic list` / `echo <topic>` / `hz <topic>` / `info <topic>` | Inspect the message bus — what's being published, the data, the rate, the type. |
+| `ros2 service list` / `call <srv> <type> <args>` | List services; invoke one from the shell. |
+| `ros2 param list` / `get` / `set` | Read and tweak node parameters live. |
+| `ros2 bag record <topic>` / `play <bag>` | Record topic traffic to disk and replay it later. |
+| `ros2 pkg list` / `prefix <pkg>` | What packages are installed and where. |
+
+Tab-completion works for verbs, subcommands, and live topic/node names — lean on it. `ros2 <verb> --help` is always available.
+
 **Mac and Windows:** Use Docker — every command that needs ROS2 runs inside a container. Linux users can install natively or use Docker.
 
 **Skip if you can answer:**
