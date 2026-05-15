@@ -21,9 +21,9 @@
     {
       "id": "ros2",
       "title": "ROS2 — Getting a Hang",
-      "description": "Get a working feel for ROS2 in three chapters. Nodes, topics, services, SLAM, Nav2 — in simulation first, then on a real TurtleBot.",
-      "totalTime": "2–3 days",
-      "hardware": "Laptop → TurtleBot3",
+      "description": "Get a working feel for ROS2 in four chapters. Nodes, topics, services, SLAM, Nav2 — in simulation first, then build your own robot and graduate to real hardware.",
+      "totalTime": "3–4 days",
+      "hardware": "Laptop → TurtleBot3 / Arduino car",
       "chapters": [
         { "id": "ros2-readme", "num": "○",  "file": "courses/ros2/README.md",                        "color": "accent"  },
         { "id": "ros2-ch01",   "num": "01", "file": "courses/ros2/ch01_fundamentals/README.md",      "color": "accentg" },
