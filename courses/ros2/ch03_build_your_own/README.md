@@ -115,7 +115,7 @@ URDF describes the **mechanical structure**. It does *not* describe behavior —
 
 **Goal:** put `tiny_bot` in a real physics sim with walls, drive it, and have it stop before it crashes. URDF showed the *structure*; this project gives it *behaviour* — wheels that spin under torque, sensors that see actual geometry, a world with mass and friction.
 
-We're not going to hand-roll any of that. **Gazebo Sim** (the simulator that ships with ROS2 Jazzy, version "Harmonic") does it for us — ch02 already used it to drive the TurtleBot. We just need to:
+We're not going to hand-roll any of that. **Gazebo Sim** does it for us — ch02 already used it to drive the TurtleBot. (Gazebo is a separate project from ROS2; we use *Harmonic*, the release officially paired with ROS2 Jazzy. The container has both installed already.) We just need to:
 
 1. Tell Gazebo *what* the robot is — a parallel description file with the same links as the URDF plus a couple of Gazebo plugins (a "diff-drive" plugin that consumes Twist and moves the wheels, a "ray" sensor for the IR distance reading). This file is in **SDF** (Simulation Description Format) — URDF's Gazebo-flavoured cousin.
 2. Tell Gazebo *where* the robot lives — a small world (also SDF) with walls.
