@@ -88,7 +88,7 @@ ros2 run joint_state_publisher joint_state_publisher
 
 In Foxglove (with `ch03_layout.json` loaded), the 3D panel's display frame is `base_link`. You should see `tiny_bot`: chassis box, four wheel cylinders (one at each corner), a small orange block at the front (the IR sensor), a small green block at the back, a small dark cylinder on top. The green block is an *IMU* (inertial measurement unit) frame and the dark cylinder is a *lidar* mount — placeholder frames matching what a real hobbyist Arduino car often has bolted on. We don't drive them in this chapter; they're there so the URDF looks like a real-robot URDF and you have somewhere to wire those sensors in later.
 
-> **Don't see the model?** Foxglove caches `topic /robot_description` per session. Re-import the layout to force a refetch.
+> **Don't see the model?** Foxglove caches `topic /robot_description` per session. Re-import `ch03_layout.json` to force a refetch.
 
 ### Read the file
 
@@ -107,7 +107,7 @@ Three things to notice — that's all you need from URDF for this chapter:
 
 URDF describes the **mechanical structure**. It does *not* describe behavior — nothing in the file says how fast a wheel should spin, what a lidar measures, or how an IMU reports gravity. Those are runtime concerns. Drivers and physics engines fill them in. Project B does both.
 
-**Side note on xacro.** The file extension is `.urdf.xacro`, not `.urdf`. `xacro` is a preprocessor that adds two things plain URDF lacks: constants (`<xacro:property name="wheel_radius" value="0.05"/>`, used as `${wheel_radius}`) and macros (`<xacro:macro name="wheel" params="prefix y_reflect x_reflect">...`, instantiated as `<xacro:wheel prefix="fl" y_reflect="1" x_reflect="1"/>` for the front-left wheel). Constants and functions. Everyone uses it because plain URDF makes you copy-paste.
+**Side note on xacro.** Our robot description file is `tiny_bot.urdf.xacro`, not `tiny_bot.urdf` — the extra `.xacro` extension says it needs preprocessing before it becomes a real URDF (which is why step 1 above pipes it through `xacro`). `xacro` adds two things plain URDF lacks: constants (`<xacro:property name="wheel_radius" value="0.05"/>`, used as `${wheel_radius}`) and macros (`<xacro:macro name="wheel" params="prefix y_reflect x_reflect">...`, instantiated as `<xacro:wheel prefix="fl" y_reflect="1" x_reflect="1"/>` for the front-left wheel). Constants and functions. Everyone uses it because plain URDF makes you copy-paste.
 
 ---
 
@@ -117,12 +117,12 @@ URDF describes the **mechanical structure**. It does *not* describe behavior —
 
 We're not going to hand-roll any of that. **Gazebo Sim** does it for us — ch02 already used it to drive the TurtleBot. (Gazebo is a separate project from ROS2; we use *Harmonic*, the release officially paired with ROS2 Jazzy. The container has both installed already.) We just need to:
 
-1. Tell Gazebo *what* the robot is — a parallel description file covering the parts of the URDF we want physics on (chassis, four wheels, IR sensor; the placeholder IMU and lidar frames from the URDF are skipped — no point simulating what we don't drive), plus a couple of Gazebo plugins (a "diff-drive" plugin that consumes Twist and moves the wheels, a "ray" sensor for the IR distance reading). This file is in **SDF** (Simulation Description Format) — URDF's Gazebo-flavoured cousin.
-2. Tell Gazebo *where* the robot lives — a small world (also SDF) with walls.
-3. Bridge Gazebo's native topics to ROS2 topics — `pkg ros_gz_bridge` does this with a YAML config.
-4. Launch all of it.
+1. Tell Gazebo *what* the robot is — `tiny_bot.sdf`. Covers the parts of the URDF we want physics on (chassis, four wheels, IR sensor; the placeholder IMU and lidar frames from the URDF are skipped — no point simulating what we don't drive), plus a couple of Gazebo plugins (a "diff-drive" plugin that consumes Twist and moves the wheels, a "ray" sensor for the IR distance reading). The file format is **SDF** (Simulation Description Format) — URDF's Gazebo-flavoured cousin.
+2. Tell Gazebo *where* the robot lives — `tiny_world.sdf`. A small world (also SDF) with walls.
+3. Bridge Gazebo's native topics to ROS2 topics — `tiny_bot_bridge.yaml`, fed to `pkg ros_gz_bridge`.
+4. Launch all of it — `tiny_bot_sim.launch.py`.
 
-Each of those is a small file, all in `resources/ros2/ch03/`: the robot model (`tiny_bot.sdf`), the world (`tiny_world.sdf`), the bridge config (`tiny_bot_bridge.yaml`), and the launch file (`tiny_bot_sim.launch.py`). Read them once at your leisure; we'll point at the interesting bits inline. The launch file is the only piece you need to *run* directly.
+All four files live in `resources/ros2/ch03/`. Read them once at your leisure; we'll point at the interesting bits inline. The launch file is the only piece you need to *run* directly.
 
 ### The contract you're about to use
 
@@ -178,7 +178,7 @@ In Project B, *every* "driver" is provided by Gazebo plugins. The only code you'
 ```yaml+collapsed resources/ros2/ch03/tiny_bot_bridge.yaml
 ```
 
-**The launch file** — `tiny_bot_sim.launch.py`. Starts Gazebo headless with the world, runs `robot_state_publisher` (with the URDF, so Foxglove can render the model), spawns the SDF, and runs the bridge. ~70 lines. You don't need to read it in detail; just know it orchestrates the four things above.
+**The launch file** — `tiny_bot_sim.launch.py`. Starts Gazebo headless with `tiny_world.sdf`, runs `robot_state_publisher` against `tiny_bot.urdf.xacro` (so Foxglove can render the model), spawns `tiny_bot.sdf` into the running world, and runs `pkg ros_gz_bridge` with `tiny_bot_bridge.yaml`. ~70 lines. You don't need to read it in detail; just know it orchestrates the four things above.
 
 ```python+collapsed resources/ros2/ch03/tiny_bot_sim.launch.py
 ```
