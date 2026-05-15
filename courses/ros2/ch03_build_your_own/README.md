@@ -122,7 +122,14 @@ We're not going to hand-roll any of that. **Gazebo Sim** does it for us — ch02
 3. Bridge Gazebo's native topics to ROS2 topics — `pkg ros_gz_bridge` does this with a YAML config.
 4. Launch all of it.
 
-Each of those is a small file (the robot SDF, the world SDF, the bridge YAML, the launch). They live in `resources/ros2/ch03/`. Read them once at your leisure; we'll point at the interesting bits inline. The launch file is the only piece you need to *run* directly.
+Each of those is a small file. They live in `resources/ros2/ch03/`:
+
+- `tiny_bot.sdf` — the robot model with Gazebo plugins
+- `tiny_world.sdf` — the room with walls
+- `tiny_bot_bridge.yaml` — the ros_gz_bridge topic config
+- `tiny_bot_sim.launch.py` — the launch file that wires them all together
+
+Read them once at your leisure; we'll point at the interesting bits inline. The launch file is the only piece you need to *run* directly.
 
 ### The contract you're about to use
 
