@@ -258,42 +258,65 @@ Project C is what happens when both drivers swap for real hardware.
 
 🟡 **Know** — *no code to run here.* The goal is the mental model: now that you have a real physics sim running with business logic on top, what *exactly* changes when you build the real Arduino car? Where does the simulation end and the hardware begin?
 
-The architecture stays the same shape:
+The architecture stays the same shape across three deployments — sim, real-on-robot, and real-with-cloud-brain. Same layers, same contracts; only the *location* of each layer changes.
 
 ```
-   ┌──────────────────────────────────────────┐         ┌──────────────────┐
-   │  Business logic                          │         │  Foxglove        │
-   │  (car_mover, obstacle_stop, Nav2)        │         │  Desktop         │
-   │                                          │         │  (your laptop)   │
-   │  + robot_state_publisher                 │         │                  │
-   │  + foxglove_bridge ──────────────────────┼──── ws://host:8765 ────────┤  subscribes to:  │
-   └──────────────────────────────────────────┘                            │   /tf, /tf_static│
-                    │                                                      │   /joint_states  │
-       msg Twist on topic /cmd_vel_in / /cmd_vel                           │   /odom          │
-                    │                                                      │   /ir_front      │
-                    ▼                                                      │   /robot_descrip…│
-   ┌──────────────────────────────────────────┐                            └──────────────────┘
-   │  Drivers                                 │   STAYS UNCHANGED
-   │  In sim: Gazebo diff-drive plugin +      │   sim ↔ real (the business
-   │          gpu_lidar ray sensor            │   logic and Foxglove)
-   │  In real: Arduino-talking ROS2 nodes     │
-   │                                          │   SWAPS WHOLESALE
-   │  publish ──► /joint_states, /odom,       │   sim → real (the drivers)
-   │              /tf (odom→base_link),       │
-   │              /ir_front                   │
-   └──────────────────────────────────────────┘
-                    │
-              motor signals / sensor reads
-                    │
-                    ▼
-              [ real hardware ]
+   ┌───────────────────────────┐ ┌───────────────────────────┐ ┌───────────────────────────┐
+   │  A. SIM (Project B)       │ │  B. REAL, on-robot        │ │  C. REAL, with cloud      │
+   │                           │ │                           │ │     brain                 │
+   │  Laptop runs everything   │ │  Pi on the robot runs     │ │  Cloud runs heavy brain   │
+   │                           │ │  ROS2; Foxglove on your   │ │  (VLA, planner, fleet);   │
+   │                           │ │  laptop over WiFi         │ │  Pi runs reflex loop      │
+   ├───────────────────────────┤ ├───────────────────────────┤ ├───────────────────────────┤
+   │                           │ │                           │ │  ┌─────────────────────┐  │
+   │                           │ │                           │ │  │ Heavy brain (cloud) │  │
+   │                           │ │                           │ │  │ goals @ 1–10 Hz     │  │
+   │                           │ │                           │ │  └──────────┬──────────┘  │
+   │                           │ │                           │ │   Zenoh / VPN (slow link) │
+   │                           │ │                           │ │             ▼             │
+   │  ┌─────────────────────┐  │ │  ┌─────────────────────┐  │ │  ┌─────────────────────┐  │
+   │  │ Business logic      │  │ │  │ Business logic      │  │ │  │ Reflex / safety     │  │
+   │  │ car_mover,          │  │ │  │ car_mover,          │  │ │  │ obstacle_stop,      │  │
+   │  │ obstacle_stop,      │  │ │  │ obstacle_stop,      │  │ │  │ /cmd_vel arbiter    │  │
+   │  │ Nav2                │  │ │  │ Nav2                │  │ │  │ (Pi, 50–100 Hz)     │  │
+   │  └──────────┬──────────┘  │ │  └──────────┬──────────┘  │ │  └──────────┬──────────┘  │
+   │     /cmd_vel (Twist)      │ │     /cmd_vel (Twist)      │ │     /cmd_vel (Twist)      │
+   │             ▼             │ │             ▼             │ │             ▼             │
+   │  ┌─────────────────────┐  │ │  ┌─────────────────────┐  │ │  ┌─────────────────────┐  │
+   │  │ Driver              │  │ │  │ Driver              │  │ │  │ Driver              │  │
+   │  │ Gazebo diff-drive   │  │ │  │ Arduino bridge node │  │ │  │ Arduino bridge node │  │
+   │  │ plugin + gpu_lidar  │  │ │  │ (serial over USB)   │  │ │  │ (serial over USB)   │  │
+   │  └──────────┬──────────┘  │ │  └──────────┬──────────┘  │ │  └──────────┬──────────┘  │
+   │             ▼             │ │     USB serial (fast)     │ │     USB serial (fast)     │
+   │  ┌─────────────────────┐  │ │             ▼             │ │             ▼             │
+   │  │ Simulated hardware  │  │ │  ┌─────────────────────┐  │ │  ┌─────────────────────┐  │
+   │  │ (Gazebo physics)    │  │ │  │ Arduino + motors +  │  │ │  │ Arduino + motors +  │  │
+   │  │                     │  │ │  │ encoders + IR pin   │  │ │  │ encoders + IR pin   │  │
+   │  └─────────────────────┘  │ │  └─────────────────────┘  │ │  └─────────────────────┘  │
+   │                           │ │                           │ │                           │
+   │  Foxglove on same laptop  │ │  Foxglove on laptop, over │ │  Foxglove on laptop, over │
+   │  (loopback)               │ │  WiFi → ws://<pi>:8765    │ │  WiFi → ws://<pi>:8765    │
+   └───────────────────────────┘ └───────────────────────────┘ └───────────────────────────┘
+        STAYS UNCHANGED across all three: the topic contracts (/cmd_vel, /odom,
+        /joint_states, /ir_front), the business logic, and Foxglove.
+        SWAPS: the driver (sim plugin ↔ Arduino bridge). MOVES: where the brain runs.
 ```
 
-Only the bottom box (drivers) changes. Everything above ships unchanged. Foxglove doesn't know it was talking to Gazebo in the first place — it asked `pkg foxglove_bridge` for `topic /odom`, and got whatever was currently being published there. When the real Arduino driver replaces Gazebo's plugin, `/odom` carries dead-reckoned encoder data instead of physics-simulated pose. Foxglove just sees different numbers.
+Three things to notice:
+
+- **Only the driver swaps between sim and real.** The simulated-hardware box becomes the Arduino + motors box; everything above it ships unchanged. That's the whole thesis of this chapter.
+- **The reflex loop never leaves the robot.** Whether the brain is on the same laptop (A), on the Pi (B), or in the cloud (C), `obstacle_stop` and the motor driver always sit on the fast/local side of the USB cable. Lose WiFi in (B) or (C) → the robot still stops at walls and waits.
+- **"Where the laptop lives" depends on the deployment.** In sim you run ROS2 on your laptop. On a real driving car you can't trail a USB cable, so ROS2 moves to a Pi on the robot, and your laptop becomes a Foxglove window connected over WiFi. Add a heavy brain and that climbs further up into the cloud — but the Pi stays.
+
+Foxglove doesn't know which deployment it's connected to. It asked `pkg foxglove_bridge` for `topic /odom`, and got whatever was being published there — Gazebo-simulated pose, Arduino-encoder dead-reckoning, same shape either way. **Same view, three very different things behind it.**
+
+> **What this section is, and isn't.** The sketches below are *skeletons sized for clarity*, not a build recipe. A working Arduino car also needs: PWM-to-rad/s calibration per motor, encoder ISRs on the chip, a serial-timeout watchdog that cuts motors if ROS2 disconnects, and the right H-bridge for your motor current (an L298N module is the cheap default). What we *are* showing is the boundary — what code you write on each side of the USB cable, and how it wires to everything above. For real-build pointers, see section 4.
+
+> **Where the "laptop" lives.** A driving car can't trail a USB cable, so ROS2 doesn't run on your laptop — it runs on a small computer *bolted to the robot*. A Raspberry Pi (4 or 5) is the typical pick: it boots Ubuntu + ROS2, talks to the Arduino through a short USB cable inside the chassis, and exposes `pkg foxglove_bridge` over WiFi. Your laptop just runs Foxglove and connects to `ws://<pi-ip>:8765`. "Laptop" in the diagram is really "the Pi"; substitute it mentally whenever you see it in the code below. The only wire on the robot is the short USB-serial inside the chassis.
 
 ### 1. The serial protocol
 
-Between the laptop (running ROS2 + business logic) and the Arduino (driving motors, reading the IR pin) there's a USB cable carrying a serial stream. You can invent any line-based protocol; here's a dead-simple one for `tiny_bot`:
+Inside the robot, between the on-board Pi (running ROS2 + business logic) and the Arduino (driving motors, reading the IR pin), there's a short USB cable carrying a serial stream. You can invent any line-based protocol; here's a dead-simple one for `tiny_bot`:
 
 ```
 Laptop → Arduino:   V <left_rad_per_s> <right_rad_per_s>\n
@@ -377,17 +400,43 @@ void loop() {
 
 ~25 lines of Arduino C. Same protocol; just the other side of the wire. **Gazebo's `gz-sim-diff-drive-system` pretends to be this entire sketch + the motors + the world's friction + the encoders.** When you swap fake for real, this code starts running on the chip and Gazebo retires.
 
+Note the chassis has four wheels but the sketch only drives two channels — that's the standard 4WD-toy-car wiring: front and rear motor on each side share one H-bridge channel, so `LEFT_PWM` spins both left wheels together (same for right). One H-bridge module (e.g. L298N) carries both channels; the diff-drive math doesn't change.
+
+**Before plugging the Arduino into ROS2, test the protocol manually.** With the sketch flashed and the USB cable connected, run `screen /dev/ttyACM0 115200` (or `minicom -D /dev/ttyACM0 -b 115200`), type `V 1.0 1.0` + Enter, and watch the wheels spin. You should also see `E ...` lines streaming back. This catches PWM wiring, baud-rate, and protocol-parsing bugs *before* you add ROS2 to the picture — debugging a ROS2 node that talks to a broken Arduino is twice the work.
+
 The IR sensor follows the same shape — a small ROS2 node parses the `<ir_raw>` field out of every `E` line, scales it to metres using whatever calibration the chip's datasheet specifies, and publishes `msg Range` (or `msg LaserScan` with one ray) on `topic /ir_front`. Drop-in replacement for Gazebo's ray sensor. **`obstacle_stop.py` doesn't notice — except possibly a one-line type change if you switch to `Range`.**
 
 ### 4. Off-the-shelf alternative: `pkg ros2_control`
 
-Writing the serial-talking ROS2 node yourself works. But for anything beyond a teaching exercise, the community-standard path is `pkg ros2_control` — a framework that hosts the diff-drive math, the JointState publishing, and the controller loop, leaving you to write only the small bit that talks to your specific hardware. The Arduino-car case is well-trodden; the `pkg ros2_control` demos include a `diffbot` example that's almost exactly this setup.
+Writing the serial-talking ROS2 node yourself works. But for anything beyond a teaching exercise, the community-standard path is `pkg ros2_control` — a framework that hosts the diff-drive math, the JointState publishing, and the controller loop, leaving you to write only the small bit that talks to your specific hardware. The Arduino-car case is well-trodden; an off-the-shelf hardware-interface plugin already exists.
 
 You'd add a `<ros2_control>` block to your URDF naming the wheel joints and pointing at a hardware-interface plugin, write a YAML listing `diff_drive_controller` and `joint_state_broadcaster`, and launch the whole thing. The framework does the rest. *No kinematics code in your codebase.*
 
-Pointer: [gz_ros2_control demos](https://github.com/ros-controls/gz_ros2_control/tree/master/gz_ros2_control_demos), especially `diffbot`. (Same `pkg ros2_control` framework can target either Gazebo or real hardware — you just swap the hardware-interface plugin. So if you graduate `tiny_bot` to `ros2_control` in sim, the upgrade path to hardware is *also* just a plugin swap.)
+Pointers:
+- [diffdrive_arduino](https://github.com/joshnewans/diffdrive_arduino) — a real-hardware `pkg ros2_control` plugin for exactly the Arduino + L298N + serial setup described above. Closest match to `tiny_bot`'s real build.
+- [gz_ros2_control demos / diffbot](https://github.com/ros-controls/gz_ros2_control/tree/master/gz_ros2_control_demos) — same framework wired to *Gazebo* instead of real hardware. Useful if you want to see what graduating `tiny_bot`'s sim to `pkg ros2_control` looks like before adding the Arduino.
 
-### 5. The contract, end to end
+The two share the framework; only the hardware-interface plugin differs. So the upgrade path is incremental: sim `ros2_control` → real `ros2_control` is just a plugin swap.
+
+### 5. What if the brain is heavy — can it run in the cloud?
+
+That's deployment **C** in the diagram above. Reasonable question once the brain gets big: a VLA model, a multi-camera perception stack, or a fleet planner doesn't fit comfortably on a Raspberry Pi.
+
+The split is **latency-driven, not size-driven.** The inner reflex loop — motor PWM, encoder feedback, IR-triggered stop — needs <20 ms per cycle and zero tolerance for dropouts. Heavy brain work — perception, planning, VLA inference, fleet coordination — outputs goals or trajectories at 1–10 Hz and tolerates much more latency. Two budgets, two links:
+
+| Link | Typical latency | Jitter | Drop behaviour | Fit for |
+|---|---|---|---|---|
+| **USB serial** (Pi ↔ Arduino, 115200 baud, on-board) | 1–3 ms RTT | <1 ms | rare; physical cable | reflex loop, 50–100 Hz |
+| **WiFi LAN** (Pi ↔ laptop, home AP) | 5–30 ms RTT | spikes to 100–500 ms under contention | seconds-long dropouts are normal | Foxglove, teleop, telemetry |
+| **WiFi → internet → cloud** (Pi ↔ remote server) | 50–300 ms RTT | spikes to 500+ ms | minutes-long outages possible | high-level goals, 1–10 Hz |
+
+The 50 Hz motor loop has a ~20 ms budget per cycle; USB sits well inside it, WiFi-to-cloud doesn't. **A WiFi hiccup of 500 ms means the motors keep their last command for 500 ms — the car drives into the wall.** That's why the reflex loop stays on the robot no matter how clever the brain gets. Heavy thinking moves up where the budget allows it.
+
+Two consequences worth remembering: **lose WiFi → the cloud brain pauses, on-robot `obstacle_stop` + reflex keep running, robot halts gracefully.** Lose the USB serial → that's the bug you can't paper over; the robot is dead. The wired link is the safety boundary.
+
+For the cloud↔Pi hop, the ROS2 ecosystem typically uses [Zenoh](https://github.com/ros2/rmw_zenoh) or DDS-over-VPN — both handle intermittent links and selective message bridging. [micro-ROS](https://micro.ros.org/) can run ROS2 directly on the Arduino if you want to skip the line-protocol entirely. Even Waymo, with massively more compute, runs safety-critical control on-vehicle for exactly this reason — the rule isn't "small robots must be local," it's "anything in the reflex loop must be."
+
+### 6. The contract, end to end
 
 So when you're standing in your kitchen watching the real Arduino car drive a square, your laptop's Foxglove window is **the same view you've been using in sim — same map of where the robot thinks it is, same IR distance plot, same `cmd_vel` trace.** Same `car_mover.py` publishing the pattern. Same `obstacle_stop.py` halting it. The only thing that's different is what's behind the `/cmd_vel`, `/odom`, `/joint_states`, `/ir_front` topic boundary. That's the contract earning its keep.
 
@@ -444,3 +493,193 @@ For a beginner course, the takeaway is simpler — and it's the thesis of this w
 6. [`pkg ros2_control` docs](https://control.ros.org/jazzy/index.html) — the production-grade framework that subsumes both Gazebo's plugins and real-hardware drivers behind one interface.
 7. [gz_ros2_control demos — `diffbot`](https://github.com/ros-controls/gz_ros2_control/tree/master/gz_ros2_control_demos) — a working sim diff-drive robot wired through `pkg ros2_control`. The natural next step.
 8. [`pkg teleop_twist_keyboard`](https://github.com/ros2/teleop_twist_keyboard) — keyboard joystick. Plug into `topic /cmd_vel_in` and drive `tiny_bot` manually.
+
+---
+
+## Appendix — How to pick the right topic, message type, and driver
+
+ROS2 has no central registry that says *"for X, use topic Y with message Z."* The conventions are real, just enforced by the ecosystem rather than the framework — every off-the-shelf package (Nav2, SLAM Toolbox, MoveIt, RViz, Foxglove) assumes specific topic names and message types, and if you don't follow them you cut yourself off from all of it. This appendix is the structured reference for finding the right answer.
+
+### A1. Message packages, their types, and the conventional topics
+
+The official catalogue lives in [common_interfaces](https://github.com/ros2/common_interfaces) — ~150 message types covering the vast majority of robotics data. Below, each package is grouped with its commonly-used types and the de-facto topic names where those types are published.
+
+**Rule of thumb:** if your data is kinematic, geometric, or sensor, the type already exists. Only invent a custom message when nothing fits. And once you've picked the type, use the conventional topic name — every off-the-shelf consumer (Nav2, SLAM Toolbox, MoveIt, RViz, Foxglove) assumes it.
+
+**One important wrinkle about topics and types:**
+
+| Direction | Cardinality | Note |
+|---|---|---|
+| Package → message types | **1:many** | One package defines many types — `sensor_msgs` alone has ~30 (LaserScan, Imu, Image, …). |
+| Message type → topics | **1:many** | The same `Twist` type appears on `/cmd_vel`, `/cmd_vel_in`, `/cmd_vel_nav`, … |
+| Topic → message type | **1:1, strict** | A topic has exactly one type. ROS2 refuses to bind publishers/subscribers with mismatched types. |
+| Topic → publishers | many | Multiple nodes can publish to one topic. Usually a bug for commands, normal for `/tf`. |
+| Topic → subscribers | many | The normal pub/sub fan-out. |
+
+So in the tables below, each *row* is a topic+type binding. When the same type shows up on multiple conventional topic names (e.g. `Twist` on `/cmd_vel` vs `/cmd_vel_in`), you wire them together by **topic remapping** at launch — e.g. `--ros-args -r /cmd_vel:=/cmd_vel_in` — never by changing the type.
+
+(Sidebar: ROS2 has three transport primitives — **topics** (pub/sub, one type, fire-and-forget), **services** (request/response, two types), **actions** (goal/feedback/result, three types). All three are name-keyed and type-strict. This appendix covers topics; services and actions follow the same selection logic.)
+
+**The packages at a glance** — what each one is for, before drilling into individual types:
+
+| Package | What it carries |
+|---|---|
+| `geometry_msgs` | Velocities, poses, transforms — the geometric primitives that describe motion and position. |
+| `sensor_msgs` | Raw readings from physical sensors — cameras, lidar, IMU, GPS, joint encoders. |
+| `nav_msgs` | Navigation data — robot odometry, occupancy maps, planned paths. |
+| `tf2_msgs` | Coordinate-frame relations — "frame A is here relative to frame B" over time. |
+| `std_msgs` | Primitives (`Bool`, `Int`, `Float`, `String`) and the URDF carrier. Mostly avoid; prefer typed messages. |
+| `trajectory_msgs` | Multi-joint motion plans — what an arm or multi-DOF base should do over time. |
+| `visualization_msgs` | Debug overlays for RViz/Foxglove — markers, lines, arrows, text you draw from code. |
+| `diagnostic_msgs` | Health and status reports — "this node is OK / WARN / ERROR, here's why." |
+| `shape_msgs` | Geometric primitives (boxes, spheres, meshes) for collision objects in planning scenes. |
+| `actionlib_msgs` | Plumbing for ROS2 actions — goal IDs, status codes. Used inside the action protocol, not directly. |
+
+#### `geometry_msgs` — velocities, poses, transforms
+
+| Topic → type | Example data |
+|---|---|
+| `/cmd_vel` → `Twist` | `linear: {x: 0.2, y: 0, z: 0}`, `angular: {x: 0, y: 0, z: 0.5}` — drive forward 0.2 m/s while spinning 0.5 rad/s |
+| `/goal_pose` → `PoseStamped` | `header.frame_id: "map"`, `pose.position: {x: 2.0, y: 1.5, z: 0}`, `pose.orientation` as a quaternion. *RViz/Foxglove publishes here when you click "Goal".* |
+| `/initialpose` → `PoseWithCovarianceStamped` | Same as PoseStamped + a 6×6 covariance matrix. Used to seed AMCL with where the robot thinks it starts. |
+
+Other types in this package — `TwistStamped`, `Pose`, `PoseWithCovariance`, `Transform`, `TransformStamped`, `Vector3`, `Quaternion`, `Point` — are used as fields *inside* other messages (Odometry contains a Pose, TF contains TransformStamped, etc.) rather than published on topics directly. See [docs.ros2.org/latest/api/geometry_msgs](https://docs.ros2.org/latest/api/geometry_msgs/).
+
+#### `sensor_msgs` — raw sensor readings
+
+| Topic → type | Example data |
+|---|---|
+| `/scan` → `LaserScan` | `angle_min: -3.14`, `angle_max: 3.14`, `angle_increment: 0.0175` (1°), `range_min: 0.05`, `range_max: 10.0`, `ranges: [3.2, 3.1, 2.9, ..., inf, ...]` — 360 distance readings, one per degree. |
+| `/imu/data` → `Imu` | `orientation` (quaternion), `angular_velocity: {x, y, z}` rad/s, `linear_acceleration: {x, y, z}` m/s², plus 3×3 covariance for each. |
+| `/camera/image_raw` → `Image` | `height: 480`, `width: 640`, `encoding: "rgb8"`, `step: 1920`, `data: [...921600 bytes...]`. |
+| `/joint_states` → `JointState` | `name: ["fl_wheel_joint", "fr_wheel_joint", ...]`, `position: [1.2, 1.3, ...]` rad, `velocity: [4.0, 4.1, ...]` rad/s. |
+| `/ir_front` → `Range` | `radiation_type: 1` (IR), `field_of_view: 0.04`, `min_range: 0.05`, `max_range: 1.5`, `range: 0.32` (m to nearest obstacle). |
+
+Other commonly-used types in this package: `CompressedImage` (`/camera/image_raw/compressed`, JPEG/PNG bytes), `CameraInfo` (`/camera/camera_info`, intrinsics — latched), `PointCloud2` (`/points`, 3D points from depth or lidar), `NavSatFix` (`/gps/fix`, lat/lon/alt), `BatteryState` (`/battery_state`), `MagneticField`, `Temperature`, `FluidPressure`, `Joy`. See [docs.ros2.org/latest/api/sensor_msgs](https://docs.ros2.org/latest/api/sensor_msgs/).
+
+#### `nav_msgs` — navigation, maps, paths
+
+| Topic → type | Example data |
+|---|---|
+| `/odom` → `Odometry` | `header.frame_id: "odom"`, `child_frame_id: "base_link"`, `pose.pose` (where the robot thinks it is) + 6×6 covariance, `twist.twist` (current velocity) + covariance. |
+| `/map` → `OccupancyGrid` | `info.resolution: 0.05` (m/cell), `info.width: 68`, `info.height: 68`, `info.origin.position: {x: -1.7, y: -1.7}`, `data: [0, 0, ..., 100, 100, ...]` (-1 = unknown, 0 = free, 100 = occupied). |
+| `/plan` → `Path` | `header.frame_id: "map"`, `poses: [PoseStamped, PoseStamped, ...]` — sequence of waypoints from current pose to goal. |
+
+Also: `MapMetaData` (used inside OccupancyGrid). See [docs.ros2.org/latest/api/nav_msgs](https://docs.ros2.org/latest/api/nav_msgs/).
+
+#### `tf2_msgs` — coordinate-frame relations
+
+| Topic → type | Example data |
+|---|---|
+| `/tf` → `TFMessage` | `transforms: [TransformStamped, ...]` — each entry says "frame `child` is at translation `T` and rotation `R` relative to frame `parent` at time `stamp`." High-frequency (every odom tick). |
+| `/tf_static` → `TFMessage` | Same shape, but **latched** (TRANSIENT_LOCAL QoS): published once per frame pair that never moves. Used for `base_link → base_scan`, `base_link → imu_link`, etc. |
+
+See [docs.ros.org tf2 concepts](https://docs.ros.org/en/jazzy/Concepts/Intermediate/About-Tf2.html).
+
+#### `std_msgs` — primitives and the URDF carrier
+
+| Topic → type | Example data |
+|---|---|
+| `/robot_description` → `String` (URDF/XML) | `data: "<?xml version=\"1.0\"?>\n<robot name=\"tiny_bot\">..."` — entire URDF as one string. Latched. |
+
+Other primitives in this package (`Bool`, `Int32`, `Float32`, `Float64`, `Header`) are technically usable as topic types but **avoid them** — they carry no semantic context. Wrap your data in a typed message instead.
+
+#### Other packages (briefly)
+
+| Package | Typical topic → type | Used by |
+|---|---|---|
+| `trajectory_msgs` | per-controller action topics → `JointTrajectory` | MoveIt, `pkg ros2_control` arm controllers |
+| `visualization_msgs` | `/visualization_marker_array` → `MarkerArray` | RViz/Foxglove debug overlays (lines, spheres, arrows you draw from code) |
+| `diagnostic_msgs` | `/diagnostics` → `DiagnosticArray` | health-monitoring tools, `pkg diagnostic_aggregator` |
+| `shape_msgs` | (inside collision objects) → `SolidPrimitive`, `Mesh`, `Plane` | MoveIt planning scene |
+| `actionlib_msgs` | (inside action protocol) → `GoalStatus` | every ROS2 action server |
+
+Full reference: [docs.ros2.org/latest/api](https://docs.ros2.org/latest/api/).
+
+**Inspect any of these locally:**
+```bash
+ros2 interface list                              # every message known to your install
+ros2 interface show sensor_msgs/msg/LaserScan    # full field definition for one type
+ros2 interface packages                          # every package that defines messages
+```
+
+**Coordinate frame names** are governed by [REP-105](https://www.ros.org/reps/rep-0105.html):
+
+| Frame | Meaning |
+|---|---|
+| `map` | global, world-fixed; jumps when SLAM relocalises |
+| `odom` | continuous, drifts over time; reference for `/odom` topic |
+| `base_link` | robot's root frame, usually rear-axle midpoint or geometric centre |
+| `base_footprint` | projection of `base_link` to the ground |
+| `<sensor>_link` | each sensor's own frame, fixed relative to `base_link` (e.g. `base_scan`, `imu_link`, `ir_front`) |
+
+**Units and conventions** are governed by [REP-103](https://www.ros.org/reps/rep-0103.html): SI units throughout, right-handed coordinates, x-forward / y-left / z-up, angles in radians.
+
+### A2. What each major consumer requires
+
+If you're building a robot that should plug into one of these stacks, this is the topic contract you need to satisfy. Get the topics on the left right, and the package on the right works.
+
+| Consumer | Subscribes to | Publishes |
+|---|---|---|
+| **Nav2** (path planning + control) | `/scan` (LaserScan), `/odom` (Odometry), `/map` (OccupancyGrid), `/tf`, `/tf_static`, `/goal_pose` (PoseStamped), `/initialpose` (PoseWithCovarianceStamped) | `/cmd_vel` (Twist), `/plan` (Path), various status topics |
+| **SLAM Toolbox** | `/scan`, `/odom`, `/tf`, `/tf_static` | `/map` (OccupancyGrid), updates `/tf` (map→odom) |
+| **`pkg robot_localization` (EKF)** | `/odom`, `/imu/data`, `/gps/fix`, configurable | fused `/odometry/filtered`, `/tf` (odom→base_link) |
+| **MoveIt** (arm planning) | `/joint_states`, action servers per planning group | trajectory commands on action topics |
+| **`pkg robot_state_publisher`** | `/joint_states`, `/robot_description` (param) | `/tf`, `/tf_static` |
+| **Foxglove / RViz** | anything you tell them; assumes convention names for default layouts | nothing (visualisation only) |
+| **`pkg ros2_control`** (controller manager) | `/joint_states` (from hardware interface) + `/cmd_vel` (when running `diff_drive_controller`) | `/joint_states`, `/odom`, `/tf` (odom→base_link) |
+
+**Discovery rule:** before publishing anything, read the README of the package that will consume it. The topic name and message type the package needs is the right answer — overriding it costs you adapters forever.
+
+### A3. Finding the right driver for a piece of hardware
+
+ROS2 has no monolithic device list, but two starting points get you 95% of the way:
+
+| Source | What it gives you | URL |
+|---|---|---|
+| **ROS Index** | searchable registry of every published ROS2 package, filtered by distro. Best for hardware drivers. | [index.ros.org](https://index.ros.org/) |
+| **awesome-ros2** | curated, browsable list by category | [github.com/fkromer/awesome-ros2](https://github.com/fkromer/awesome-ros2) |
+
+Common hardware categories and the canonical driver packages:
+
+| Hardware | Typical driver package | Publishes |
+|---|---|---|
+| 2D LiDAR (RPLIDAR, Hokuyo, SICK) | `sllidar_ros2`, `urg_node`, vendor-specific | `/scan` (LaserScan) |
+| 3D LiDAR (Velodyne, Ouster, Livox) | `velodyne_driver`, `ouster-ros`, `livox_ros2_driver` | `/points` (PointCloud2) |
+| Depth camera (RealSense, Azure Kinect, ZED) | `realsense2_camera`, `azure_kinect_ros_driver`, `zed_ros2_wrapper` | `/camera/depth/image_raw`, `/camera/color/image_raw`, `/camera/depth/points` |
+| IMU (BNO055, MPU6050, Phidgets) | `bno055_driver`, `phidgets_drivers/imu` | `/imu/data` (Imu) |
+| GPS | `nmea_navsat_driver`, `ublox_dgnss` | `/gps/fix` (NavSatFix) |
+| Joystick / gamepad | `joy` | `/joy` (sensor_msgs/Joy) |
+| Robot arm (UR, Franka, xArm) | `ur_robot_driver`, `franka_ros2`, `xarm_ros2` | `/joint_states` + action servers |
+| Mobile base (TurtleBot, Husky, Jackal) | `turtlebot3_bringup`, `clearpath_*` | full Nav2 contract |
+| Arduino + diff-drive (custom) | [diffdrive_arduino](https://github.com/joshnewans/diffdrive_arduino) (community) or roll your own + `pkg ros2_control` | full diff-drive contract |
+| ESP32 / microcontroller (direct ROS2) | [micro-ROS](https://micro.ros.org/) | whatever you publish from the chip |
+
+**Selection rule:** pick the package with the most recent commits, an active issues tab, and explicit support for your ROS2 distro (Jazzy at time of writing). Vendor-shipped drivers are usually best; community drivers fill the gaps.
+
+### A4. The workflow, end to end
+
+When you need to add something new to a robot — a sensor, an actuator, a behaviour — the process is the same:
+
+1. **What standard message type fits the data, and what's the conventional topic for it?** Scan §A1. The package grouping gives you both at once.
+2. **Who will consume this topic?** Scan §A2. Read that consumer's README; match the contract exactly.
+3. **For hardware, is there an existing driver?** Search ROS Index (§A3). Almost always yes for common parts.
+5. **Confirm by looking at a similar working robot.** TurtleBot3, Husky, F1Tenth bringup launch files are the reference designs — `ros2 topic list -t` on a running TurtleBot tells you the full topic surface.
+6. **Only invent custom names / messages when nothing in steps 1–5 fits.** It's almost never the right answer in the first year.
+
+### A5. Inspecting a running system
+
+When you join an unfamiliar robot, these are the four commands that tell you what's actually happening:
+
+```bash
+ros2 topic list -t                 # every active topic, with message type
+ros2 topic echo /odom              # see live data on one topic
+ros2 topic hz /scan                # publish rate (sanity check: 10 Hz? 40 Hz?)
+ros2 topic info /cmd_vel -v        # who publishes, who subscribes, QoS settings
+ros2 node list                     # every running node
+ros2 node info /motor_driver       # what one node publishes, subscribes, services
+ros2 interface show <type>         # field definition for any message type
+ros2 param list                    # every parameter on every node
+```
+
+This is the most honest answer to "what does this robot expose." Documentation drifts; `ros2 topic list -t` doesn't.
