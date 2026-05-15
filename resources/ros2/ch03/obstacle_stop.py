@@ -27,7 +27,8 @@ from geometry_msgs.msg import Twist
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
-STOP_DISTANCE = 0.30   # metres — closer than this and we halt
+STOP_DISTANCE = 0.50   # metres — closer than this and we halt forward motion
+                       # (leaves chassis ~0.32 m from the wall, enough room to pivot)
 
 
 class ObstacleStop(Node):
@@ -49,11 +50,17 @@ class ObstacleStop(Node):
         self.latest_ir = r if math.isfinite(r) else float("inf")
 
     def on_cmd_in(self, msg: Twist) -> None:
-        if self.latest_ir < STOP_DISTANCE:
-            # Too close. Drop the command, publish a zero Twist instead.
-            self.pub.publish(Twist())
+        # Block forward motion only — pure rotations and reverse are still safe
+        # near a wall ahead. This is the textbook "stop before you crash, but
+        # still let me turn out of trouble" behaviour.
+        if self.latest_ir < STOP_DISTANCE and msg.linear.x > 0:
+            # Too close + commanded to drive forward. Keep rotation, drop linear.
+            safe = Twist()
+            safe.linear.x = 0.0
+            safe.angular.z = msg.angular.z
+            self.pub.publish(safe)
             return
-        # Path is clear. Pass the command through unchanged.
+        # Path is clear, or command isn't forward. Pass through unchanged.
         self.pub.publish(msg)
 
 

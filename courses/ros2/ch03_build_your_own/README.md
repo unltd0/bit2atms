@@ -206,7 +206,7 @@ python3 /workspace/ros2/ch03/obstacle_stop.py
 In Foxglove (display frame set to `tf odom` to keep the camera still while the robot moves), `tiny_bot` should:
 
 1. Drive forward at 0.2 m/s.
-2. As it approaches the front wall, the `/ir_front` plot drops from ~1.5 m to below 0.30 m.
+2. As it approaches the front wall, the `/ir_front` plot drops from ~1.5 m to below 0.50 m.
 3. `obstacle_stop` intercepts: the `/cmd_vel` plot drops to zero. Robot halts.
 4. `car_mover`'s pattern continues — its next phase is *spin left*, which `obstacle_stop` passes through (no forward velocity, no risk). Robot pivots in place.
 5. After pivoting, the IR no longer sees the wall, and `obstacle_stop` resumes forwarding Twists. Robot drives off in the new direction.
