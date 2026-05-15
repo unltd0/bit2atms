@@ -18,7 +18,7 @@ By the end of this chapter you'll have a clean answer to: *"If I built this Ardu
 
 ### Notation used in this chapter
 
-Every ROS2 entity in prose is tagged with a prefix word so you never have to guess what category it belongs to:
+When introducing a ROS2 entity in prose we tag it with a prefix word so you immediately know what category it belongs to. (Once introduced, we drop the prefix to keep prose readable — context carries it from there.)
 
 | Prefix | Means | Example |
 |---|---|---|
@@ -77,7 +77,7 @@ ros2 run robot_state_publisher robot_state_publisher \
     /workspace/ros2/ch03/tiny_bot.urdf
 ```
 
-In a second shell:
+In a second container shell (a new terminal on your laptop, then `docker exec -it ros2 bash`):
 
 ```bash
 # 3. publish zero angles for the non-fixed joints (the wheels). On a real
@@ -107,7 +107,7 @@ Three things to notice — that's all you need from URDF for this chapter:
 
 URDF describes the **mechanical structure**. It does *not* describe behavior — nothing in the file says how fast a wheel should spin, what a lidar measures, or how an IMU reports gravity. Those are runtime concerns. Drivers and physics engines fill them in. Project B does both.
 
-**Side note on xacro.** The file extension is `.urdf.xacro`, not `.urdf`. `xacro` is a preprocessor that adds two things plain URDF lacks: constants (`<xacro:property name="wheel_radius" value="0.05"/>`, used as `${wheel_radius}`) and macros (`<xacro:macro name="wheel" params="prefix reflect">...`, called as `<xacro:wheel prefix="left" reflect="1"/>`). Constants and functions. Everyone uses it because plain URDF makes you copy-paste.
+**Side note on xacro.** The file extension is `.urdf.xacro`, not `.urdf`. `xacro` is a preprocessor that adds two things plain URDF lacks: constants (`<xacro:property name="wheel_radius" value="0.05"/>`, used as `${wheel_radius}`) and macros (`<xacro:macro name="wheel" params="prefix y_reflect x_reflect">...`, instantiated as `<xacro:wheel prefix="fl" y_reflect="1" x_reflect="1"/>` for the front-left wheel). Constants and functions. Everyone uses it because plain URDF makes you copy-paste.
 
 ---
 
@@ -138,7 +138,7 @@ Now derive what's needed for the contract to do something useful.
 
 → **Driver:** Gazebo's diff-drive plugin (in sim) / your Arduino driver (on real hardware).
 
-**2. Something needs to read the IR sensor and publish what it sees.** In sim, Gazebo's `<sensor type="gpu_lidar">` (configured as a single-ray scanner — a one-beam laser is the standard way to sim a point-distance sensor) raycasts against world geometry every 100 ms and publishes `msg LaserScan` on `topic /ir_front`. On real hardware, a small ROS2 node would read your Arduino's analog pin via serial and publish the same shape (typically `msg Range`, but `LaserScan` with one ray works too). *Same ROS2 contract, different innards.*
+**2. Something needs to read the IR sensor and publish what it sees.** In sim, Gazebo's `<sensor type="gpu_lidar">` (configured as a single-ray scanner — one of the simpler ways to model a point-distance sensor in Gazebo) raycasts against world geometry every 100 ms and publishes `msg LaserScan` on `topic /ir_front`. On real hardware, a small ROS2 node would read your Arduino's analog pin via serial and publish the same shape (typically `msg Range`, but `LaserScan` with one ray works too). *Same ROS2 contract, different innards.*
 
 → **Sensor driver:** Gazebo's ray sensor (in sim) / your Arduino sensor driver (on real hardware).
 
