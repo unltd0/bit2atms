@@ -1,0 +1,45 @@
+# tiny_bot_bridge.yaml — ros_gz_bridge parameter config for ch03.
+#
+# Bridges Gazebo Sim ↔ ROS2 topics for the tiny_bot model:
+#   GZ → ROS:  /clock, /odom, /joint_states, /tf, /ir_front (1-ray LaserScan)
+#   ROS → GZ:  /cmd_vel (Twist)
+
+- ros_topic_name: "clock"
+  gz_topic_name: "clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "joint_states"
+  gz_topic_name: "joint_states"
+  ros_type_name: "sensor_msgs/msg/JointState"
+  gz_type_name: "gz.msgs.Model"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "odom"
+  gz_topic_name: "odom"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "gz.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "tf"
+  gz_topic_name: "tf"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS
+
+# Front IR distance sensor — Gazebo's ray sensor publishes LaserScan.
+# We use the standard ROS2 LaserScan message; obstacle_stop reads ranges[0].
+- ros_topic_name: "ir_front"
+  gz_topic_name: "ir_front"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+# Velocity command — Twist (not TwistStamped) so off-the-shelf tools and Nav2
+# can publish directly into our sim.
+- ros_topic_name: "cmd_vel"
+  gz_topic_name: "cmd_vel"
+  ros_type_name: "geometry_msgs/msg/Twist"
+  gz_type_name: "gz.msgs.Twist"
+  direction: ROS_TO_GZ

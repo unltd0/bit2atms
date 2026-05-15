@@ -1,8 +1,8 @@
-# Chapter 3 — Hardware
+# Chapter 4 — Hardware
 
 **Time:** 1 day (after the robot is in your hands)
 **Hardware:** Physical robot
-**Prerequisites:** Chapters 1–2
+**Prerequisites:** Chapters 1–3
 
 ---
 
@@ -231,7 +231,7 @@ The robot drives to the **base** of the magenta arrow (position), facing the **t
 
 🔴 **Work** — send the robot through two waypoints. Edit the coordinates to fit your map.
 
-```python+collapsed resources/ros2/ch03/real_nav_goal.py
+```python+collapsed resources/ros2/ch04/real_nav_goal.py
 ```
 
 To find real coordinates: hover over points on the white interior in Foxglove's 3D panel — the bottom-right of the panel shows `(x, y)` in the map frame. Pick two reachable points and drop them into `waypoints`.

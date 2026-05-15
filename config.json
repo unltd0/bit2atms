@@ -28,7 +28,8 @@
         { "id": "ros2-readme", "num": "○",  "file": "courses/ros2/README.md",                        "color": "accent"  },
         { "id": "ros2-ch01",   "num": "01", "file": "courses/ros2/ch01_fundamentals/README.md",      "color": "accentg" },
         { "id": "ros2-ch02",   "num": "02", "file": "courses/ros2/ch02_simulation/README.md",        "color": "accento" },
-        { "id": "ros2-ch03",   "num": "03", "file": "courses/ros2/ch03_hardware/README.md",          "color": "accentr" }
+        { "id": "ros2-ch03",   "num": "03", "file": "courses/ros2/ch03_build_your_own/README.md",    "color": "accentp" },
+        { "id": "ros2-ch04",   "num": "04", "file": "courses/ros2/ch04_hardware/README.md",          "color": "accentr" }
       ],
       "resources": [
         { "id": "ros2-docker", "num": "▶", "title": "Docker image (all chapters)", "file": "resources/ros2/docker/README.md", "color": "accentp" }

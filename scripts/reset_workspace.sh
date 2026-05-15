@@ -15,34 +15,72 @@ done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OLD_DIR="$REPO_ROOT/workspace_old"
+SIZE_LIMIT_MB=50
 
-# ── Helper: scaffold one course ────────────────────────────────────────────
+# Dirs always preserved across backup/reset (in addition to >50MB dirs found at runtime).
+ALWAYS_PRESERVE=("ext")
+
+# Per-course list of top-level subdir names to preserve. Populated by find_large_dirs.
+declare -a PRESERVE_VLA=()
+declare -a PRESERVE_ROS2=()
+
+# ── Find top-level subdirs in workspace/<course>/ that exceed SIZE_LIMIT_MB ──
+find_large_dirs() {
+  local workspace="$1"
+  local -a large=()
+  [ -d "$workspace" ] || { echo ""; return; }
+  while IFS= read -r dir; do
+    [ -z "$dir" ] && continue
+    local name
+    name="$(basename "$dir")"
+    local size_kb
+    size_kb=$(du -sk "$dir" 2>/dev/null | awk '{print $1}')
+    if [ -n "$size_kb" ] && [ "$size_kb" -gt $((SIZE_LIMIT_MB * 1024)) ]; then
+      large+=("$name")
+    fi
+  done < <(find "$workspace" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+  echo "${large[@]+${large[@]}}"
+}
+
+# ── Helper: scaffold one course (no prompting — backup already confirmed) ──
 scaffold_course() {
-  local course="$1"   # e.g. "vla" or "ros2"
+  local course="$1"
   shift
   local chapters=("$@")
   local workspace="$REPO_ROOT/workspace/$course"
 
-  # Backup if non-empty
-  if [ "$ADD_ONLY" -eq 1 ]; then
-    : # skip backup in add-only mode
-  elif [ -d "$workspace" ] && [ -n "$(find "$workspace" -type f 2>/dev/null)" ]; then
+  # Resolve preserve list for this course (bash 3.2 compatible: no ${var^^}, no namerefs)
+  local course_uc
+  course_uc=$(echo "$course" | tr '[:lower:]' '[:upper:]')
+  local preserve_var="PRESERVE_${course_uc}"
+  local -a preserve=("${ALWAYS_PRESERVE[@]}")
+  eval "preserve+=(\${${preserve_var}[@]+\"\${${preserve_var}[@]}\"})"
+
+  # Backup + reset if non-empty
+  if [ "$ADD_ONLY" -ne 1 ] && [ -d "$workspace" ] && [ -n "$(find "$workspace" -type f 2>/dev/null)" ]; then
     TS=$(date +%Y%m%d_%H%M%S)
     ZIP="$OLD_DIR/${course}_${TS}.zip"
-
-    if [ "${FORCE:-0}" != "1" ]; then
-      echo "workspace/$course/ has existing files."
-      read -r -p "Back them up and reset? [y/N] " confirm
-      [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Skipping $course."; return 0; }
-    fi
-
     mkdir -p "$OLD_DIR"
-    (cd "$REPO_ROOT" && zip -r "$ZIP" "workspace/$course/" \
-      --exclude "workspace/$course/ext/*" \
-      --exclude "workspace/$course/ext/**/*" \
-      -q)
+
+    # Build zip excludes for preserved dirs
+    local -a zip_excludes=()
+    for p in "${preserve[@]}"; do
+      zip_excludes+=(--exclude "workspace/$course/$p/*" --exclude "workspace/$course/$p/**/*")
+    done
+
+    (cd "$REPO_ROOT" && zip -r "$ZIP" "workspace/$course/" "${zip_excludes[@]}" -q)
     echo "Backed up to workspace_old/${course}_${TS}.zip"
-    find "$workspace" -mindepth 1 -maxdepth 1 ! -name 'ext' -exec rm -rf {} +
+
+    # Build find pruning for preserved dirs
+    local -a find_excludes=()
+    for p in "${preserve[@]}"; do
+      find_excludes+=(! -name "$p")
+    done
+    find "$workspace" -mindepth 1 -maxdepth 1 "${find_excludes[@]}" -exec rm -rf {} +
+
+    if [ "${#preserve[@]}" -gt 0 ]; then
+      echo "  preserved: ${preserve[*]}"
+    fi
   fi
 
   # Create scaffold
@@ -64,7 +102,7 @@ scaffold_course() {
   done
 }
 
-# ── VLA course ─────────────────────────────────────────────────────────────
+# ── Course definitions ─────────────────────────────────────────────────────
 VLA_CHAPTERS=(
   "ch01 read_robot_state.py ik_solver.py pd_controller.py"
   "ch02 train_sac_her.py visualise.py reward_ablation.py curriculum.py"
@@ -72,6 +110,63 @@ VLA_CHAPTERS=(
   "ch04 interact_so101.py probe_language.py collect_demos.py finetune_smolvla.sh finetune_mps.py"
   "ch05 teleoperate.sh calibrate.sh collect_demos.sh finetune_smolvla.sh deploy.sh failure_log.py"
 )
+
+ROS2_CHAPTERS=(
+  "ch01 publisher.py subscriber.py multi_pattern_node.py my_launch.py"
+  "ch02 send_goal.py"
+  "ch03"
+  "ch04 real_nav_goal.py"
+)
+
+# ── Scan for large dirs and prompt once for all courses ────────────────────
+COURSES=("vla" "ros2")
+ANY_NONEMPTY=0
+SUMMARY=""
+
+for course in "${COURSES[@]}"; do
+  workspace="$REPO_ROOT/workspace/$course"
+  if [ -d "$workspace" ] && [ -n "$(find "$workspace" -type f 2>/dev/null)" ]; then
+    ANY_NONEMPTY=1
+    large_str="$(find_large_dirs "$workspace")"
+    course_uc=$(echo "$course" | tr '[:lower:]' '[:upper:]')
+    if [ -n "$large_str" ]; then
+      # shellcheck disable=SC2206
+      large_arr=($large_str)
+      eval "PRESERVE_${course_uc}=(\"\${large_arr[@]}\")"
+      SUMMARY+="  workspace/$course/  (preserving >${SIZE_LIMIT_MB}MB dirs: ${large_arr[*]})"$'\n'
+    else
+      SUMMARY+="  workspace/$course/"$'\n'
+    fi
+  fi
+done
+
+if [ "$ADD_ONLY" -ne 1 ] && [ "$ANY_NONEMPTY" -eq 1 ] && [ "${FORCE:-0}" != "1" ]; then
+  echo "The following workspaces have existing files:"
+  printf '%s' "$SUMMARY"
+  # Warn about preserved large dirs across all courses
+  warned=0
+  for course in "${COURSES[@]}"; do
+    course_uc=$(echo "$course" | tr '[:lower:]' '[:upper:]')
+    eval "preserved=(\${PRESERVE_${course_uc}[@]+\"\${PRESERVE_${course_uc}[@]}\"})"
+    if [ "${#preserved[@]}" -gt 0 ]; then
+      if [ "$warned" -eq 0 ]; then
+        echo ""
+        echo "Note: directories larger than ${SIZE_LIMIT_MB}MB will be skipped"
+        echo "(not zipped, not deleted). This is expected — large dirs typically"
+        echo "hold models, datasets, or external checkouts you don't want to lose."
+        warned=1
+      fi
+    fi
+  done
+  echo ""
+  read -r -p "Back up and reset all of the above? [y/N] " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+# ── VLA course ─────────────────────────────────────────────────────────────
 scaffold_course "vla" "${VLA_CHAPTERS[@]}"
 
 # ── VLA assets ─────────────────────────────────────────────────────────────
@@ -93,11 +188,6 @@ for entry in "${ASSETS[@]}"; do
 done
 
 # ── ROS2 course ────────────────────────────────────────────────────────────
-ROS2_CHAPTERS=(
-  "ch01 publisher.py subscriber.py multi_pattern_node.py my_launch.py"
-  "ch02 send_goal.py"
-  "ch03 real_nav_goal.py"
-)
 scaffold_course "ros2" "${ROS2_CHAPTERS[@]}"
 
 # ── ROS2 runtime files (bind-mounted into the container) ───────────────────
@@ -115,7 +205,14 @@ ROS2_RESOURCE_FILES=(
   "resources/ros2/ch02/send_goal.py:workspace/ros2/ch02/send_goal.py"
   "resources/ros2/ch02/nav2_params.yaml:workspace/ros2/ch02/nav2_params.yaml"
   "resources/ros2/ch02/_restart_stack.sh:workspace/ros2/ch02/_restart_stack.sh"
-  "resources/ros2/ch03/real_nav_goal.py:workspace/ros2/ch03/real_nav_goal.py"
+  "resources/ros2/ch03/tiny_bot.urdf.xacro:workspace/ros2/ch03/tiny_bot.urdf.xacro"
+  "resources/ros2/ch03/tiny_bot.sdf:workspace/ros2/ch03/tiny_bot.sdf"
+  "resources/ros2/ch03/tiny_world.sdf:workspace/ros2/ch03/tiny_world.sdf"
+  "resources/ros2/ch03/tiny_bot_bridge.yaml:workspace/ros2/ch03/tiny_bot_bridge.yaml"
+  "resources/ros2/ch03/tiny_bot_sim.launch.py:workspace/ros2/ch03/tiny_bot_sim.launch.py"
+  "resources/ros2/ch03/car_mover.py:workspace/ros2/ch03/car_mover.py"
+  "resources/ros2/ch03/obstacle_stop.py:workspace/ros2/ch03/obstacle_stop.py"
+  "resources/ros2/ch04/real_nav_goal.py:workspace/ros2/ch04/real_nav_goal.py"
 )
 for entry in "${ROS2_RESOURCE_FILES[@]}"; do
   src="$REPO_ROOT/$(echo $entry | cut -d: -f1)"

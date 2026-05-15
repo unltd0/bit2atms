@@ -1,0 +1,103 @@
+<?xml version="1.0" ?>
+<!--
+  tiny_world.sdf — a small Gazebo Sim world for tiny_bot.
+
+  Ground plane + ambient light + four walls forming a ~3m x 3m room. The robot
+  spawns at (0,0) facing +x; the front wall is at x=1.5 so it meets it after
+  driving forward for a couple of seconds at 0.2 m/s.
+
+  Used by tiny_bot_sim.launch.py.
+-->
+<sdf version="1.8">
+  <world name="tiny_world">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Ground plane -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>10 10</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>10 10</size></plane></geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Four walls of a ~3m x 3m room.
+         tiny_bot starts at (0,0). The room extends from (-1.5, -1.5) to (1.5, 1.5).
+         The "front" wall (at x=+1.5) is what obstacle_stop will react to. -->
+    <model name="wall_front">
+      <static>true</static>
+      <pose>1.5 0 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.1 3.0 0.5</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.1 3.0 0.5</size></box></geometry>
+          <material><ambient>0.8 0.7 0.5 1</ambient><diffuse>0.8 0.7 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_back">
+      <static>true</static>
+      <pose>-1.5 0 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.1 3.0 0.5</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.1 3.0 0.5</size></box></geometry>
+          <material><ambient>0.8 0.7 0.5 1</ambient><diffuse>0.8 0.7 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_left">
+      <static>true</static>
+      <pose>0 1.5 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>3.0 0.1 0.5</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>3.0 0.1 0.5</size></box></geometry>
+          <material><ambient>0.8 0.7 0.5 1</ambient><diffuse>0.8 0.7 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_right">
+      <static>true</static>
+      <pose>0 -1.5 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>3.0 0.1 0.5</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>3.0 0.1 0.5</size></box></geometry>
+          <material><ambient>0.8 0.7 0.5 1</ambient><diffuse>0.8 0.7 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

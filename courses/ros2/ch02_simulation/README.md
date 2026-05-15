@@ -40,6 +40,8 @@ This setup works on Mac (Intel and Apple Silicon), Windows, and Linux — any ma
 
 **Gazebo** — Open-source 3D physics simulator for robotics. It models gravity, friction, collisions, and sensors (lidar, IMU, cameras). In this chapter Gazebo runs headless — no GUI window, just physics and sensor data.
 
+**IMU** (Inertial Measurement Unit) — A grain-of-rice-sized chip that reports the robot's own motion: linear acceleration (m/s²) on three axes from an accelerometer, and angular velocity (rad/s) on three axes from a gyroscope. Real robots use it to detect rotation that wheel encoders miss (a slipping wheel says "stopped"; the IMU says "actually turning"). On TurtleBot3 it lives on the OpenCR board.
+
 **Foxglove** — A cross-platform robot visualization tool (free). It connects to ROS2 over WebSocket via `foxglove_bridge` and renders the robot model, lidar scans, map, TF tree, and Nav2 paths. Think of it as a modern RViz that runs anywhere.
 
 **SLAM** (Simultaneous Localization and Mapping) — The robot builds a map of its environment while figuring out where it is inside that map, at the same time, using only its sensors. No GPS, no pre-existing map.
@@ -482,6 +484,66 @@ It uses `nav2_simple_commander.BasicNavigator` to send a goal at `(1.0, 0.5)` an
 
 ---
 
+
+## Beyond messaging — why ROS2, not Kafka
+
+Zoom out. You've now done four projects and most of ROS2 has gone by in passing. Worth naming what you've actually been using, because it's not just a message bus — it's the conventions on top of the message bus that make robotics work.
+
+Think about what Project C actually did. You sent a `geometry_msgs/PoseStamped` to Nav2. Nav2 read your map, looked at `sensor_msgs/LaserScan` from the lidar, fused `nav_msgs/Odometry` from the wheels with `sensor_msgs/Imu` from the IMU, planned a path, and streamed `geometry_msgs/Twist` commands to the motor driver. **You wrote zero lines of robot code.** Every one of those messages is a *standard interface* — a type defined in `sensor_msgs`, `nav_msgs`, or `geometry_msgs`. Nav2's authors and TurtleBot's authors never spoke; they just both agreed on the types.
+
+That's the trick. If your lidar driver publishes `sensor_msgs/LaserScan`, every 2D SLAM package in the world consumes it. Swap an LDS-02 for an RPLIDAR — different driver, same message type, SLAM keeps working:
+
+```
+hls_lfcd_lds_driver ──┐
+                      ├──→ sensor_msgs/LaserScan ──→ slam_toolbox
+rplidar_ros ──────────┘
+```
+
+This is why ROS2 exists and Kafka doesn't run robots. Kafka gives you a bus; ROS2 gives you a bus plus a Schelling point on what flows over it. The standard message packages are worth knowing by name:
+
+- `sensor_msgs` — anything a sensor produces. `LaserScan`, `Image`, `Imu`, `PointCloud2`, `JointState`, `BatteryState`, `NavSatFix`.
+- `nav_msgs` — anything a navigator needs. `Odometry`, `Path`, `OccupancyGrid`.
+- `geometry_msgs` — spatial primitives. `Twist`, `Pose`, `PoseStamped`, `Transform`.
+- `control_msgs`, `trajectory_msgs` — joint targets and multi-point plans (arms).
+- `vision_msgs` — detections, classifications, bounding boxes.
+
+`ros2 interface list | grep -i <thing>` will show you what's already defined. Rule of thumb: don't invent a custom message until you've checked that nothing standard fits. Every visualizer, bag tool, and RViz/Foxglove panel is built around the standard ones; the moment you go custom, the ecosystem stops following you.
+
+### What the ecosystem built on top
+
+ROS2 *core* is small: pub/sub, services, actions, parameters, lifecycle, TF. The interesting stuff lives in *stacks* — independent open-source projects, each its own community, all speaking the same standard interfaces. You've used one of them.
+
+**Nav2** is the one you've already met. From the outside it looks like `goToPose(...)`. From the inside, it's a global planner, a local controller, costmaps, a behavior tree wiring them together, and recovery behaviors when something gets stuck:
+
+![Nav2 architecture](https://docs.nav2.org/_images/nav2_architecture.png)
+
+The reason it works on your TurtleBot, on a Husky, and on a forklift is that it doesn't know what robot it's driving. It subscribes to `sensor_msgs/LaserScan` and `nav_msgs/Odometry`, it publishes `geometry_msgs/Twist`. As long as your robot's drivers do the other half of that contract, Nav2 is yours.
+
+**MoveIt2** is the same idea for arms — what Nav2 is for wheels. You hand it a goal pose, it does IK, plans a collision-free trajectory through the robot's URDF (yes, the kind of file you just wrote), and streams joint commands. Pick-and-place is one MoveIt call. The day this course goes beyond mobile bases into manipulation, MoveIt is the door.
+
+**ros2_control** is the layer underneath both. Nav2 publishes `Twist`, MoveIt publishes joint trajectories — but a real motor doesn't speak either. `ros2_control` is the bridge: a `controller_manager` runs your wheels or joints in a 1 kHz real-time loop, with pluggable *hardware interfaces* (CAN, EtherCAT, serial, whatever talks to your motors) on one side and pluggable *controllers* (velocity, position, joint-trajectory) on the other:
+
+```
+Nav2 / MoveIt ──→ controller_manager ──→ controller ──→ hardware_interface ──→ motor
+                                                              (1 kHz real-time loop)
+```
+
+You'll meet `ros2_control` properly in [ch03](#) when you build your own robot from scratch. For now: any time you see a `<ros2_control>` block in a URDF, that's the bridge between "the URDF declares joints" and "the joints obey commands."
+
+**image_pipeline** handles cameras the same way `ros2_control` handles motors — turns raw hardware output into something the rest of the stack can use. Rectification, debayering, stereo block-matching, throttling. Run an `image_proc` node and `/camera/image_raw` becomes `/camera/image_rect_color`, properly undistorted, ready for any perception package downstream. Don't write rectification yourself.
+
+**diagnostics** is the one most teams discover late and then can't live without. Every node publishes a small `diagnostic_msgs/DiagnosticStatus` — OK, WARN, ERROR plus key-value details — and a `diagnostic_aggregator` rolls it up into "robot OK / robot NOT OK." The day you have more than one robot, or a robot in front of a user, this is how you answer "is it healthy?" without SSH-ing in.
+
+**rosbag2** you already met in ch01. Record, replay, debug offline. Your cheapest debugger.
+
+Each of these is a separate course's worth of depth. The thing to leave this chapter with is *they exist, they all speak the same standard interfaces, and your robot is a customer of them — not a re-inventor.*
+
+### One footnote — lifecycle nodes
+
+If you `ros2 node list` while Nav2 is up and notice that its nodes don't fully come alive until a few seconds in, that's because Nav2's nodes are **lifecycle nodes** — they have a managed `unconfigured → inactive → active → finalized` state machine. Useful when startup order matters: drivers up before planners, planners up before the behavior tree. You'll write one the day you need one. [Managed nodes design doc.](https://design.ros2.org/articles/node_lifecycle.html)
+
+---
+
 ## Self-Check
 
 1. What does SLAM Toolbox need as input, and what does it produce? — **Answer:** Input: `/scan` (lidar) and `/odom` (odometry). Output: `/map` (occupancy grid) and the `map → odom` TF transform, which corrects accumulated odometry drift.
@@ -514,6 +576,10 @@ It uses `nav2_simple_commander.BasicNavigator` to send a goal at `(1.0, 0.5)` an
 6. [nav2_simple_commander API](https://github.com/ros-navigation/navigation2/tree/main/nav2_simple_commander) — `goToPose`, `followWaypoints`, feedback patterns
 7. [TF2 tutorials](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Tf2-Main.html) — writing static and dynamic transforms
 8. [Foxglove docs](https://docs.foxglove.dev/) — panel configuration, layout import/export, custom extensions
+9. [common_interfaces repo](https://github.com/ros2/common_interfaces) — source for `sensor_msgs`, `nav_msgs`, `geometry_msgs`, `vision_msgs`
+10. [MoveIt2 docs](https://moveit.picknik.ai/main/index.html) — manipulation planning when you graduate from mobile bases
+11. [image_pipeline docs](https://docs.ros.org/en/jazzy/p/image_pipeline/) — rectification, debayering, stereo, throttling
+12. [ROS2 diagnostics](https://github.com/ros/diagnostics) — `diagnostic_msgs`, aggregator config, analyzer plugins
 
 ---
 

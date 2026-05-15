@@ -1,0 +1,187 @@
+<?xml version="1.0"?>
+<!-- tiny_bot.urdf.xacro — a minimal 4-wheel differential-drive robot
+     used in ch03 ("Build your own robot"). Declares the mechanical structure
+     for robot_state_publisher; Gazebo plugins (driving the joints + sensing)
+     live in tiny_bot.sdf.
+
+     Layout: chassis + 4 wheels (front-left, front-right, rear-left, rear-right).
+     The front pair is "driven" — Gazebo's diff-drive plugin commands them.
+     The rear pair is "passive" — they spin freely in their joints, providing
+     stability without a caster. This mirrors a typical Arduino 4WD kit where
+     mechanically all four wheels are driven, but for kinematic purposes only
+     two need to be commanded.
+
+     Links:
+       - base_link (chassis)
+       - fl_wheel, fr_wheel, rl_wheel, rr_wheel (continuous joints via xacro macro)
+       - base_scan (lidar frame, REP-105 convention; reserved for future)
+       - ir_front (IR distance sensor frame; matched in tiny_bot.sdf)
+       - imu_link (IMU frame; reserved for future)
+
+     Generate plain URDF with:
+       ros2 run xacro xacro tiny_bot.urdf.xacro > tiny_bot.urdf
+-->
+<robot name="tiny_bot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- 1. Constants. xacro:property gives the file one place to edit dimensions. -->
+  <xacro:property name="chassis_x" value="0.30"/>
+  <xacro:property name="chassis_y" value="0.20"/>
+  <xacro:property name="chassis_z" value="0.10"/>
+  <xacro:property name="chassis_mass" value="2.0"/>
+
+  <xacro:property name="wheel_radius" value="0.05"/>
+  <xacro:property name="wheel_thickness" value="0.02"/>
+  <xacro:property name="wheel_mass" value="0.1"/>
+  <xacro:property name="wheel_y_offset" value="0.12"/>   <!-- half chassis_y + a hair -->
+  <xacro:property name="wheel_x_offset" value="0.10"/>   <!-- forward/back offset from chassis centre -->
+
+  <!-- 2. Chassis link (base_link). Three child elements matter:
+         <visual>   — what RViz / Foxglove draws.
+         <collision> — what a physics sim or a planner uses for hit-tests.
+         <inertial>  — what a physics sim or ros2_control reads for dynamics.
+                       Without it, the robot has mass 0 and falls through the floor. -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${chassis_x} ${chassis_y} ${chassis_z}"/></geometry>
+      <material name="grey"><color rgba="0.4 0.4 0.45 1.0"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${chassis_x} ${chassis_y} ${chassis_z}"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${chassis_mass}"/>
+      <!-- box inertia: (1/12)*m*(y^2+z^2), (1/12)*m*(x^2+z^2), (1/12)*m*(x^2+y^2) -->
+      <inertia ixx="0.0083" ixy="0.0" ixz="0.0"
+               iyy="0.0167" iyz="0.0"
+               izz="0.0217"/>
+    </inertial>
+  </link>
+
+  <!-- 3. Wheel macro. Four wheels differ only by which side (y_reflect) and
+         which axle (x_reflect) they're on; xacro:macro keeps it DRY.
+         y_reflect: +1 (left) / -1 (right). Flips y offset.
+         x_reflect: +1 (front) / -1 (rear). Flips x offset. -->
+  <xacro:macro name="wheel" params="prefix y_reflect x_reflect">
+    <link name="${prefix}_wheel">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_thickness}"/></geometry>
+        <material name="black"><color rgba="0.1 0.1 0.1 1.0"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_thickness}"/></geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <mass value="${wheel_mass}"/>
+        <inertia ixx="0.00007" ixy="0.0" ixz="0.0"
+                 iyy="0.00007" iyz="0.0"
+                 izz="0.000125"/>
+      </inertial>
+    </link>
+
+    <!-- continuous = no joint limits, rotates freely. axis="0 1 0" because
+         the wheel spins about the robot's y-axis. -->
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${prefix}_wheel"/>
+      <origin xyz="${x_reflect * wheel_x_offset} ${y_reflect * wheel_y_offset} ${-chassis_z/2}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- Four wheels: front-left, front-right, rear-left, rear-right. -->
+  <xacro:wheel prefix="fl" y_reflect="1"  x_reflect="1"/>
+  <xacro:wheel prefix="fr" y_reflect="-1" x_reflect="1"/>
+  <xacro:wheel prefix="rl" y_reflect="1"  x_reflect="-1"/>
+  <xacro:wheel prefix="rr" y_reflect="-1" x_reflect="-1"/>
+
+  <!-- 4. Lidar. URDF declares where the frame sits relative to base_link.
+         The driver (e.g. hls_lfcd_lds_driver) publishes /scan in this frame.
+         REP-105 names this frame `base_scan` for 2D lidars. -->
+  <link name="base_scan">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+      <material name="dark_grey"><color rgba="0.2 0.2 0.2 1.0"/></material>
+    </visual>
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="1e-5" ixy="0.0" ixz="0.0" iyy="1e-5" iyz="0.0" izz="1e-5"/>
+    </inertial>
+  </link>
+  <joint name="base_scan_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_scan"/>
+    <!-- chassis half-height (0.05) + cylinder half-height (0.02) = 0.07 -->
+    <origin xyz="0.05 0 0.07" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 5. IR distance sensor (front). Same pattern: URDF declares the frame,
+         the sensor driver publishes sensor_msgs/Range data in it.
+         Bolted to the front of the chassis facing forward. -->
+  <link name="ir_front">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.02 0.03 0.02"/></geometry>
+      <material name="orange"><color rgba="0.9 0.5 0.1 1.0"/></material>
+    </visual>
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="1e-6" ixy="0.0" ixz="0.0" iyy="1e-6" iyz="0.0" izz="1e-6"/>
+    </inertial>
+  </link>
+  <joint name="ir_front_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="ir_front"/>
+    <!-- chassis half-length (0.15) + sensor half-depth (0.01) = 0.16 forward -->
+    <origin xyz="0.16 0 0.02" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 6. IMU. Same pattern: URDF declares the frame, the IMU driver
+         publishes sensor_msgs/Imu data in it. Convention: `imu_link`. -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.04 0.04 0.02"/></geometry>
+      <material name="green"><color rgba="0.1 0.6 0.2 1.0"/></material>
+    </visual>
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="1e-6" ixy="0.0" ixz="0.0" iyy="1e-6" iyz="0.0" izz="1e-6"/>
+    </inertial>
+  </link>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <!-- chassis half-height (0.05) + box half-height (0.01) = 0.06 -->
+    <origin xyz="-0.08 0 0.06" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Hardware integration stub. In a real robot, this block is where you
+       wire the motors to ros2_control (or a Gazebo sim plugin). Commented out
+       on purpose — out of scope for this project. See the ros2_control docs:
+       https://control.ros.org/jazzy/doc/getting_started/getting_started.html
+
+  <ros2_control name="tiny_bot_hardware" type="system">
+    <hardware>
+      <plugin>my_robot_hw/MyRobotHW</plugin>
+    </hardware>
+    <joint name="fl_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="fr_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+  -->
+
+</robot>

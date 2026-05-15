@@ -1,0 +1,155 @@
+{
+  "configById": {
+    "3D!ch03main": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 5,
+        "phi": 35,
+        "thetaOffset": 0,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-position",
+      "followTf": "base_link",
+      "scene": {
+        "labelScaleFactor": 0.4,
+        "transforms": {
+          "showLabel": false,
+          "axisSize": 0.04,
+          "axisDivisions": 0,
+          "lineWidth": 1
+        }
+      },
+      "transforms": {
+        "frame:odom": { "visible": false },
+        "frame:base_link": { "visible": true },
+        "frame:left_wheel": { "visible": true },
+        "frame:right_wheel": { "visible": true },
+        "frame:ir_front": { "visible": true },
+        "frame:base_scan": { "visible": false },
+        "frame:imu_link": { "visible": false }
+      },
+      "topics": {
+        "/ir_front": {
+          "visible": true,
+          "pointSize": 6,
+          "pointShape": "circle",
+          "decayTime": 0,
+          "colorField": "intensity",
+          "colorMode": "flat",
+          "flatColor": "#ffaa00",
+          "minRange": 0.05,
+          "maxRange": 1.5
+        },
+        "/tf": { "visible": false },
+        "/odom": { "visible": false }
+      },
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "frameLocked": true,
+          "label": "Grid",
+          "instanceId": "grid",
+          "order": 1,
+          "size": 6,
+          "divisions": 12,
+          "color": "#222222",
+          "frameId": "odom"
+        },
+        "robot": {
+          "layerId": "foxglove.Urdf",
+          "visible": true,
+          "frameLocked": true,
+          "label": "tiny_bot",
+          "instanceId": "robot",
+          "order": 2,
+          "sourceType": "param",
+          "parameter": "/robot_state_publisher.robot_description",
+          "displayMode": "visual",
+          "fallbackColor": "#33aaff",
+          "opacity": 1.0,
+          "showOutline": true,
+          "showAxis": false,
+          "axisScale": 1
+        }
+      },
+      "publish": {
+        "type": "goal",
+        "poseTopic": "/goal_pose",
+        "poseEstimateTopic": "/initialpose",
+        "goalTopic": "/goal_pose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26
+      },
+      "imageMode": {}
+    },
+    "Plot!cmdvel": {
+      "paths": [
+        {
+          "value": "/cmd_vel.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "linear.x"
+        },
+        {
+          "value": "/cmd_vel.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "angular.z"
+        }
+      ],
+      "minYValue": -1,
+      "maxYValue": 1,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "title": "/cmd_vel"
+    },
+    "Plot!ir": {
+      "paths": [
+        {
+          "value": "/ir_front.ranges[0]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "ir_front distance (m)"
+        }
+      ],
+      "minYValue": 0,
+      "maxYValue": 1.5,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "title": "/ir_front"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": "3D!ch03main",
+    "second": {
+      "first": "Plot!cmdvel",
+      "second": "Plot!ir",
+      "direction": "column",
+      "splitPercentage": 50
+    },
+    "direction": "row",
+    "splitPercentage": 65
+  }
+}
