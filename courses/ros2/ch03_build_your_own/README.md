@@ -10,7 +10,7 @@
 
 Chapter 2 had you driving someone else's robot — TurtleBot3 in Gazebo, fully wired before you arrived. The wheels, the lidar, the bringup launch, the URDF — all done for you. Now you're going to **build your own**.
 
-Concretely: imagine you have an **Arduino-driven 4-wheel car** — the kind of $25 hobbyist chassis kit that's everywhere. Four DC motors, an Arduino controlling them over a small motor-driver board, and a single front-facing IR distance sensor. The Arduino is connected to a laptop by USB; the laptop runs ROS2 and sends commands down the serial cable. *That's the robot.* Cheap, common, the kind of thing hobbyists actually build. You won't build the physical one in this chapter — but you'll model it in ROS2, drive it in a Gazebo physics sim with real walls, and at the end see exactly which lines of code change when the real Arduino is wired in.
+Concretely: imagine you have an **Arduino-driven 4-wheel car** — the kind of $25 hobbyist chassis kit that's everywhere. Four DC motors, an Arduino controlling them through a small motor-driver board, and a single front-facing IR distance sensor. The Arduino plugs into a laptop with a USB cable; over that cable, the laptop's operating system gives you a virtual *serial port* — so the ROS2 code on the laptop just opens `/dev/ttyACM0` and writes text commands, and the Arduino sees them coming in on its serial pin. *That's the robot.* Cheap, common, the kind of thing hobbyists actually build. You won't build the physical one in this chapter — but you'll model it in ROS2, drive it in a Gazebo physics sim with real walls, and at the end see exactly which files swap (and which stay byte-for-byte identical) when the real Arduino is wired in.
 
 The deeper question: **is simulation in robotics there to replicate reality and test your behaviour code — the same way unit tests do in regular software?** Yes — with a fidelity caveat. Sim handles the kinematics (where the robot moves under a given command), the topic/message plumbing, and the rough shape of sensor data well. It only approximates the messy physics — motor inertia, friction, sensor noise patterns. Real teams develop algorithms in sim, tune the rough parts against measured hardware when stakes are high, then validate on the real robot. For us, the takeaway is stronger: **sim and real share so much code that your behaviour code (we'll call it *business logic*) ships unchanged across the gap.** Only the hardware-facing driver swaps.
 
@@ -63,7 +63,7 @@ Open Foxglove, connect to `ws://localhost:8765`, load the new `ch03_layout.json`
 
 **Goal:** model `tiny_bot`'s mechanical layout in a URDF and see it appear in Foxglove. No physics, no motors yet — just a shape on the screen with the right coordinate frames.
 
-URDF (Unified Robot Description Format) is the standard way every ROS2 robot describes itself: what links exist (chassis, wheels, sensor mounts), how they connect, where each one sits. `node robot_state_publisher` reads the URDF and broadcasts the resulting coordinate-frame tree on `topic /tf_static`, so every other tool in the ecosystem can ask "where is the IR sensor mounted relative to the chassis?" and get a real answer.
+URDF (Unified Robot Description Format) is the standard way every ROS2 robot describes itself: what links exist (chassis, wheels, sensor mounts), how they connect, where each one sits. `node robot_state_publisher` reads the URDF and broadcasts the resulting coordinate-frame tree as TF transforms — `tf_static` for the fixed parts (sensor mounts), `tf` for the moving parts (wheel joints, once something publishes their angles). Every other tool in the ecosystem can then ask *"where is the IR sensor mounted relative to the chassis?"* and get a real answer.
 
 🟢 **Run** — three commands in any container shell:
 
@@ -117,7 +117,7 @@ URDF describes the **mechanical structure**. It does *not* describe behavior —
 
 We're not going to hand-roll any of that. **Gazebo Sim** does it for us — ch02 already used it to drive the TurtleBot. (Gazebo is a separate project from ROS2; we use *Harmonic*, the release officially paired with ROS2 Jazzy. The container has both installed already.) We just need to:
 
-1. Tell Gazebo *what* the robot is — a parallel description file with the same links as the URDF plus a couple of Gazebo plugins (a "diff-drive" plugin that consumes Twist and moves the wheels, a "ray" sensor for the IR distance reading). This file is in **SDF** (Simulation Description Format) — URDF's Gazebo-flavoured cousin.
+1. Tell Gazebo *what* the robot is — a parallel description file covering the parts of the URDF we want physics on (chassis, four wheels, IR sensor; the placeholder IMU and lidar frames from the URDF are skipped — no point simulating what we don't drive), plus a couple of Gazebo plugins (a "diff-drive" plugin that consumes Twist and moves the wheels, a "ray" sensor for the IR distance reading). This file is in **SDF** (Simulation Description Format) — URDF's Gazebo-flavoured cousin.
 2. Tell Gazebo *where* the robot lives — a small world (also SDF) with walls.
 3. Bridge Gazebo's native topics to ROS2 topics — `pkg ros_gz_bridge` does this with a YAML config.
 4. Launch all of it.
@@ -134,7 +134,7 @@ Before deriving what runs in this project, the standard handshake every mobile r
 
 Now derive what's needed for the contract to do something useful.
 
-**1. Something needs to consume `msg Twist` on `topic /cmd_vel` and turn it into wheel motion.** In sim, that's Gazebo's `gz-sim-diff-drive-system` plugin (attached to `tiny_bot.sdf`). It reads the Twist, applies forces to the simulated wheel joints, integrates the resulting motion, and publishes back `msg Odometry` on `topic /odom` plus the `tf odom → base_link` transform — exactly what a real motor driver would publish. **On real hardware, this slot is replaced by an Arduino-talking ROS2 node (more in Project C). Same ROS2 contract, different innards.**
+**1. Something needs to consume `msg Twist` on `topic /cmd_vel` and turn it into wheel motion.** In sim, that's Gazebo's `gz-sim-diff-drive-system` plugin (attached to `tiny_bot.sdf`). It reads the Twist, computes each wheel's target angular velocity, drives the simulated wheel joints at those velocities, and publishes back `msg Odometry` on `topic /odom` plus the `tf odom → base_link` transform — exactly what a real motor driver would publish. **On real hardware, this slot is replaced by an Arduino-talking ROS2 node (more in Project C). Same ROS2 contract, different innards.**
 
 → **Driver:** Gazebo's diff-drive plugin (in sim) / your Arduino driver (on real hardware).
 
@@ -157,7 +157,7 @@ This is the chapter's central conceptual move. The two layers we just named keep
 - **Drivers** — the bottom of the stack. Hardware-facing in real life; physics-engine-facing in sim. Speak standard ROS2 messages outward, and motor signals / sensor reads inward. **Replaced wholesale when you swap sim for real.**
 - **Business logic** — the top of the stack. Application-facing. Decides what the robot should do. Speaks the same ROS2 messages. **Stays identical between sim and real.**
 
-In Project B, *every* "driver" is provided by Gazebo plugins. The only code you yourself wrote — `car_mover.py` and `obstacle_stop.py` — is business logic. Project C will show that those two files survive unchanged when you swap Gazebo for an Arduino.
+In Project B, *every* "driver" is provided by Gazebo plugins. The only code you'll read or modify — `car_mover.py` and `obstacle_stop.py` — is business logic. Project C will show that those two files survive unchanged when you swap Gazebo for an Arduino.
 
 ### Read the files
 
@@ -168,7 +168,7 @@ In Project B, *every* "driver" is provided by Gazebo plugins. The only code you 
 ```xml+collapsed resources/ros2/ch03/tiny_bot.sdf
 ```
 
-**The world** — `tiny_world.sdf`. Ground plane, ambient light, four walls forming a ~3 m × 3 m room. `tiny_bot` spawns at origin facing +x; the front wall sits at x = 1.5 m. The robot will meet it after ~7 seconds at 0.2 m/s.
+**The world** — `tiny_world.sdf`. Ground plane, ambient light, four walls forming a ~3 m × 3 m room. `tiny_bot` spawns at origin facing +x; the front wall sits at x = 1.5 m. (At 0.2 m/s the robot would reach it in about 7 seconds — but in practice `obstacle_stop` halts forward motion well before that, when the IR drops below 0.5 m.)
 
 ```xml+collapsed resources/ros2/ch03/tiny_world.sdf
 ```
@@ -215,9 +215,9 @@ In Foxglove (display frame set to `tf odom` to keep the camera still while the r
 
 1. Drive forward at 0.2 m/s.
 2. As it approaches the front wall, the `/ir_front` plot drops from ~1.5 m to below 0.50 m.
-3. `obstacle_stop` intercepts: the `/cmd_vel` plot drops to zero. Robot halts.
-4. `car_mover`'s pattern continues — its next phase is *spin left*, which `obstacle_stop` passes through (no forward velocity, no risk). Robot pivots in place.
-5. After pivoting, the IR no longer sees the wall, and `obstacle_stop` resumes forwarding Twists. Robot drives off in the new direction.
+3. `obstacle_stop` intercepts the forward command: on the `/cmd_vel` plot, **`linear.x` drops to zero**. Robot halts.
+4. `car_mover`'s pattern continues — its next phase is *spin left* (`linear.x = 0, angular.z = 1.5`). With no forward component there's no collision risk, so `obstacle_stop` lets it through unchanged: **`angular.z` goes to 1.5 on the plot**. Robot pivots in place.
+5. After pivoting, the IR no longer sees the wall, and `obstacle_stop` resumes forwarding the next forward Twist unmodified. Robot drives off in the new direction.
 
 ### What just happened
 
