@@ -24,7 +24,20 @@ cd /path/to/bit2atms
 docker build --platform linux/amd64 -t bit2atms-ros2 -f resources/ros2/docker/Dockerfile .
 ```
 
-### 2. Run the container
+### 2. Seed the workspace (one-time, ~5 s)
+
+The container reads chapter source files from a bind-mounted `workspace/ros2/` directory on your host. **Before starting the container, populate that directory** by running the workspace-reset script from the repo root:
+
+```bash
+# from bit2atms/
+bash scripts/reset_workspace.sh --add-only
+```
+
+This copies `resources/ros2/**` (URDFs, launch files, helper scripts, etc.) into `workspace/ros2/`. The container then sees them at `/workspace/ros2/...`. If you skip this step, every chapter's "launch this file" command will fail with *file not found*.
+
+Re-run any time you want a fresh copy (the `--add-only` flag only creates missing files; without it the script offers to back up and rewrite).
+
+### 3. Run the container
 
 **Run from the repo root** (`bit2atms/`) — the `-v $(pwd)/workspace/ros2` bind-mount depends on it.
 
@@ -53,7 +66,7 @@ docker run -it \
 
 Port 8765 is the Foxglove WebSocket port — used from ch02 onwards. Publishing it always does no harm and means you never have to restart the container just to add it later.
 
-### 3. Open extra shells
+### 4. Open extra shells
 
 Every new terminal needs its own shell inside the container:
 
@@ -61,7 +74,7 @@ Every new terminal needs its own shell inside the container:
 docker exec -it ros2 bash
 ```
 
-### 4. Verify packages
+### 5. Verify packages
 
 ```bash
 ros2 pkg list | grep -E "turtlebot3_gazebo|nav2_bringup|slam_toolbox|foxglove_bridge"

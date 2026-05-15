@@ -30,7 +30,15 @@ Every ROS2 entity in prose is tagged with a prefix word so you never have to gue
 
 ### Setup
 
-All commands run inside the same `ros2` Docker container from ch02 (`docker exec -it ros2 bash`). Foxglove on your laptop, `pkg foxglove_bridge` running inside the container — same setup as ch02. If you tore everything down between sessions:
+All commands run inside the same `ros2` Docker container from ch02 (`docker exec -it ros2 bash`). Foxglove on your laptop, `pkg foxglove_bridge` running inside the container — same setup as ch02.
+
+**Before you start**, make sure `workspace/ros2/ch03/` on your host is populated. If you ran the workspace seed step from the **Docker image** sidebar resource at any point, you're good — the chapter's resource files live under `/workspace/ros2/ch03/` inside the container. If you haven't seeded yet, run once from the repo root:
+
+```bash
+bash scripts/reset_workspace.sh --add-only
+```
+
+Then in a container shell:
 
 ```bash
 # T1 — leave foxglove_bridge running

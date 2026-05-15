@@ -17,11 +17,15 @@ from rclpy.node import Node
 
 # Drive pattern as (linear_x [m/s], angular_z [rad/s], duration [s]) tuples.
 # Tweak freely — the motor driver will integrate whatever you publish.
+#
+# When obstacle_stop blocks the forward phase, the spin phase still goes
+# through. Spin rate × duration is sized so the robot turns ~180° per
+# spin attempt — enough to clear whichever wall it's facing.
 PATTERN = [
-    (0.20, 0.0, 2.0),   # forward 0.2 m/s for 2 s
-    (0.0, 0.8, 2.0),    # spin left 0.8 rad/s for 2 s
-    (0.20, 0.0, 2.0),   # forward again
-    (0.0, 0.0, 1.0),    # stop
+    (0.20, 0.0, 4.0),   # forward 0.2 m/s for 4 s  (covers the room)
+    (0.0,  1.5, 2.0),   # spin left 1.5 rad/s for 2 s  (~180°)
+    (0.20, 0.0, 4.0),   # forward again
+    (0.0,  0.0, 1.0),   # brief stop
 ]
 
 

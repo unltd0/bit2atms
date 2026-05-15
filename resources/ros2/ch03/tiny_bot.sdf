@@ -232,15 +232,16 @@
 
     <!-- Plugins -->
 
-    <!-- Diff-drive: only the FRONT wheels are commanded. The rear pair are
-         passive — they spin freely in their continuous joints. Wheel_separation
-         is the front-axle track (same as rear, since y_offset is identical).
-         A real 4WD Arduino car typically links all four wheels mechanically;
-         in sim, "drive the front two and let the rear two roll" is the
-         simplest faithful model that exercises the same Twist→odom contract. -->
+    <!-- Diff-drive: all four wheels are commanded. A real 4WD Arduino car
+         mechanically links front + rear on each side; we replicate that by
+         feeding the diff-drive plugin both front and rear joints per side.
+         Driving all 4 also avoids rear-wheel rolling resistance during
+         in-place pivots (a 2-of-4-driven design pivots much more slowly). -->
     <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
       <left_joint>fl_wheel_joint</left_joint>
+      <left_joint>rl_wheel_joint</left_joint>
       <right_joint>fr_wheel_joint</right_joint>
+      <right_joint>rr_wheel_joint</right_joint>
       <wheel_separation>0.24</wheel_separation>
       <wheel_radius>0.05</wheel_radius>
       <max_linear_acceleration>2.0</max_linear_acceleration>
