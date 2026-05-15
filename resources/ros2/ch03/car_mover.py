@@ -15,17 +15,17 @@ import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
 
-# Drive pattern as (linear_x [m/s], angular_z [rad/s], duration [s]) tuples.
+# Drive pattern as (label, linear_x [m/s], angular_z [rad/s], duration [s]) tuples.
 # Tweak freely — the motor driver will integrate whatever you publish.
 #
 # When obstacle_stop blocks the forward phase, the spin phase still goes
 # through. Spin rate × duration is sized so the robot turns ~180° per
 # spin attempt — enough to clear whichever wall it's facing.
 PATTERN = [
-    (0.20, 0.0, 4.0),   # forward 0.2 m/s for 4 s  (covers the room)
-    (0.0,  1.5, 2.0),   # spin left 1.5 rad/s for 2 s  (~180°)
-    (0.20, 0.0, 4.0),   # forward again
-    (0.0,  0.0, 1.0),   # brief stop
+    ("forward",   0.20, 0.0, 4.0),   # 0.2 m/s for 4 s  (covers the room)
+    ("spin left", 0.0,  1.5, 2.0),   # 1.5 rad/s for 2 s  (~180°)
+    ("forward",   0.20, 0.0, 4.0),   # forward again
+    ("stop",      0.0,  0.0, 1.0),   # brief stop
 ]
 
 
@@ -44,8 +44,21 @@ class CarMover(Node):
         self.tick_dt = 0.1
         self.create_timer(self.tick_dt, self.tick)
 
+        labels = " → ".join(p[0] for p in PATTERN)
+        self.get_logger().info(
+            f"car_mover ready: publishing /cmd_vel_in, pattern = [{labels}] (looping)"
+        )
+        # First phase about to begin.
+        self._log_phase(0)
+
+    def _log_phase(self, idx: int) -> None:
+        label, vx, wz, dur = PATTERN[idx]
+        self.get_logger().info(
+            f"phase {idx + 1}/{len(PATTERN)}: {label}  (vx={vx:.2f} m/s, wz={wz:.2f} rad/s, {dur:.1f} s)"
+        )
+
     def tick(self) -> None:
-        vx, wz, duration = PATTERN[self.step_idx]
+        _label, vx, wz, duration = PATTERN[self.step_idx]
 
         msg = Twist()
         msg.linear.x = vx
@@ -56,10 +69,7 @@ class CarMover(Node):
         if self.step_elapsed >= duration:
             self.step_elapsed = 0.0
             self.step_idx = (self.step_idx + 1) % len(PATTERN)
-            self.get_logger().info(
-                f"next step: vx={PATTERN[self.step_idx][0]:.2f} "
-                f"wz={PATTERN[self.step_idx][1]:.2f}"
-            )
+            self._log_phase(self.step_idx)
 
 
 def main() -> None:
