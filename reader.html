@@ -985,6 +985,23 @@ body {
   color: var(--text2);
   font-style: italic;
 }
+#content .figure-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  margin: 20px auto;
+}
+#content .figure-row figure {
+  margin: 0;
+  flex: 0 1 auto;
+}
+#content .figure-row figure img {
+  max-height: 180px;
+  width: auto;
+  margin: 0;
+}
 
 /* Video embed */
 .video-embed {
@@ -2260,20 +2277,37 @@ async function loadChapter(id){
     });
 
     // Wrap img + next sibling <p><em>caption</em></p> into <figure><figcaption>
-    contentEl.querySelectorAll('img').forEach(img => {
-      const p = img.closest('p');
-      if (!p) return;
-      const figure = document.createElement('figure');
-      const next = p.nextElementSibling;
-      p.replaceWith(figure);
-      figure.appendChild(img);
-      // Only treat next sibling as caption if it's a <p> containing only <em>
-      if (next && next.tagName === 'P' &&
-          next.childNodes.length === 1 && next.childNodes[0].tagName === 'EM') {
-        const cap = document.createElement('figcaption');
-        cap.innerHTML = next.childNodes[0].innerHTML;
-        figure.appendChild(cap);
-        next.remove();
+    // For a <p> containing multiple <img>s (no other meaningful content),
+    // render them side-by-side as a row of figures.
+    contentEl.querySelectorAll('p').forEach(p => {
+      const imgs = Array.from(p.querySelectorAll(':scope > img'));
+      if (imgs.length === 0) return;
+      // Treat as image-only paragraph if it has no text apart from whitespace
+      const textContent = p.textContent.replace(/\s/g, '');
+      if (textContent.length > 0) return;
+      if (imgs.length === 1) {
+        const img = imgs[0];
+        const figure = document.createElement('figure');
+        const next = p.nextElementSibling;
+        p.replaceWith(figure);
+        figure.appendChild(img);
+        if (next && next.tagName === 'P' &&
+            next.childNodes.length === 1 && next.childNodes[0].tagName === 'EM') {
+          const cap = document.createElement('figcaption');
+          cap.innerHTML = next.childNodes[0].innerHTML;
+          figure.appendChild(cap);
+          next.remove();
+        }
+      } else {
+        // Multi-image row
+        const row = document.createElement('div');
+        row.className = 'figure-row';
+        imgs.forEach(img => {
+          const figure = document.createElement('figure');
+          figure.appendChild(img);
+          row.appendChild(figure);
+        });
+        p.replaceWith(row);
       }
     });
 

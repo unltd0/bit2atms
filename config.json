@@ -34,6 +34,22 @@
       "resources": [
         { "id": "ros2-docker", "num": "▶", "title": "Docker image (all chapters)", "file": "resources/ros2/docker/README.md", "color": "accentp" }
       ]
+    },
+    {
+      "id": "sensors",
+      "title": "Sensors",
+      "description": "A structured capability primer for robot sensors: cameras, LiDAR, radar, IMU, GPS, proximity/contact, audio — plus a discovery list of everything else. What each senses, what it emits, the ROS2 msg type, and what to watch out for.",
+      "totalTime": "Half a day",
+      "hardware": "Laptop only",
+      "chapters": [
+        { "id": "sensors-readme", "num": "○",  "file": "courses/sensors/README.md",                       "color": "accent"  },
+        { "id": "sensors-ch01",   "num": "01", "file": "courses/sensors/ch01_cameras/README.md",          "color": "accentg" },
+        { "id": "sensors-ch02",   "num": "02", "file": "courses/sensors/ch02_lidar_radar/README.md",      "color": "accento" },
+        { "id": "sensors-ch03",   "num": "03", "file": "courses/sensors/ch03_imu_gnss_odom/README.md",    "color": "accentp" },
+        { "id": "sensors-ch04",   "num": "04", "file": "courses/sensors/ch04_proximity_contact/README.md","color": "accentr" },
+        { "id": "sensors-ch05",   "num": "05", "file": "courses/sensors/ch05_audio/README.md",            "color": "accenty" },
+        { "id": "sensors-ch06",   "num": "06", "file": "courses/sensors/ch06_more_sensors/README.md",     "color": "accent"  }
+      ]
     }
   ]
 }
