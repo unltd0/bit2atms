@@ -39,9 +39,17 @@ class ObstacleStop(Node):
         # before the sensor publishes anything.
         self.latest_ir = float("inf")
 
+        # Remember the last "blocked" state so we only log on transitions
+        # (not at 10 Hz on every cmd_vel_in message).
+        self.was_blocked = False
+
         self.create_subscription(LaserScan, "/ir_front", self.on_ir, 10)
         self.create_subscription(Twist, "/cmd_vel_in", self.on_cmd_in, 10)
         self.pub = self.create_publisher(Twist, "/cmd_vel", 10)
+
+        self.get_logger().info(
+            f"obstacle_stop ready: blocking forward motion when /ir_front < {STOP_DISTANCE:.2f} m"
+        )
 
     def on_ir(self, msg: LaserScan) -> None:
         # Single ray — just the first (and only) range value.
@@ -53,8 +61,21 @@ class ObstacleStop(Node):
         # Block forward motion only — pure rotations and reverse are still safe
         # near a wall ahead. This is the textbook "stop before you crash, but
         # still let me turn out of trouble" behaviour.
-        if self.latest_ir < STOP_DISTANCE and msg.linear.x > 0:
-            # Too close + commanded to drive forward. Keep rotation, drop linear.
+        blocked = self.latest_ir < STOP_DISTANCE and msg.linear.x > 0
+
+        # Log on edge transitions only.
+        if blocked and not self.was_blocked:
+            self.get_logger().warn(
+                f"obstacle close ({self.latest_ir:.2f} m) — blocking forward motion"
+            )
+        elif self.was_blocked and not blocked:
+            self.get_logger().info(
+                f"path clear ({self.latest_ir:.2f} m) — passing commands through"
+            )
+        self.was_blocked = blocked
+
+        if blocked:
+            # Keep rotation, drop linear. Lets the robot pivot out of trouble.
             safe = Twist()
             safe.linear.x = 0.0
             safe.angular.z = msg.angular.z
