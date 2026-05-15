@@ -126,13 +126,13 @@ All four files live in `resources/ros2/ch03/`. Read them once at your leisure; w
 
 ### The contract you're about to use
 
-Before we work out what code runs in this project, the standard handshake every mobile robot uses:
+Every ROS2 wheeled robot speaks the same handshake. Here it is:
 
-> *Across the entire ROS2 ecosystem, "tell a wheeled robot how to move" means one thing: publish a `msg Twist` on `topic /cmd_vel`.*
+> *"Tell a wheeled robot how to move" means one thing across the entire ROS2 ecosystem: publish a `msg Twist` on `topic /cmd_vel`.*
 >
 > *`msg Twist` is the message type — six numbers (`linear.x/y/z`, `angular.x/y/z`) describing a desired velocity. `topic /cmd_vel` is the named channel those messages flow on. The combination — `msg Twist` on `topic /cmd_vel` — is the de-facto handshake for mobile robots. Nav2 publishes there. Every teleop tool publishes there. Every motor driver in the ecosystem subscribes there. It's not enforced by ROS2; it's enforced by the fact that everything else assumes it.*
 
-Now work out what's needed for the contract to do something useful.
+Given that contract, four things have to run for `tiny_bot` to actually do anything:
 
 **1. Something needs to consume `msg Twist` on `topic /cmd_vel` and turn it into wheel motion.** In sim, that's Gazebo's `gz-sim-diff-drive-system` plugin (attached to `tiny_bot.sdf`). It reads the Twist, computes each wheel's target angular velocity, drives the simulated wheel joints at those velocities, and publishes back `msg Odometry` on `topic /odom` plus the `tf odom → base_link` transform — exactly what a real motor driver would publish. **On real hardware, this slot is replaced by an Arduino-talking ROS2 node (more in Project C). Same ROS2 contract, different innards.**
 
