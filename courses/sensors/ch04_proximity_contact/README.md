@@ -14,7 +14,7 @@ This chapter covers the *close-range* family: sensors that work within a couple 
 
 ## Ultrasonic distance sensor
 
-**What it does.** Emits a chirp of ultrasound (~40 kHz), times the echo, returns distance.
+**What it does.** Emits a *chirp* (a short burst of sound, ~40 kHz — above human hearing), times the echo, returns distance.
 
 **Senses.** Time-of-flight of an ultrasonic pulse off the nearest reflective surface in a cone (~15–30° wide).
 
@@ -23,7 +23,7 @@ This chapter covers the *close-range* family: sensors that work within a couple 
 **Output.** A single distance reading (0.02–4 m typical) at up to ~20 Hz.
 
 **Integration.**
-- **Physical interface:** GPIO trigger (10 μs pulse to initiate) + GPIO echo (the duration the echo pin stays high is proportional to distance — ~58 μs per cm one-way), or I2C on smarter modules
+- **Physical interface:** GPIO (General Purpose Input/Output — a digital pin on the host microcontroller). One GPIO pin sends a 10 μs trigger pulse to start a measurement; another receives the echo — staying high for a duration proportional to distance (~58 μs per cm one-way). Smarter modules expose the result over I2C instead.
 - **ROS2:** `ros2_hcsr04`, generic GPIO-driven nodes → `sensor_msgs/Range`
 - **Non-ROS:** Trivial: `pigpio` / `RPi.GPIO` on Pi, NewPing on Arduino. Often handled in firmware and exposed via UART/I2C.
 
@@ -31,8 +31,8 @@ This chapter covers the *close-range* family: sensors that work within a couple 
 - **Wide cone, no resolution.** It can tell you *something* is in front, not *where* in the cone. Two objects in the cone → reading is the nearer one.
 - **Soft surfaces absorb sound** (curtains, foam) and return nothing.
 - **Glancing angles miss.** A flat wall at a steep angle reflects sound away from the sensor.
-- **Min range floor.** Below ~2 cm, the echo arrives before the transducer stops ringing. Blind zone.
-- **Multiple sensors interfere.** Two HC-SR04s firing simultaneously hear each other's echoes. Time-multiplex them.
+- **Min range floor.** Below ~2 cm, the echo arrives before the speaker element has stopped vibrating, so the sensor can't hear it. Blind zone.
+- **Multiple sensors interfere.** Two HC-SR04s firing simultaneously hear each other's echoes. Schedule them so only one fires at a time.
 - **Temperature affects speed of sound** (~0.18% per °C). Doesn't matter for indoor robots; matters for high-precision use.
 
 **Representative products.**
@@ -100,7 +100,7 @@ This chapter covers the *close-range* family: sensors that work within a couple 
 - **Non-ROS:** Single digital read; one line of firmware.
 
 **Limitations to watch out for.**
-- **Bouncing.** Mechanical switches chatter for a few milliseconds on contact. Debounce in software or hardware.
+- **Bouncing.** Mechanical switches chatter open-and-closed for a few milliseconds on contact. *Debounce* — ignore the rapid changes in software (or with a small hardware filter) for the first 10–20 ms after each transition.
 - **Binary only.** Yes/no, no force value.
 - **Coverage gaps.** A switch only detects contact at the switch itself. Most robots use a bumper *skirt* with multiple switches.
 
@@ -112,9 +112,9 @@ This chapter covers the *close-range* family: sensors that work within a couple 
 
 **What it does.** Measures forces and torques along all 6 axes (3 linear + 3 rotational). Used at robot wrists and on grippers.
 
-**Senses.** Strain in carefully-designed metal flexures, read by strain gauges.
+**Senses.** Tiny deflections in carefully-designed *flexures* (metal beams that bend slightly under load), measured by *strain gauges* (sensors whose electrical resistance changes when they're stretched).
 
-**Input.** Power (typically 24 V), Ethernet or CAN bus, mechanical mount.
+**Input.** Power (typically 24 V), Ethernet or CAN bus (Controller Area Network — the standard automotive / industrial communication bus), mechanical mount.
 
 **Output.** Six floats — Fx, Fy, Fz, Tx, Ty, Tz — at 100–1000 Hz.
 
@@ -132,13 +132,13 @@ This chapter covers the *close-range* family: sensors that work within a couple 
 
 ### Cheap alternative: motor-current sensing
 
-Industrial F/T sensors are precise but expensive. A common cheap substitute on smart actuators (Dynamixel servos, ODrive) is to **estimate torque from motor current**. Current × torque-constant ≈ output torque. It's much noisier, ignores friction and inertia, but it's free if you already have the servo.
+Industrial F/T sensors are precise but expensive. A common cheap substitute on smart actuators (Dynamixel servos, ODrive) is to **estimate torque from motor current**. Each motor has a *torque constant* — a number specific to the motor that says how many newton-meters of torque you get per amp of current. Multiplying current × torque constant gives an estimate of output torque. It's much noisier than a real F/T sensor, ignores friction and inertia, but it's effectively free if you already have the servo.
 
 **Representative products.**
 
 | Product | Tier | Range | Accuracy | Price (USD) | Pick when |
 |---|---|---|---|---|---|
-| [Robotiq FT 300-S](https://robotiq.com/products/ft-300-force-torque-sensor) | Cobot integration | ±300 N | ~0.5% FS | ~$3,000–$5,000 | Universal Robots / cobot cell, plug-and-play |
+| [Robotiq FT 300-S](https://robotiq.com/products/ft-300-force-torque-sensor) | Cobot (collaborative robot) integration | ±300 N | ~0.5% of full scale | ~$3,000–$5,000 | Universal Robots / collaborative-robot cell, plug-and-play |
 | [ATI Mini40 / Nano17](https://www.ati-ia.com/products/ft/) | Research | ±40 N / ±17 N | High | ~$5,000–$10,000 | Research-grade precision, small form factor |
 | [Bota Systems Medusa](https://www.botasys.com/) | Research | ±100–500 N | High | ~$3,000–$6,000 | Lightweight, modern alternative to ATI |
 | Motor current sensing | Hobby/cheap | varies | very rough | "free" with servo | Hobby manipulation, cost-sensitive grippers |
@@ -149,7 +149,7 @@ Industrial F/T sensors are precise but expensive. A common cheap substitute on s
 
 ## Tactile sensors
 
-**What it does.** Detects contact distribution and (sometimes) shear forces across a surface — like skin.
+**What it does.** Detects contact distribution and (sometimes) *shear forces* — forces along the surface (sliding) rather than just pressing into it — across a surface, like skin.
 
 **Senses.** Varies: optical (camera looking at a deformable gel), capacitive (electrode arrays), piezoresistive (pressure-sensitive ink), MEMS.
 
@@ -163,7 +163,7 @@ Industrial F/T sensors are precise but expensive. A common cheap substitute on s
 **Limitations to watch out for.**
 - **Optical tactile sensors are bulky.** GelSight Mini is the size of a fingertip plus a camera; doesn't fit everywhere.
 - **Wear and tear.** Gel surfaces scratch and degrade; replacement parts cost real money.
-- **Data is hard to use.** A 320×240 tactile image is huge; most code wants a few summary statistics (contact area, centroid, normal force).
+- **Data is hard to use.** A 320×240 tactile image is huge; most code wants a few summary statistics — contact area, *centroid* (the center point of the contact patch), and *normal force* (the perpendicular pressing force).
 - **Limited standards.** No universal "tactile msg" yet; every vendor has their own format.
 - **Sim-to-real gap.** Tactile simulation is much less mature than visual or LiDAR sim.
 

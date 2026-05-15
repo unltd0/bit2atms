@@ -2,11 +2,11 @@
 
 **Time:** Half a day
 **Hardware:** Laptop only
-**Prerequisites:** ROS2 course [ch01](../ros2/ch01_fundamentals/README.md) and [ch02](../ros2/ch02_simulation/README.md) — topics, msg types, TF, QoS, `sensor_msgs`
+**Prerequisites:** ROS2 course [ch01](../ros2/ch01_fundamentals/README.md) and [ch02](../ros2/ch02_simulation/README.md). You should already be comfortable with ROS2 topics, message types, the TF (transform) tree, QoS (Quality of Service) profiles, and the `sensor_msgs` package.
 
 ---
 
-Tesla ships cars with 8 cameras and no LiDAR. Waymo's robotaxis carry 5 LiDARs and 29 cameras. Both ship to paying customers. The reason isn't that one of them is wrong — it's that *every sensor lies in a different way*, and the right stack depends on which lies you can tolerate.
+Tesla ships cars with 8 cameras and no LiDAR. Waymo's self-driving taxis carry 5 LiDARs and 29 cameras. Both ship to paying customers. The reason isn't that one of them is wrong — it's that every sensor fails in its own way, and the right stack depends on which failures you can tolerate.
 
 This course is a tour of the sensors a robot actually uses. For each family — cameras, LiDAR, radar, IMU, GPS, proximity, audio — you get a structured reference: **what it senses, what it emits, how to integrate it, and what to watch out for**. Not a textbook. Not a product catalog. A map of the territory.
 
@@ -19,7 +19,7 @@ After reading, you should be able to:
 - Read a sensor datasheet without your eyes glazing over
 - Pick a sensor for a robot you're designing — and defend the choice
 - Recognize a sensor's failure mode in the wild before it costs you a week of debugging
-- Know what ROS2 driver and msg type to look for when wiring a new sensor in
+- Know what ROS2 driver package and message type to look for when adding a new sensor
 
 You will **not** become an expert in any one sensor. That's what the linked datasheets, papers, and teardowns are for.
 
@@ -29,8 +29,8 @@ You will **not** become an expert in any one sensor. That's what the linked data
 
 | # | Chapter | Covers |
 |---|---|---|
-| 01 | [Cameras — 2D & Depth](ch01_cameras/README.md) | RGB cameras, stereo / ToF / structured-light depth, plus event and thermal cameras |
-| 02 | [LiDAR & Radar](ch02_lidar_radar/README.md) | Spinning, solid-state, FMCW LiDAR; mmWave radar |
+| 01 | [Cameras — 2D & Depth](ch01_cameras/README.md) | RGB cameras, depth cameras (stereo, time-of-flight, structured light), plus event and thermal cameras |
+| 02 | [LiDAR & Radar](ch02_lidar_radar/README.md) | LiDAR (spinning, solid-state, and FMCW — frequency-modulated continuous-wave); millimeter-wave (mmWave) radar |
 | 03 | [IMU, GNSS & Wheel Odometry](ch03_imu_gnss_odom/README.md) | The dead-reckoning trio — each drifts differently, so they fuse well |
 | 04 | [Proximity & Contact](ch04_proximity_contact/README.md) | Ultrasonic, IR ToF, bumpers, force-torque, tactile |
 | 05 | [Audio](ch05_audio/README.md) | Single mics, mic arrays, direction-of-arrival, beamforming |
@@ -46,7 +46,7 @@ Each sensor in a chapter gets the same block:
 - **Senses** — the physical quantity it picks up
 - **Input** — power, trigger, config
 - **Output** — the data shape that comes out
-- **Integration** — physical interface, ROS2 driver + msg, non-ROS SDK options
+- **Integration** — physical interface, ROS2 driver + message type, and non-ROS SDK (Software Development Kit) options
 - **Limitations to watch out for** — failure modes that bite in the field
 - **Why & how it works** — *only* where the physics changes how you use it
 - **Representative products** — 3–6 examples across hobby / prosumer / industrial, with prices and links

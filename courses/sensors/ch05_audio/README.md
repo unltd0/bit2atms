@@ -6,7 +6,7 @@
 
 ---
 
-A single microphone is a pressure-to-voltage transducer with one job. A microphone *array* is something qualitatively different — multiple microphones spaced at known distances, exploiting the tiny time-of-arrival differences between them to compute *where* a sound is coming from. That trick — beamforming — is why Alexa works in a noisy kitchen and why a robot can follow voice commands from across a room.
+A single microphone is a device that converts sound (air pressure changes) into a varying electrical voltage. A microphone *array* is something qualitatively different — multiple microphones spaced at known distances. Software uses the tiny differences in when a sound reaches each microphone to compute *where* the sound is coming from. That trick — beamforming — is why Alexa works in a noisy kitchen and why a robot can follow voice commands from across a room.
 
 Audio is a smaller part of robotics than cameras or LiDAR, but it's the natural interface for human-robot interaction and a useful sensor for anomaly detection in industrial settings.
 
@@ -16,14 +16,14 @@ Audio is a smaller part of robotics than cameras or LiDAR, but it's the natural 
 
 **What it does.** Converts sound-pressure waves in air into a time-varying electrical signal.
 
-**Senses.** Air pressure fluctuations (sound) — typically across the audible band (20 Hz–20 kHz) for human-targeted applications, sometimes ultrasonic (>20 kHz) for industrial use.
+**Senses.** Air pressure fluctuations (sound) — typically across the audible band (20 Hz–20 kHz) for human-targeted applications, sometimes ultrasonic (above 20 kHz) for industrial use.
 
-**Input.** Power (1.5–5 V for electret; 3.3 V for MEMS), bias resistor for analog electret, no setup for digital MEMS over I2S.
+**Input.** Power (1.5–5 V for *electret* mics — the classic small analog capsule; 3.3 V for *MEMS* — micro-fabricated digital mics). Analog electret mics need a bias resistor — a single resistor that supplies the mic capsule with current. Digital MEMS mics over I2S (Inter-IC Sound — a 3-wire digital audio protocol) need no extra setup.
 
-**Output.** A stream of audio samples at 16, 44.1, or 48 kHz (sometimes higher) at 16 or 24 bits per sample. Mono.
+**Output.** A stream of audio samples at 16, 44.1, or 48 kHz (sometimes higher), 16 or 24 bits per sample. Mono.
 
 **Integration.**
-- **Physical interface:** Analog (electret, needs ADC), I2S (digital MEMS, common on Pi-class boards), USB (a "USB sound card" mic — plug-and-play on any host)
+- **Physical interface:** Analog (electret — needs an ADC, an Analog-to-Digital Converter on the host), I2S (digital MEMS, common on Pi-class boards), USB (a "USB sound card" mic — plug-and-play on any host)
 - **ROS2:** `audio_common` package (and its ROS2 ports) → `audio_common_msgs/AudioData`. Or capture with PulseAudio / PortAudio and publish raw arrays.
 - **Non-ROS:** PortAudio, PyAudio, sounddevice (Python), GStreamer, FFmpeg, ALSA on Linux
 
@@ -32,7 +32,7 @@ Audio is a smaller part of robotics than cameras or LiDAR, but it's the natural 
 - **Acoustic environment matters more than the mic.** A $5 mic in a quiet room beats a $500 mic in a fan-noise lab.
 - **Sample-rate matching.** If your speech recognizer expects 16 kHz and your capture is at 48 kHz, you must resample.
 - **Latency** for real-time feedback (echo cancellation, voice activity detection) is hard to drive below 50 ms without OS tuning.
-- **Compression eats high-frequency detail.** If you're shipping audio over a network, the codec matters; Opus and PCM are robot-friendly, MP3 isn't.
+- **Compression eats high-frequency detail.** If you're shipping audio over a network, the *codec* (the algorithm that compresses and decompresses audio) matters. Opus and PCM (Pulse-Code Modulation — uncompressed raw samples) are robot-friendly; MP3 is too lossy for speech recognition.
 
 **Representative products.**
 
@@ -53,7 +53,7 @@ Audio is a smaller part of robotics than cameras or LiDAR, but it's the natural 
 
 **Senses.** Sound, plus the tiny time-of-arrival differences (microseconds) between mics that imply geometry.
 
-**Input.** USB power; on-board DSP handles the heavy lifting.
+**Input.** USB power; an on-board DSP (Digital Signal Processor — a small chip specialized for real-time audio math) handles the heavy lifting.
 
 **Output.**
 - A processed mono audio stream (the "beamformed" signal pointing at the strongest source)
@@ -72,13 +72,13 @@ Audio is a smaller part of robotics than cameras or LiDAR, but it's the natural 
 - **Distance trade-off.** Beyond ~5 m, even good arrays struggle with conversational speech in noise.
 - **Multiple simultaneous speakers** are still hard. Single-speaker beamforming is mature; cocktail-party speaker separation isn't.
 - **Vendor lock-in.** ReSpeaker is the only widely-supported array in ROS2. Other vendors require writing your own driver.
-- **Far-field mics are tuned for voice (300 Hz–8 kHz).** Don't expect music-quality fidelity.
+- **Far-field mics** — mics tuned to pick up speech from across a room rather than up close — **are tuned for voice (300 Hz–8 kHz).** Don't expect music-quality fidelity.
 
 ### Why & how it works
 
-When a sound source is off to your right, a sound wave reaches your right ear ~600 μs before your left ear (your interaural distance ÷ speed of sound). A mic array does the same trick: pick up the same waveform on N mics at slightly different times, cross-correlate to find the offset, infer the angle.
+When a sound source is off to your right, a sound wave reaches your right ear ~600 μs before your left ear (the distance between your two ears, ~20 cm, divided by the speed of sound, 343 m/s). A mic array does the same trick: pick up the same waveform on N microphones at slightly different times, slide the recordings against each other to find the time offset (*cross-correlation*), and infer the angle of arrival.
 
-**Beamforming** flips it around: delay-and-sum the channels so that signals from a chosen direction add constructively while signals from other directions add destructively. The result is a virtual "directional microphone" that you can electronically steer.
+**Beamforming** flips it around: shift each microphone's signal in time, then add them all together. Signals from a chosen direction line up and add up (*constructive interference*); signals from other directions arrive at different relative offsets and cancel each other out (*destructive interference*). The result is a virtual "directional microphone" you can electronically steer toward whoever's talking.
 
 Modern array chips (XMOS XVF3000, Cirrus DSPs) bundle all of this — DoA, beamforming, echo cancellation, noise suppression — into a sealed package that exposes one cleaned mono stream and a direction estimate. You generally don't write the algorithms; you read the output.
 

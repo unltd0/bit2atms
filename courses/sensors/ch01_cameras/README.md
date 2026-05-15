@@ -6,7 +6,7 @@
 
 ---
 
-The camera is the most-used sensor in robotics, by an enormous margin. Every VLA model, every visual SLAM stack, every Tesla on the road runs on cameras first. They're cheap, dense, well-understood, and they capture far more information than any other sensor — at the cost of needing serious compute to make sense of any of it.
+The camera is the most-used sensor in robotics, by an enormous margin. Every Vision-Language-Action (VLA) model, every visual SLAM (Simultaneous Localization and Mapping) stack, every Tesla on the road runs on cameras first. They're cheap, dense, well-understood, and they capture far more information than any other sensor — at the cost of needing a lot of compute to make sense of any of it.
 
 This chapter is in two halves. **Part 1** covers regular 2D cameras: image formation, lenses, shutter types, calibration. **Part 2** covers depth cameras (stereo, time-of-flight, structured light) — which are basically 2D cameras plus geometry or projected light. Same physics core, different add-ons.
 
@@ -16,25 +16,25 @@ This chapter is in two halves. **Part 1** covers regular 2D cameras: image forma
 
 **What it does.** Projects light onto a sensor and returns a 2D image at some frame rate.
 
-**Senses.** Visible light (and sometimes near-infrared) hitting a silicon array — either a **CCD** (older, expensive, used in scientific imaging) or **CMOS** (the universal default in 2026, cheap and fast).
+**Senses.** Visible light (and sometimes near-infrared) hitting a silicon array — either a **CCD** (Charge-Coupled Device — older, expensive, used in scientific imaging) or **CMOS** (Complementary Metal-Oxide-Semiconductor — the universal default in 2026, cheap and fast).
 
-**Input.** Power, optional trigger signal, lens (focal length × aperture defines what gets imaged).
+**Input.** Power, optional trigger signal, and a lens. The lens has two key numbers: *focal length* (how zoomed-in the view is) and *aperture* (how much light gets through).
 
 **Output.**
-- **Raw or compressed image frames** at 30–240 Hz (rolling-shutter consumer) or 100–1000 Hz (global-shutter machine vision)
-- Pixel formats: `mono8` / `mono16` / `bgr8` / `rgb8` / `yuv422`
-- Plus **camera intrinsics** — the lens model — published separately
+- **Raw or compressed image frames** at 30–240 frames per second on consumer cameras (which use a *rolling shutter* — they read the sensor row by row, so fast motion produces slanted images) or 100–1000 fps on machine-vision cameras (which use a *global shutter* — every pixel exposes at once, no motion artifacts)
+- Pixel formats — names that tell you how each pixel is encoded: `mono8` (1 byte grayscale), `mono16` (2 byte grayscale), `bgr8` / `rgb8` (3 bytes color), `yuv422` (compressed color)
+- Plus **camera intrinsics** — calibration numbers that describe the lens (focal length, optical center, distortion). Published as a separate message.
 
 ![Pinhole camera model — Wikimedia Commons (CC BY-SA 3.0)](assets/pinhole_camera.svg)
 
 **Integration.**
-- **Physical interface:** USB (UVC for plug-and-play), MIPI-CSI (Raspberry Pi cameras, embedded boards), GigE Vision / USB3 Vision (machine vision), GMSL/FPD-Link (automotive)
-- **ROS2:** `v4l2_camera` (any V4L2 / UVC USB camera), `usb_cam`, `image_pipeline` for processing → `sensor_msgs/Image`, `sensor_msgs/CompressedImage`, `sensor_msgs/CameraInfo`
+- **Physical interface:** USB (the standard "UVC" — USB Video Class — webcam protocol works plug-and-play), MIPI-CSI (a high-speed direct-to-board connector used by Raspberry Pi cameras), GigE Vision / USB3 Vision (industrial machine-vision protocols), GMSL or FPD-Link (automotive-grade serial cables)
+- **ROS2:** `v4l2_camera` (works with any V4L2 / UVC USB webcam; V4L2 = Video4Linux2, the standard Linux video API), `usb_cam`, `image_pipeline` for image processing → `sensor_msgs/Image`, `sensor_msgs/CompressedImage`, `sensor_msgs/CameraInfo`
 - **Non-ROS:** OpenCV (`cv2.VideoCapture`), GStreamer, Pylon (Basler), Spinnaker (FLIR), libcamera (Raspberry Pi), Pillow / PIL for basic capture
 
 **Limitations to watch out for.**
-- **Motion blur and rolling shutter.** Most consumer cameras read pixels row-by-row. A fast-moving object or a fast-rotating robot produces sheared, slanted images — sometimes called the "jello effect." Global-shutter cameras avoid this but cost 3–10×.
-- **Dynamic range.** A camera sees ~60 dB of light at once; the real world spans 100+ dB. A robot moving from a sunlit window to a shaded room will see one or the other go to full black/white.
+- **Motion blur and rolling shutter.** Most consumer cameras read pixels row-by-row, so a fast-moving object or a fast-rotating robot produces sheared, slanted images — sometimes called the "jello effect." Global-shutter cameras avoid this but cost 3–10× as much.
+- **Dynamic range.** A camera sees roughly a 1000:1 range of brightnesses at once (≈60 dB); the real world spans more than 100,000:1 (100+ dB). A robot moving from a sunlit window to a shaded room will see one or the other go to full black or full white.
 - **White balance.** Indoor incandescent, outdoor daylight, and fluorescent lights have wildly different color temperatures. Auto white balance helps; for ML models trained on one lighting condition, it doesn't help enough.
 - **Calibration is mandatory.** Out of the box, a camera's pixel coordinates don't have a clean geometric meaning. You need intrinsic calibration (focal length, optical center, distortion coefficients) before doing anything geometric. Use `camera_calibration` in ROS2 with a checkerboard.
 - **Lens distortion.** Cheap wide-angle lenses curve straight lines noticeably. Fisheye lenses do it on purpose. Calibration corrects this but adds latency.
@@ -50,7 +50,7 @@ u = fx · X/Z + cx
 v = fy · Y/Z + cy
 ```
 
-…where `fx`, `fy` are focal lengths in pixels and `cx`, `cy` is the optical center. Real lenses add distortion (radial, tangential), which calibration measures and corrects.
+…where `fx`, `fy` are focal lengths in pixels and `cx`, `cy` is the optical center (where the lens axis hits the sensor). You don't compute these by hand — the calibration step measures them for you. Real lenses also add distortion (which makes straight lines curve), which the same calibration step measures and corrects.
 
 This linear projection is *all of camera geometry*. Stereo vision is "two pinhole cameras with known geometry." Structure-from-motion is "one pinhole camera, many viewpoints." SLAM is "one pinhole camera, but also estimate the viewpoints."
 
@@ -72,7 +72,7 @@ The reason cameras are so popular: silicon sensors are now sub-$1 in volume, the
 
 ## Depth camera: stereo
 
-**What it does.** Two regular cameras placed a few cm apart. By matching the same point in both images, the system computes depth from the disparity (baseline ÷ disparity = distance).
+**What it does.** Two regular cameras placed a few cm apart. By finding the same point in both images, the system computes depth from how far apart that point appears in the two views. That horizontal offset is called the **disparity**; the distance between the two camera lenses is called the **baseline**. Depth is roughly `(baseline × focal length) ÷ disparity` — closer objects shift more between the two views.
 
 ![Stereo disparity → depth — Wikimedia Commons (CC BY 4.0)](assets/stereo_disparity.svg)
 
@@ -82,7 +82,7 @@ The reason cameras are so popular: silicon sensors are now sub-$1 in volume, the
 
 **Output.**
 - An RGB image (typically from one of the two stereo cameras)
-- A **depth image** (`sensor_msgs/Image` with `32FC1` or `16UC1`, distances in meters or millimeters)
+- A **depth image** — one distance value per pixel. ROS2 message type is `sensor_msgs/Image`, encoded as `32FC1` (32-bit float, distances in meters) or `16UC1` (16-bit unsigned integer, distances in millimeters)
 - A **point cloud** (`sensor_msgs/PointCloud2`) derived from the depth + intrinsics
 - Some units include an IMU (D435i, ZED 2i)
 
@@ -156,10 +156,10 @@ The reason cameras are so popular: silicon sensors are now sub-$1 in volume, the
 
 **Senses.** Per-pixel log-brightness change events at microsecond resolution.
 
-**Output.** A stream of `(x, y, t, polarity)` events — millions per second, no frames at all. Vendor SDKs convert to frame-like representations for downstream code.
+**Output.** A stream of `(x, y, t, polarity)` events — millions per second, with no frames at all. Each event says "at time *t*, pixel (*x*, *y*) just got brighter or darker" (polarity = the direction of the change). Vendor SDKs convert these into frame-like images for downstream code that expects frames.
 
 **Integration.**
-- **ROS2:** `prophesee_event_ros_driver`, `dvs_ros2_driver` → custom `dvs_msgs/EventArray` or `sensor_msgs/Image` (accumulated frames)
+- **ROS2:** `prophesee_event_ros_driver`, `dvs_ros2_driver` (DVS = Dynamic Vision Sensor, the academic name for event cameras) → custom `dvs_msgs/EventArray` or `sensor_msgs/Image` (accumulated frames)
 - **Non-ROS:** Metavision SDK (Prophesee), Inivation DV (DVS)
 
 **Why it matters.** No motion blur. Microsecond temporal resolution. ~1000× higher dynamic range than a frame camera. Native low-power operation (no events fire if nothing changes).
@@ -189,7 +189,7 @@ The reason cameras are so popular: silicon sensors are now sub-$1 in volume, the
 - Low resolution (160×120 to 640×512 typical). Don't expect to read text.
 - Glass and many plastics are opaque in thermal IR. Can't see through windows.
 - Expensive — even modest thermal cameras start around $300.
-- ITAR / export restrictions apply to higher-resolution units.
+- ITAR (International Traffic in Arms Regulations — US export-control rules) and similar restrictions apply to higher-resolution units; they cannot be freely shipped to all countries.
 
 **Representative products:** [FLIR Lepton 3.5](https://www.flir.com/products/lepton/) (~$250 module), [FLIR Boson+](https://www.flir.com/products/boson-plus/) (~$2,500), [Seek Thermal](https://www.thermal.com/) (~$200–$500 USB). Pick when: search & rescue, building inspection, agricultural monitoring, security.
 
@@ -203,7 +203,7 @@ The reason cameras are so popular: silicon sensors are now sub-$1 in volume, the
 | [Intel RealSense D455 / D456](https://store.intelrealsense.com/buy-intel-realsense-depth-camera-d455.html) | Stereo + IR projector | 0.6–6 m | Yes | Yes | ~$400 / $600 (D456 IP65) | Longer range, outdoor-friendly (D456 is dust+water rated) |
 | [Stereolabs ZED 2i](https://www.stereolabs.com/store/products/zed-2i) | Passive stereo | 0.3–20 m | Yes | Yes | ~$500 | Outdoor work, long-range stereo with onboard SLAM |
 | [Luxonis OAK-D Lite](https://shop.luxonis.com/products/oak-d-lite-1) | Stereo + on-device AI | 0.2–8 m | Yes | No | ~$130 | Cheap depth + on-device neural inference (object detection without a host GPU) |
-| [Microsoft Azure Kinect](https://azure.microsoft.com/en-us/products/kinect-dk/) | ToF + RGB | 0.5–5 m | Yes | Yes | discontinued (used: ~$300) | Indoor body-tracking research; compatible with widely-cited public datasets |
+| [Microsoft Azure Kinect](https://azure.microsoft.com/en-us/products/kinect-dk/) | ToF + RGB | 0.5–5 m | Yes | Yes | discontinued by Microsoft in 2023; used units ~$300 | Indoor body-tracking research; compatible with widely-cited public datasets |
 | [Orbbec Femto / Gemini](https://www.orbbec.com/) | ToF or stereo | 0.2–5 m | Yes | Some | ~$200–$500 | Indoor robots; ToF without the Kinect lock-in |
 
 *Prices verified May 2026 from manufacturer and distributor pages.*

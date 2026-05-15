@@ -14,17 +14,17 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 ## Environmental sensors
 
-**What.** Temperature, humidity, barometric pressure, gas concentrations (CO2, VOCs), particulate matter.
+**What.** Temperature, humidity, barometric pressure, gas concentrations (CO2, VOCs — Volatile Organic Compounds, such as evaporated solvents and cleaning products), particulate matter.
 
 **Output.** Scalar values at 1–10 Hz over I2C/SPI/UART.
 
 **ROS2.** `sensor_msgs/Temperature`, `sensor_msgs/RelativeHumidity`, `sensor_msgs/FluidPressure`. No standard msg for gas / air quality — use vendor or custom.
 
-**Limitation.** Slow response (seconds for temperature to equilibrate). Drift over time. Chemical gas sensors poison gradually.
+**Limitation.** Slow response (seconds for temperature to equilibrate). Drift over time. Chemical gas sensors gradually degrade — repeated exposure to the gases they measure damages the sensing element.
 
 **Use cases.** HVAC inspection robots, agricultural drones, lab automation, indoor air-quality monitoring, search-and-rescue (look for trapped people via CO2).
 
-**Examples:** [BME680](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/) (temp + humidity + pressure + VOC, ~$15), [SCD40 / SCD41](https://sensirion.com/) (CO2 NDIR, ~$50), [SGP40](https://sensirion.com/) (VOC, ~$15), [Plantower PMS5003](http://www.plantower.com/) (PM2.5 / PM10 dust, ~$25).
+**Examples:** [BME680](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/) (temp + humidity + pressure + VOC, ~$15), [SCD40 / SCD41](https://sensirion.com/) (CO2 measured by NDIR — Non-Dispersive Infrared, an optical technique that's much more reliable than chemical CO2 sensors, ~$50), [SGP40](https://sensirion.com/) (VOC, ~$15), [Plantower PMS5003](http://www.plantower.com/) (PM2.5 / PM10 dust — particle sizes in micrometers, ~$25).
 
 ---
 
@@ -52,7 +52,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **ROS2.** `sensor_msgs/BatteryState` — published by motor controllers, BMS firmware, or a dedicated power-monitor node.
 
-**Limitation.** Charge state (% remaining) is an estimate; coulomb-counting drifts; voltage-curve estimation is noisy under load.
+**Limitation.** Charge state (% remaining) is always an estimate. *Coulomb-counting* — adding up every bit of current that flows in or out of the battery — drifts as small measurement errors accumulate. Voltage-curve estimation is noisy under load.
 
 **Use cases.** Every battery-powered robot. Triggers return-to-dock behavior. Detects stalled motors via current spikes.
 
@@ -68,7 +68,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **ROS2.** `sensor_msgs/Illuminance`.
 
-**Limitation.** Cosine response — a sensor pointed straight up reads differently than one tilted. Sunlight can saturate cheap sensors.
+**Limitation.** *Cosine response* — a tilted sensor reads less light than one pointed straight at the source. Sunlight can saturate cheap sensors.
 
 **Use cases.** Agricultural robots adjusting for plant exposure, smart-home automation, camera auto-exposure outside the camera.
 
@@ -86,7 +86,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **Limitation.** Sensitive to nearby magnets you didn't put there. Saturates near strong fields.
 
-**Use cases.** Cheap proximity (door open / lid closed), BLDC motor commutation (3 halls per motor are universal), wheel rotation counters, end-stops on 3D printers.
+**Use cases.** Cheap proximity (door open / lid closed), BLDC (Brushless DC) motor commutation — three hall sensors per motor tell the controller which winding to energize next, universal in BLDCs — wheel rotation counters, end-stops on 3D printers.
 
 **Examples:** [A3144](https://www.allegromicro.com/) (~$0.50, digital switch), [DRV5053](https://www.ti.com/product/DRV5053) (analog, ~$1), AS5048 (magnetic absolute encoder, ~$15).
 
@@ -162,7 +162,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **What.** Foil resistors bonded to a deforming surface. When the surface stretches or compresses, resistance changes proportionally.
 
-**Output.** Force / weight via a Wheatstone bridge + ADC. Typically reported in kg or N at 10–1000 Hz.
+**Output.** Force / weight via a *Wheatstone bridge* (a four-resistor circuit that turns tiny resistance changes into a measurable voltage) plus an ADC (Analog-to-Digital Converter). Typically reported in kg or N at 10–1000 Hz.
 
 **ROS2.** Custom topic; sometimes `geometry_msgs/WrenchStamped` for single-axis force.
 
@@ -194,7 +194,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **What.** Detect specific gases — methane, propane, CO, CO2, NH3, alcohol, etc. — via catalytic combustion (MQ-series), electrochemistry (industrial), or NDIR (CO2).
 
-**Output.** Analog voltage or I2C ppm value at 1–10 Hz.
+**Output.** Analog voltage or an I2C value in ppm (parts per million) at 1–10 Hz.
 
 **ROS2.** Custom topic; no standard msg.
 
@@ -246,7 +246,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **ROS2.** `apriltag_ros` → `apriltag_msgs/AprilTagDetectionArray`, plus TF transforms.
 
-**Limitation.** Needs decent lighting and a non-grazing camera angle. Tags wear out / dirty up in industrial settings.
+**Limitation.** Needs decent lighting and a non-grazing camera angle (the camera shouldn't see the tag at too sharp a slant). Tags wear out and get dirty in industrial settings.
 
 **Use cases.** Cheap absolute localization indoors (print tags on walls). Robot-arm tool calibration. Multi-robot relative localization. Ground-truth in research.
 

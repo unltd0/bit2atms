@@ -6,32 +6,38 @@
 
 ---
 
-The three sensors in this chapter share one job: tell you where the robot is and how it's moving. They all do it badly — but each fails in a *different* direction, which is exactly why they get fused together.
+The three sensors in this chapter share one job: tell you where the robot is and how it's moving. They all do it badly — but each fails in a *different* way, which is exactly why they get *fused* (combined into one better estimate).
+
+Two terms used throughout the chapter:
+- **Dead reckoning** — estimating your position by accumulating step-by-step motion (velocity, heading) without any external reference. Errors only ever grow; they never self-correct.
+- **Drift** — the slow accumulation of error in a dead-reckoning estimate.
+
+How the three sensors drift:
 
 - **IMU** drifts in time. Stand still and the estimated heading will slowly walk away from reality.
-- **GNSS** drifts in space. Your antenna gets confused by buildings, trees, and clouds; the position skitters around the true location.
+- **GNSS** (Global Navigation Satellite System — GPS and its non-US equivalents) drifts in space. Your antenna gets confused by buildings, trees, and clouds; the position skitters around the true location.
 - **Wheel odometry** drifts when wheels slip. A skid for one second on a polished floor adds a permanent error to your position estimate.
 
-The trick of every robot localization stack is to combine them so each sensor's strengths cover the others' weaknesses. The end of the chapter explains that fusion at the right level — no Kalman filter derivations, just the intuition.
+The trick of every robot localization stack is to combine them so each sensor's strengths cover the others' weaknesses. The end of the chapter explains that fusion at the right level — no Kalman filter math, just the intuition.
 
 ---
 
 ## Inertial Measurement Unit (IMU)
 
-**What it does.** Reports linear acceleration and angular velocity in three axes. Higher-end units also report magnetic field (a 9-axis or "9-DoF" IMU) and run on-chip sensor fusion to output orientation directly.
+**What it does.** Reports linear acceleration and angular velocity in three axes. Higher-end units also report magnetic field (a 9-axis or "9-DoF" IMU — DoF = Degrees of Freedom, one per measured axis) and run on-chip sensor fusion to output orientation directly.
 
 **Senses.**
-- **Accelerometer** — proof-mass on tiny springs; deflection under acceleration (including gravity)
-- **Gyroscope** — vibrating MEMS structure; Coriolis force on a rotating frame shifts the vibration
-- **Magnetometer** — Hall effect or magnetoresistance against Earth's magnetic field (acts as a compass)
+- **Accelerometer** — a tiny proof-mass on silicon springs; the springs deflect under acceleration (including the constant pull of gravity)
+- **Gyroscope** — a vibrating MEMS (Micro-Electro-Mechanical System) structure. When the chip rotates, the Coriolis force — the same apparent sideways force you'd feel walking outward on a spinning merry-go-round — shifts the vibration. Sensing the shift gives the rotation rate.
+- **Magnetometer** — measures Earth's magnetic field (it acts as a compass). Implementation uses Hall effect or magnetoresistance — the specific technique doesn't matter for usage.
 
-A 6-axis IMU measures the three orthogonal linear axes and three rotational axes (roll, pitch, yaw). A 9-axis adds three magnetometer axes for absolute heading.
+A 6-axis IMU measures the three perpendicular linear axes (X, Y, Z) and three rotational axes (roll, pitch, yaw). A 9-axis adds three magnetometer axes for absolute heading.
 
 ![Roll, pitch, yaw — Wikimedia Commons (CC BY-SA 3.0)](assets/roll_pitch_yaw.svg)
 
-**Input.** 3.3 V power, I2C/SPI clock, optional interrupt pin for "new data ready."
+**Input.** 3.3 V power, an I2C or SPI clock line (the two common short-distance digital protocols microcontrollers use to talk to chips), and an optional interrupt pin that fires when new data is ready.
 
-**Output.** Three streams at 100–1000 Hz: accel (m/s²), gyro (rad/s), and on 9-axis units mag (μT). Fusion-on-chip units also output quaternion orientation directly.
+**Output.** Three streams at 100–1000 Hz: acceleration (m/s²), angular rate (rad/s), and on 9-axis units the magnetic field (μT — microtesla). Fusion-on-chip units also output a *quaternion* directly — a compact 4-number way to represent a 3D rotation, which the driver typically converts to roll/pitch/yaw for display.
 
 **Integration.**
 - **Physical interface:** I2C (most hobby breakouts), SPI (faster), UART (industrial)
@@ -39,7 +45,7 @@ A 6-axis IMU measures the three orthogonal linear axes and three rotational axes
 - **Non-ROS:** Bosch BNO055 driver libraries, InvenSense MotionLink, Xsens MT Software Suite, Adafruit CircuitPython libraries (one-liners for breakouts)
 
 **Limitations to watch out for.**
-- **Gyro drift.** Integrating angular velocity gives orientation — and any bias on the rate becomes unbounded heading drift over time. Hobby units drift 1–10° per minute when stationary. Industrial units drift <0.1°/hour.
+- **Gyro drift.** Integrating angular velocity (rate of rotation) gives orientation. Any *bias* — a small constant error baked into the sensor's reading — becomes unbounded heading drift over time. Hobby units drift 1–10° per minute when stationary. Industrial units drift <0.1°/hour.
 - **Accel noise + bias.** Integrating acceleration twice to get position is *catastrophically* bad. Position estimate from accel alone diverges in seconds. Never do this without external aiding.
 - **Magnetometer interference.** Anything ferrous (motors, speakers, steel rebar in floors) warps the local magnetic field. Indoor heading from a magnetometer is often unreliable; calibrate in situ and don't trust it near actuators.
 - **Temperature sensitivity.** Bias drifts with temperature. Industrial IMUs include calibration tables; hobby units don't.
@@ -75,14 +81,14 @@ This is why every serious IMU is **fused with something else** — magnetometer 
 
 **What it does.** Reports the antenna's position on Earth (latitude, longitude, altitude) by triangulating from satellites.
 
-**Senses.** Time-of-arrival of microwave signals from 4+ orbiting satellites. The receiver solves for its own (x, y, z, clock-bias) position.
+**Senses.** Time-of-arrival of microwave signals from 4 or more orbiting satellites. The receiver solves for its own (x, y, z) position plus *clock bias* — its own clock's offset from true GPS time — all four unknowns together.
 
 **Input.** 3.3 V power, antenna (active patch or external).
 
 **Output.**
-- **Standard GNSS:** position to ±2–5 m, updated 1–10 Hz, NMEA strings or binary protocols
-- **RTK GNSS:** position to ±2 cm — but only with a nearby base station (or NTRIP correction service)
-- **Multi-constellation** (GPS + GLONASS + Galileo + BeiDou) helps in urban canyons
+- **Standard GNSS:** position to ±2–5 m, updated 1–10 Hz. Sent as NMEA strings (a standard text format used by virtually every GPS device) or vendor-specific binary protocols.
+- **RTK GNSS:** position to ±2 cm — but only with a nearby base station (or an NTRIP service — Networked Transport of RTCM via Internet Protocol; in plain English, an internet service that streams the correction data needed for RTK)
+- **Multi-constellation** (GPS = US, GLONASS = Russia, Galileo = EU, BeiDou = China) — using all four satellite networks at once helps when buildings block half the sky
 
 **Integration.**
 - **Physical interface:** UART (NMEA), USB, I2C on small modules; some industrial units use Ethernet
@@ -93,10 +99,10 @@ This is why every serious IMU is **fused with something else** — magnetometer 
 - **No indoor coverage.** Walls block GHz signals. Inside a building, GPS is dead.
 - **Urban canyons.** Tall buildings reflect signals, giving you "multipath" — position skitters by 10–50 m.
 - **Tree cover, weather.** Forests reduce accuracy 2–5×.
-- **Cold start time.** First fix from power-on can take 30 seconds to several minutes if the receiver doesn't have recent almanac data.
+- **Cold start time.** First fix from power-on can take 30 seconds to several minutes if the receiver doesn't have recent *almanac data* — a list of where each satellite should be at any given time.
 - **RTK needs a base station.** Either yours, NTRIP from a public network, or a paid commercial service. A standalone "RTK rover" with no base is just a normal receiver.
 - **Antenna placement matters more than people expect.** A patch antenna under your robot's metal chassis sees 30% of the sky and performs accordingly.
-- **GPS time ≠ wall-clock time.** Be careful when fusing — GPS uses its own epoch; your computer uses UTC plus a leap-second table.
+- **GPS time ≠ wall-clock time.** Be careful when fusing — GPS uses its own *epoch* (start-of-time reference, currently set in 1980); your computer uses UTC plus a leap-second table. The two are usually a few seconds apart.
 
 ### Why & how it works
 
@@ -124,11 +130,11 @@ RTK ("Real-Time Kinematic") works by having a second receiver — a base station
 
 **What it does.** Counts wheel rotations and converts to estimated robot travel.
 
-**Senses.** Rotations of a wheel (via an encoder bolted to the motor shaft or wheel axle). Not really a separate sensor — usually a property of the actuator stack.
+**Senses.** Rotations of a wheel — measured by an *encoder*, a small sensor mounted on the motor shaft or wheel axle that counts how many fractions of a turn the wheel has made. Not really a separate sensor — usually a property of the actuator stack.
 
 **Input.** Encoder pulses (digital), motor controller usually does the counting.
 
-**Output.** Distance traveled per wheel → robot pose (x, y, θ) via the platform's kinematic model. For a differential-drive robot: average the two wheel velocities to get linear velocity; subtract them and divide by wheelbase to get angular velocity; integrate to get pose. Ackermann (car-like) and omnidirectional bases use different formulas.
+**Output.** Distance traveled per wheel → robot pose (x, y, θ) via the platform's *kinematic model* (the geometry that converts wheel motion into robot motion). For a *differential-drive* robot (two independently-driven wheels, like a Roomba): average the two wheel velocities to get linear velocity; subtract them and divide by the wheelbase to get angular velocity; integrate to get the pose. *Ackermann* steering (car-like — a single rotating front axle) and *omnidirectional* bases (e.g., mecanum wheels that can move in any direction) use different formulas.
 
 **Integration.**
 - **Physical interface:** Quadrature encoder signals (digital), or absolute encoder (SPI/I2C/SSI). Read by motor controller or microcontroller, often relayed to the host over USB/UART/CAN.
