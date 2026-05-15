@@ -212,6 +212,7 @@ ROS2_RESOURCE_FILES=(
   "resources/ros2/ch03/tiny_bot_sim.launch.py:workspace/ros2/ch03/tiny_bot_sim.launch.py"
   "resources/ros2/ch03/car_mover.py:workspace/ros2/ch03/car_mover.py"
   "resources/ros2/ch03/obstacle_stop.py:workspace/ros2/ch03/obstacle_stop.py"
+  "resources/ros2/ch03/world_map_publisher.py:workspace/ros2/ch03/world_map_publisher.py"
   "resources/ros2/ch04/real_nav_goal.py:workspace/ros2/ch04/real_nav_goal.py"
 )
 for entry in "${ROS2_RESOURCE_FILES[@]}"; do

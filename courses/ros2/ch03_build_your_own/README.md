@@ -86,7 +86,19 @@ In a second container shell (a new terminal on your laptop, then `docker exec -i
 ros2 run joint_state_publisher joint_state_publisher
 ```
 
-In Foxglove (with `ch03_layout.json` loaded), the 3D panel's display frame is `base_link`. You should see `tiny_bot`: chassis box, four wheel cylinders (one at each corner), a small orange block at the front (the IR sensor), a small green block at the back, a small dark cylinder on top. The green block is an *IMU* (inertial measurement unit) frame and the dark cylinder is a *lidar* mount — placeholder frames matching what a real hobbyist Arduino car often has bolted on. We don't drive them in this chapter; they're there so the URDF looks like a real-robot URDF and you have somewhere to wire those sensors in later.
+In Foxglove (with `ch03_layout.json` loaded), the 3D panel's display frame is `base_link`. You should see `tiny_bot`:
+
+![tiny_bot in Foxglove — chassis, four wheels, lidar mount on top, IR sensor in front, IMU on the side](assets/tiny_bot_sim.png)
+
+The parts:
+
+- **Grey box** — the chassis (`base_link`).
+- **Four black cylinders** — the wheels (`fl_wheel`, `fr_wheel`, `rl_wheel`, `rr_wheel`), one at each corner.
+- **Dark cylinder on top** — `base_scan`, the *lidar mount*. Reserved for a future 2D lidar. Not driven in this chapter.
+- **Orange box at the front** — `ir_front`, the *IR distance sensor* mount. This one **is** used in Project B (Gazebo's ray sensor casts from here).
+- **Green box on the back** — `imu_link`, an *IMU* (inertial measurement unit) frame. Also reserved for future use.
+
+The unused frames (`base_scan`, `imu_link`) are deliberate — they're placeholder slots matching what a real hobbyist Arduino car typically has bolted on, so the URDF reads like a real-robot URDF and you have somewhere to wire those sensors in later.
 
 > **Don't see the model?** Foxglove caches `topic /robot_description` per session. Re-import `ch03_layout.json` to force a refetch.
 
@@ -161,7 +173,7 @@ In Project B, *every* "driver" is provided by Gazebo plugins. The only code you'
 
 ### Read the files
 
-🟡 **Know** — five files, two of them code, three of them XML/YAML config. Skim each.
+🟡 **Know** — six files: three XML/SDF/YAML config, three code. Skim each.
 
 **The Gazebo model** — `tiny_bot.sdf`. The chassis, four wheels, and IR-sensor link (the same parts of the URDF that we actually want physics on — the URDF's placeholder IMU and lidar frames are skipped here, no point simulating something we don't drive), plus three Gazebo plugin blocks at the bottom: the diff-drive plugin (wiring wheel joints to `topic /cmd_vel`), a joint-state publisher (so `joint_states` reports actual wheel angles), and a `<sensor type="gpu_lidar">` with `samples=1` on the `ir_front` link.
 
@@ -178,9 +190,14 @@ In Project B, *every* "driver" is provided by Gazebo plugins. The only code you'
 ```yaml+collapsed resources/ros2/ch03/tiny_bot_bridge.yaml
 ```
 
-**The launch file** — `tiny_bot_sim.launch.py`. Starts Gazebo headless with `tiny_world.sdf`, runs `robot_state_publisher` against `tiny_bot.urdf.xacro` (so Foxglove can render the model), spawns `tiny_bot.sdf` into the running world, and runs `pkg ros_gz_bridge` with `tiny_bot_bridge.yaml`. ~70 lines. You don't need to read it in detail; just know it orchestrates the four things above.
+**The launch file** — `tiny_bot_sim.launch.py`. Starts Gazebo headless with `tiny_world.sdf`, runs `robot_state_publisher` against `tiny_bot.urdf.xacro` (so Foxglove can render the model), spawns `tiny_bot.sdf` into the running world, runs `pkg ros_gz_bridge` with `tiny_bot_bridge.yaml`, and starts `world_map_publisher.py` (next file). ~70 lines. You don't need to read it in detail; just know it orchestrates everything below.
 
 ```python+collapsed resources/ros2/ch03/tiny_bot_sim.launch.py
+```
+
+**The map publisher** — `world_map_publisher.py`. Hand-authors an `OccupancyGrid` that matches the walls in `tiny_world.sdf` and publishes it on `topic /map`. Gazebo's scene graph isn't bridged to ROS2 — Foxglove would otherwise see `tiny_bot` driving through empty space — so this small node makes the walls visible in the 3D panel. Not strictly necessary for the sim to work, but the demo is much clearer with the room drawn in.
+
+```python+collapsed resources/ros2/ch03/world_map_publisher.py
 ```
 
 **The business logic** — `car_mover.py` (publishes the Twist pattern) and `obstacle_stop.py` (the IR-aware filter). Both are simple.
@@ -211,7 +228,7 @@ python3 /workspace/ros2/ch03/car_mover.py
 python3 /workspace/ros2/ch03/obstacle_stop.py
 ```
 
-In Foxglove (display frame set to `tf odom` to keep the camera still while the robot moves), `tiny_bot` should:
+In Foxglove (set the 3D panel's display frame to `tf odom` so the camera holds still while the robot moves; the four walls of `tiny_world.sdf` will appear as a black outline on a white floor — `world_map_publisher.py` republishes them as `/map` so Foxglove can render them), `tiny_bot` should:
 
 1. Drive forward at 0.2 m/s.
 2. As it approaches the front wall, the `/ir_front` plot drops from ~1.5 m to below 0.50 m.

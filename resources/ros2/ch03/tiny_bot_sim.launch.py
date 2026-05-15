@@ -6,6 +6,8 @@
 #   3. ros_gz_sim "create" — spawns tiny_bot.sdf at origin
 #   4. ros_gz_bridge with tiny_bot_bridge.yaml (clock, odom, joint_states, tf,
 #      ir_front, cmd_vel)
+#   5. world_map_publisher.py — publishes tiny_world's walls as /map so
+#      Foxglove can render them (Gazebo doesn't bridge its scene graph).
 #
 # Run with:
 #   ros2 launch /workspace/ros2/ch03/tiny_bot_sim.launch.py
@@ -19,7 +21,7 @@ import subprocess
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import ExecuteProcess, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
@@ -79,9 +81,18 @@ def generate_launch_description():
         output='screen',
     )
 
+    # Publish the static walls as nav_msgs/OccupancyGrid on /map so Foxglove
+    # can render them. Gazebo's scene graph isn't bridged to ROS2, so the
+    # walls would otherwise be invisible to anything outside Gazebo.
+    world_map_pub = ExecuteProcess(
+        cmd=['python3', os.path.join(this_dir, 'world_map_publisher.py')],
+        output='screen',
+    )
+
     ld = LaunchDescription()
     ld.add_action(gz_server)
     ld.add_action(robot_state_publisher)
     ld.add_action(spawn)
     ld.add_action(bridge)
+    ld.add_action(world_map_pub)
     return ld

@@ -45,6 +45,16 @@
           "minRange": 0.05,
           "maxRange": 1.5
         },
+        "/map": {
+          "visible": true,
+          "frameLocked": true,
+          "colorMode": "map",
+          "alpha": 0.85,
+          "minColor": "#ffffff",
+          "maxColor": "#333333",
+          "unknownColor": "#666666",
+          "invalidColor": "#ff00ff"
+        },
         "/tf": { "visible": false },
         "/odom": { "visible": false }
       },
