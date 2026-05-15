@@ -10,9 +10,9 @@
 
 Chapter 2 had you driving someone else's robot — TurtleBot3 in Gazebo, fully wired before you arrived. The wheels, the lidar, the bringup launch, the URDF — all done for you. Now you're going to **build your own**.
 
-Concretely: imagine you have an **Arduino-driven 4-wheel car** — the kind of $25 hobbyist chassis kit that's everywhere. Four DC motors driven through an H-bridge (the front pair commanded by an Arduino reading `cmd_vel` over serial; the rear pair tied to the front pair mechanically), and a single front-facing IR distance sensor. *That's the robot.* Cheap, common, the kind of thing hobbyists actually build. You won't build the physical one in this chapter — but you'll model it in ROS2, drive it in a Gazebo physics sim with real walls, and at the end see exactly which lines of code change when the real Arduino is wired in.
+Concretely: imagine you have an **Arduino-driven 4-wheel car** — the kind of $25 hobbyist chassis kit that's everywhere. Four DC motors, an Arduino controlling them over a small motor-driver board, and a single front-facing IR distance sensor. The Arduino is connected to a laptop by USB; the laptop runs ROS2 and sends commands down the serial cable. *That's the robot.* Cheap, common, the kind of thing hobbyists actually build. You won't build the physical one in this chapter — but you'll model it in ROS2, drive it in a Gazebo physics sim with real walls, and at the end see exactly which lines of code change when the real Arduino is wired in.
 
-The deeper question: **is simulation in robotics built to replicate reality and test business logic — like in software?** Yes — with a fidelity caveat. Sim handles kinematics, message contracts, and sensor *shape* well; it approximates motor dynamics and sensor noise crudely. Real teams develop algorithms in sim, calibrate the rough parts against measured hardware when stakes are high, then validate on the real robot. For us, the takeaway is stronger: **sim and real share so much code that your business logic ships unchanged across the gap.** Only the hardware-facing driver swaps.
+The deeper question: **is simulation in robotics there to replicate reality and test your behaviour code — the same way unit tests do in regular software?** Yes — with a fidelity caveat. Sim handles the kinematics (where the robot moves under a given command), the topic/message plumbing, and the rough shape of sensor data well. It only approximates the messy physics — motor inertia, friction, sensor noise patterns. Real teams develop algorithms in sim, tune the rough parts against measured hardware when stakes are high, then validate on the real robot. For us, the takeaway is stronger: **sim and real share so much code that your behaviour code (we'll call it *business logic*) ships unchanged across the gap.** Only the hardware-facing driver swaps.
 
 By the end of this chapter you'll have a clean answer to: *"If I built this Arduino car for real, what code would I write, what would I install, and what would stay identical to what I just wrote?"*
 
@@ -86,7 +86,7 @@ In a second shell:
 ros2 run joint_state_publisher joint_state_publisher
 ```
 
-In Foxglove (with `ch03_layout.json` loaded), the 3D panel's display frame is `base_link`. You should see `tiny_bot`: chassis box, four wheel cylinders (one at each corner), a small orange block at the front (the IR sensor), a small green block at the back (an IMU link we don't use this chapter), a small dark cylinder on top (a lidar mount, also unused here).
+In Foxglove (with `ch03_layout.json` loaded), the 3D panel's display frame is `base_link`. You should see `tiny_bot`: chassis box, four wheel cylinders (one at each corner), a small orange block at the front (the IR sensor), a small green block at the back, a small dark cylinder on top. The green block is an *IMU* (inertial measurement unit) frame and the dark cylinder is a *lidar* mount — placeholder frames matching what a real hobbyist Arduino car often has bolted on. We don't drive them in this chapter; they're there so the URDF looks like a real-robot URDF and you have somewhere to wire those sensors in later.
 
 > **Don't see the model?** Foxglove caches `topic /robot_description` per session. Re-import the layout to force a refetch.
 
@@ -117,12 +117,12 @@ URDF describes the **mechanical structure**. It does *not* describe behavior —
 
 We're not going to hand-roll any of that. **Gazebo Sim** (the simulator that ships with ROS2 Jazzy, version "Harmonic") does it for us — ch02 already used it to drive the TurtleBot. We just need to:
 
-1. Tell Gazebo *what* the robot is — wire up a couple of plugins on the URDF (a "diff-drive" plugin that consumes Twist and moves the wheels, a "ray" sensor for the IR distance reading).
-2. Tell Gazebo *where* the robot lives — a small world with walls.
+1. Tell Gazebo *what* the robot is — a parallel description file with the same links as the URDF plus a couple of Gazebo plugins (a "diff-drive" plugin that consumes Twist and moves the wheels, a "ray" sensor for the IR distance reading). This file is in **SDF** (Simulation Description Format) — URDF's Gazebo-flavoured cousin.
+2. Tell Gazebo *where* the robot lives — a small world (also SDF) with walls.
 3. Bridge Gazebo's native topics to ROS2 topics — `pkg ros_gz_bridge` does this with a YAML config.
 4. Launch all of it.
 
-Each of those is a small file (the Gazebo SDF model, the world SDF, the bridge YAML, the launch). They live in `resources/ros2/ch03/`. Read them once at your leisure; we'll point at the interesting bits inline. The launch file is the only piece you need to *run* directly.
+Each of those is a small file (the robot SDF, the world SDF, the bridge YAML, the launch). They live in `resources/ros2/ch03/`. Read them once at your leisure; we'll point at the interesting bits inline. The launch file is the only piece you need to *run* directly.
 
 ### The contract you're about to use
 
@@ -163,7 +163,7 @@ In Project B, *every* "driver" is provided by Gazebo plugins. The only code you 
 
 🟡 **Know** — five files, two of them code, three of them XML/YAML config. Skim each.
 
-**The Gazebo model** — `tiny_bot.sdf`. Same links as the URDF (chassis, wheels, IR), plus three Gazebo plugin blocks at the bottom: the diff-drive plugin (wiring wheel joints to `topic /cmd_vel`), a joint-state publisher (so `joint_states` reports actual wheel angles), and a `<sensor type="gpu_lidar">` with `samples=1` on the `ir_front` link.
+**The Gazebo model** — `tiny_bot.sdf`. The chassis, four wheels, and IR-sensor link (the same parts of the URDF that we actually want physics on — the URDF's placeholder IMU and lidar frames are skipped here, no point simulating something we don't drive), plus three Gazebo plugin blocks at the bottom: the diff-drive plugin (wiring wheel joints to `topic /cmd_vel`), a joint-state publisher (so `joint_states` reports actual wheel angles), and a `<sensor type="gpu_lidar">` with `samples=1` on the `ir_front` link.
 
 ```xml+collapsed resources/ros2/ch03/tiny_bot.sdf
 ```
