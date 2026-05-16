@@ -14,25 +14,19 @@ Audio is a smaller part of robotics than cameras or LiDAR, but it's the natural 
 
 ## Single microphone
 
-**What it does.** Converts sound-pressure waves in air into a time-varying electrical signal.
+A stream of audio samples at 16, 44.1, or 48 kHz, 16–24 bits per sample, mono. Three flavors:
 
-**Senses.** Air pressure fluctuations (sound) — typically across the audible band (20 Hz–20 kHz) for human-targeted applications, sometimes ultrasonic (above 20 kHz) for industrial use.
+- **Electret** — classic analog capsule. Needs a bias resistor and an ADC on the host.
+- **MEMS over I2S** — digital, three wires, common on Raspberry Pi-class boards.
+- **USB** — plug-and-play on any host, no setup.
 
-**Input.** Power (1.5–5 V for *electret* mics — the classic small analog capsule; 3.3 V for *MEMS* — micro-fabricated digital mics). Analog electret mics need a bias resistor — a single resistor that supplies the mic capsule with current. Digital MEMS mics over I2S (Inter-IC Sound — a 3-wire digital audio protocol) need no extra setup.
+ROS2: `audio_common` → `audio_common_msgs/AudioData`. Outside ROS: PortAudio, PyAudio, GStreamer, FFmpeg, ALSA.
 
-**Output.** A stream of audio samples at 16, 44.1, or 48 kHz (sometimes higher), 16 or 24 bits per sample. Mono.
-
-**Integration.**
-- **Physical interface:** Analog (electret — needs an ADC, an Analog-to-Digital Converter on the host), I2S (digital MEMS, common on Pi-class boards), USB (a "USB sound card" mic — plug-and-play on any host)
-- **ROS2:** `audio_common` package (and its ROS2 ports) → `audio_common_msgs/AudioData`. Or capture with PulseAudio / PortAudio and publish raw arrays.
-- **Non-ROS:** PortAudio, PyAudio, sounddevice (Python), GStreamer, FFmpeg, ALSA on Linux
-
-**Limitations to watch out for.**
-- **Single mic has no direction info.** A wall clock at your 9 o'clock and a refrigerator at your 3 o'clock are indistinguishable from one stream of samples.
+**Limitations.**
+- **No direction info.** A single mic tells you what was said, not where it came from.
 - **Acoustic environment matters more than the mic.** A $5 mic in a quiet room beats a $500 mic in a fan-noise lab.
-- **Sample-rate matching.** If your speech recognizer expects 16 kHz and your capture is at 48 kHz, you must resample.
-- **Latency** for real-time feedback (echo cancellation, voice activity detection) is hard to drive below 50 ms without OS tuning.
-- **Compression eats high-frequency detail.** If you're shipping audio over a network, the *codec* (the algorithm that compresses and decompresses audio) matters. Opus and PCM (Pulse-Code Modulation — uncompressed raw samples) are robot-friendly; MP3 is too lossy for speech recognition.
+- **Sample-rate matching.** If your speech recognizer wants 16 kHz and you capture at 48 kHz, resample.
+- **Compression eats high frequencies.** Opus and PCM (uncompressed) are robot-friendly; MP3 isn't.
 
 **Representative products.**
 
@@ -49,38 +43,16 @@ Audio is a smaller part of robotics than cameras or LiDAR, but it's the natural 
 
 ## Microphone array
 
-**What it does.** Multiple microphones placed at known relative positions. Software combines their signals to determine the *direction of arrival* (DoA) of a sound, and (with beamforming) to enhance audio from one direction while suppressing others.
+Multiple mics at known relative positions. Software uses the tiny differences in when a sound reaches each mic to compute *direction of arrival* (DoA) — an angle, 0–360°. *Beamforming* flips it around: shift each mic's signal in time and add them so signals from one direction reinforce each other while signals from other directions cancel out. The result is a virtual directional mic you can electronically steer toward whoever's talking.
 
-**Senses.** Sound, plus the tiny time-of-arrival differences (microseconds) between mics that imply geometry.
+Modern array chips (XMOS XVF3000 in the ReSpeaker) bundle DoA, beamforming, echo cancellation, and noise suppression. You don't write the algorithms; you read the output: a cleaned mono audio stream, a DoA angle, and a voice-activity (VAD) signal. Drivers: `respeaker_ros`.
 
-**Input.** USB power; an on-board DSP (Digital Signal Processor — a small chip specialized for real-time audio math) handles the heavy lifting.
-
-**Output.**
-- A processed mono audio stream (the "beamformed" signal pointing at the strongest source)
-- DoA estimate: an angle (0–360°) where the sound is coming from
-- Voice-activity-detection (VAD) signal: is anyone talking right now?
-- Sometimes per-channel raw audio if you want to do your own processing
-
-**Integration.**
-- **Physical interface:** USB-C on most consumer arrays; I2S on bare-board arrays
-- **ROS2:** `respeaker_ros` → custom topics for DoA, VAD, beamformed audio
-- **Non-ROS:** vendor SDKs (XMOS for ReSpeaker), PyAudio for raw capture, ODAS (open-source DoA library) for roll-your-own
-
-**Limitations to watch out for.**
-- **Acoustic reverb breaks DoA.** Hard walls bounce sound; the array hears reflections as if from a different direction. Carpeted rooms behave much better than echoey halls.
-- **Wind noise** (drones, outdoor robots) overwhelms speech.
-- **Distance trade-off.** Beyond ~5 m, even good arrays struggle with conversational speech in noise.
-- **Multiple simultaneous speakers** are still hard. Single-speaker beamforming is mature; cocktail-party speaker separation isn't.
-- **Vendor lock-in.** ReSpeaker is the only widely-supported array in ROS2. Other vendors require writing your own driver.
-- **Far-field mics** — mics tuned to pick up speech from across a room rather than up close — **are tuned for voice (300 Hz–8 kHz).** Don't expect music-quality fidelity.
-
-### Why & how it works
-
-When a sound source is off to your right, a sound wave reaches your right ear ~600 μs before your left ear (the distance between your two ears, ~20 cm, divided by the speed of sound, 343 m/s). A mic array does the same trick: pick up the same waveform on N microphones at slightly different times, slide the recordings against each other to find the time offset (*cross-correlation*), and infer the angle of arrival.
-
-**Beamforming** flips it around: shift each microphone's signal in time, then add them all together. Signals from a chosen direction line up and add up (*constructive interference*); signals from other directions arrive at different relative offsets and cancel each other out (*destructive interference*). The result is a virtual "directional microphone" you can electronically steer toward whoever's talking.
-
-Modern array chips (XMOS XVF3000, Cirrus DSPs) bundle all of this — DoA, beamforming, echo cancellation, noise suppression — into a sealed package that exposes one cleaned mono stream and a direction estimate. You generally don't write the algorithms; you read the output.
+**Limitations.**
+- **Reverb breaks DoA.** Hard walls reflect sound; the array hears the reflection as coming from a different direction. Carpeted rooms behave much better than echoey halls.
+- **Wind noise** overwhelms speech outdoors.
+- **>5 m is hard.** Even good arrays struggle with conversational speech in noise past 5 m.
+- **Multiple speakers** at once — still mostly unsolved.
+- **Far-field mics are tuned for voice (300 Hz–8 kHz)** — not music fidelity.
 
 **Representative products.**
 
@@ -97,25 +69,12 @@ Modern array chips (XMOS XVF3000, Cirrus DSPs) bundle all of this — DoA, beamf
 
 ---
 
-## Things audio is actually used for in robotics
+## What audio is used for in robotics
 
-- **Voice commands** — wake-word + speech-to-text → command routing. ReSpeaker + Whisper / Vosk is a common stack.
-- **Speaker localization** — robot turns to face whoever is talking. Built into mid-range mic arrays.
+- **Voice commands** — wake-word + speech-to-text. ReSpeaker + Whisper / Vosk is a common stack.
+- **Speaker localization** — robot turns to face whoever's talking. Built into mid-range mic arrays.
 - **Acoustic event detection** — glass break, door slam, fall detection. Small ML models on audio features.
-- **Machine fault diagnosis** — bearings make different sounds as they fail. Industrial maintenance robots and quality-control stations listen for it.
-- **Sonar** — ultrasonic distance (covered in [Chapter 04](../ch04_proximity_contact/README.md)). Mostly a proximity sensor rather than "audio."
-- **Underwater communication and localization** — hydrophones, beyond the scope of this course.
-
----
-
-## How to choose
-
-- **You just want speech input from a quiet room:** any USB conference mic. $30 done.
-- **You want speech input from a noisy room and the robot to turn toward the speaker:** ReSpeaker Mic Array v2.0.
-- **You want low-cost digital audio on a Raspberry Pi:** I2S MEMS mic (SPH0645) or ReSpeaker HAT.
-- **You're doing acoustic event detection / industrial monitoring:** a single quality mic + ML model is usually enough.
-- **You're a researcher doing cocktail-party / multi-speaker separation:** roll your own with a high-channel array (8+) and PyAudio + algorithm of choice.
-- **The robot is outdoors:** plan for wind. Foam windscreens, mechanical isolation, or directional shotgun mics.
+- **Machine fault diagnosis** — bearings make different sounds as they fail. Maintenance and QC stations listen for it.
 
 ---
 

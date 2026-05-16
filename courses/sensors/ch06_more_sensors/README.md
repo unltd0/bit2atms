@@ -6,9 +6,7 @@
 
 ---
 
-The first five chapters cover the sensors that show up on most mobile robots and most manipulators. This chapter is a *map of the territory* — a quick reference to other sensor families a robot might need.
-
-Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type if there is one, a one-line failure mode, a typical use case, and a representative product or two. No deep dives — if any of these turn out to matter for your robot, the linked pages are the rabbit hole.
+The first five chapters cover the sensors most robots actually use. This one is a quick-scan reference for other sensor families you might encounter — what they sense, what they output, when you'd reach for one. No deep dives.
 
 ---
 
@@ -24,7 +22,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **Use cases.** HVAC inspection robots, agricultural drones, lab automation, indoor air-quality monitoring, search-and-rescue (look for trapped people via CO2).
 
-**Examples:** [BME680](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/) (temp + humidity + pressure + VOC, ~$15), [SCD40 / SCD41](https://sensirion.com/) (CO2 measured by NDIR — Non-Dispersive Infrared, an optical technique that's much more reliable than chemical CO2 sensors, ~$50), [SGP40](https://sensirion.com/) (VOC, ~$15), [Plantower PMS5003](http://www.plantower.com/) (PM2.5 / PM10 dust — particle sizes in micrometers, ~$25).
+**Examples:** [BME680](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/) (temp + humidity + pressure + VOC, ~$15), [SCD40](https://sensirion.com/) (CO2 via optical NDIR, ~$50), [SGP40](https://sensirion.com/) (VOC, ~$15), [Plantower PMS5003](http://www.plantower.com/) (dust particles by size, ~$25).
 
 ---
 
@@ -52,7 +50,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **ROS2.** `sensor_msgs/BatteryState` — published by motor controllers, BMS firmware, or a dedicated power-monitor node.
 
-**Limitation.** Charge state (% remaining) is always an estimate. *Coulomb-counting* — adding up every bit of current that flows in or out of the battery — drifts as small measurement errors accumulate. Voltage-curve estimation is noisy under load.
+**Limitation.** Charge state (% remaining) is always an estimate; both common methods (counting current in and out, or reading voltage and looking up a curve) drift over time.
 
 **Use cases.** Every battery-powered robot. Triggers return-to-dock behavior. Detects stalled motors via current spikes.
 
@@ -86,7 +84,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **Limitation.** Sensitive to nearby magnets you didn't put there. Saturates near strong fields.
 
-**Use cases.** Cheap proximity (door open / lid closed), BLDC (Brushless DC) motor commutation — three hall sensors per motor tell the controller which winding to energize next, universal in BLDCs — wheel rotation counters, end-stops on 3D printers.
+**Use cases.** Cheap proximity (door open / lid closed), BLDC (brushless DC) motor commutation (three halls per motor — universal), wheel rotation counters, 3D-printer end-stops.
 
 **Examples:** [A3144](https://www.allegromicro.com/) (~$0.50, digital switch), [DRV5053](https://www.ti.com/product/DRV5053) (analog, ~$1), AS5048 (magnetic absolute encoder, ~$15).
 
@@ -162,7 +160,7 @@ Each item gets a few lines: what it senses, what it outputs, the ROS2 msg type i
 
 **What.** Foil resistors bonded to a deforming surface. When the surface stretches or compresses, resistance changes proportionally.
 
-**Output.** Force / weight via a *Wheatstone bridge* (a four-resistor circuit that turns tiny resistance changes into a measurable voltage) plus an ADC (Analog-to-Digital Converter). Typically reported in kg or N at 10–1000 Hz.
+**Output.** Force or weight in kg or N at 10–1000 Hz. The cell's resistance change is read by a Wheatstone-bridge circuit and an ADC.
 
 **ROS2.** Custom topic; sometimes `geometry_msgs/WrenchStamped` for single-axis force.
 

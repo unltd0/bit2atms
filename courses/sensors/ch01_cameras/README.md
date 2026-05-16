@@ -6,55 +6,34 @@
 
 ---
 
-The camera is the most-used sensor in robotics, by an enormous margin. Every Vision-Language-Action (VLA) model, every visual SLAM (Simultaneous Localization and Mapping) stack, every Tesla on the road runs on cameras first. They're cheap, dense, well-understood, and they capture far more information than any other sensor — at the cost of needing a lot of compute to make sense of any of it.
+Cameras are the most-used sensor in robotics by an enormous margin — cheap, dense, and the only sensor that gives you semantic information (this is a person, that is a car). The catch is that every camera also needs compute behind it to extract anything useful.
 
-This chapter is in two halves. **Part 1** covers regular 2D cameras: image formation, lenses, shutter types, calibration. **Part 2** covers depth cameras (stereo, time-of-flight, structured light) — which are basically 2D cameras plus geometry or projected light. Same physics core, different add-ons.
+Depth cameras (stereo, time-of-flight, structured light) are just regular cameras with one extra trick to recover distance per pixel.
+
+Two terms used throughout:
+- **SLAM** — Simultaneous Localization and Mapping: figuring out where you are while building a map.
+- **VLA** — Vision-Language-Action model: a neural network that takes images and text and outputs robot actions.
 
 ---
 
 ## 2D camera (RGB / mono)
 
-**What it does.** Projects light onto a sensor and returns a 2D image at some frame rate.
+You know what a camera does. ROS2 publishes each frame as `sensor_msgs/Image` plus a `sensor_msgs/CameraInfo` (calibration numbers). Drivers: `v4l2_camera` or `usb_cam` for any USB webcam; `image_pipeline` handles rectification.
 
-**Senses.** Visible light (and sometimes near-infrared) hitting a silicon array — either a **CCD** (Charge-Coupled Device — older, expensive, used in scientific imaging) or **CMOS** (Complementary Metal-Oxide-Semiconductor — the universal default in 2026, cheap and fast).
+Two things actually worth knowing:
 
-**Input.** Power, optional trigger signal, and a lens. The lens has two key numbers: *focal length* (how zoomed-in the view is) and *aperture* (how much light gets through).
-
-**Output.**
-- **Raw or compressed image frames** at 30–240 frames per second on consumer cameras (which use a *rolling shutter* — they read the sensor row by row, so fast motion produces slanted images) or 100–1000 fps on machine-vision cameras (which use a *global shutter* — every pixel exposes at once, no motion artifacts)
-- Pixel formats — names that tell you how each pixel is encoded: `mono8` (1 byte grayscale), `mono16` (2 byte grayscale), `bgr8` / `rgb8` (3 bytes color), `yuv422` (compressed color)
-- Plus **camera intrinsics** — calibration numbers that describe the lens (focal length, optical center, distortion). Published as a separate message.
+- **Rolling vs global shutter.** Most cheap cameras read pixels row-by-row (rolling shutter), so fast motion produces slanted images. Machine-vision cameras read every pixel at once (global shutter) — no motion artifacts, but 3–10× the price.
+- **Calibration is mandatory** for any geometric use (stereo, fusion with LiDAR, projecting points into the image). Point the camera at a checkerboard, run `camera_calibration`, and the driver publishes the resulting numbers in `CameraInfo`.
 
 ![Pinhole camera model — Wikimedia Commons (CC BY-SA 3.0)](assets/pinhole_camera.svg)
 
-**Integration.**
-- **Physical interface:** USB (the standard "UVC" — USB Video Class — webcam protocol works plug-and-play), MIPI-CSI (a high-speed direct-to-board connector used by Raspberry Pi cameras), GigE Vision / USB3 Vision (industrial machine-vision protocols), GMSL or FPD-Link (automotive-grade serial cables)
-- **ROS2:** `v4l2_camera` (works with any V4L2 / UVC USB webcam; V4L2 = Video4Linux2, the standard Linux video API), `usb_cam`, `image_pipeline` for image processing → `sensor_msgs/Image`, `sensor_msgs/CompressedImage`, `sensor_msgs/CameraInfo`
-- **Non-ROS:** OpenCV (`cv2.VideoCapture`), GStreamer, Pylon (Basler), Spinnaker (FLIR), libcamera (Raspberry Pi), Pillow / PIL for basic capture
-
-**Limitations to watch out for.**
-- **Motion blur and rolling shutter.** Most consumer cameras read pixels row-by-row, so a fast-moving object or a fast-rotating robot produces sheared, slanted images — sometimes called the "jello effect." Global-shutter cameras avoid this but cost 3–10× as much.
-- **Dynamic range.** A camera sees roughly a 1000:1 range of brightnesses at once (≈60 dB); the real world spans more than 100,000:1 (100+ dB). A robot moving from a sunlit window to a shaded room will see one or the other go to full black or full white.
-- **White balance.** Indoor incandescent, outdoor daylight, and fluorescent lights have wildly different color temperatures. Auto white balance helps; for ML models trained on one lighting condition, it doesn't help enough.
-- **Calibration is mandatory.** Out of the box, a camera's pixel coordinates don't have a clean geometric meaning. You need intrinsic calibration (focal length, optical center, distortion coefficients) before doing anything geometric. Use `camera_calibration` in ROS2 with a checkerboard.
-- **Lens distortion.** Cheap wide-angle lenses curve straight lines noticeably. Fisheye lenses do it on purpose. Calibration corrects this but adds latency.
-- **Compression artifacts.** USB cameras often compress to MJPEG before transmission to save bandwidth. ML pipelines trained on raw images degrade on compressed ones.
-- **Bandwidth.** A 1080p × 60 fps × 3-channel raw stream is ~370 MB/s. USB 3.0 or compression is the only way to ship it off-camera.
-
-### Why & how it works
-
-The pinhole-camera model is the geometric heart of every camera. A point in 3D space at coordinates (X, Y, Z) projects onto the image at pixel (u, v) via:
-
-```
-u = fx · X/Z + cx
-v = fy · Y/Z + cy
-```
-
-…where `fx`, `fy` are focal lengths in pixels and `cx`, `cy` is the optical center (where the lens axis hits the sensor). You don't compute these by hand — the calibration step measures them for you. Real lenses also add distortion (which makes straight lines curve), which the same calibration step measures and corrects.
-
-This linear projection is *all of camera geometry*. Stereo vision is "two pinhole cameras with known geometry." Structure-from-motion is "one pinhole camera, many viewpoints." SLAM is "one pinhole camera, but also estimate the viewpoints."
-
-The reason cameras are so popular: silicon sensors are now sub-$1 in volume, the math is mature, and modern ML can extract semantic content (cars, faces, gestures) that no other sensor reveals.
+**Limitations.**
+- **Motion blur and rolling shutter** — see above. Pay for global shutter if you need accuracy on a moving robot.
+- **Dynamic range.** A camera sees roughly a 1000:1 range of brightnesses at once; the real world spans 100,000:1+. Walking from a sunlit window to a shaded room blows out one or the other.
+- **White balance.** Auto white balance shifts colors as lighting changes — bad news for ML models trained on one lighting condition.
+- **Lens distortion.** Wide-angle lenses curve straight lines; calibration corrects it.
+- **Compression artifacts.** USB webcams compress to MJPEG. ML pipelines trained on raw images degrade on compressed ones.
+- **Bandwidth.** 1080p × 60 fps × 3 channels is ~370 MB/s raw. USB 3.0 or compression is the only way to ship it.
 
 **Representative products.**
 
@@ -72,126 +51,60 @@ The reason cameras are so popular: silicon sensors are now sub-$1 in volume, the
 
 ## Depth camera: stereo
 
-**What it does.** Two regular cameras placed a few cm apart. By finding the same point in both images, the system computes depth from how far apart that point appears in the two views. That horizontal offset is called the **disparity**; the distance between the two camera lenses is called the **baseline**. Depth is roughly `(baseline × focal length) ÷ disparity` — closer objects shift more between the two views.
+Two cameras a few cm apart. Software finds the same point in both images and computes depth from how far apart it appears — closer objects shift more between the two views.
 
 ![Stereo disparity → depth — Wikimedia Commons (CC BY 4.0)](assets/stereo_disparity.svg)
 
-**Senses.** Visible / near-IR light, same as a 2D camera — just twice.
+Outputs an RGB image, a depth image (`sensor_msgs/Image`), and a point cloud (`sensor_msgs/PointCloud2`). Drivers: `realsense2_camera`, `zed-ros2-wrapper`, `depthai-ros`.
 
-**Input.** Power, optional trigger.
-
-**Output.**
-- An RGB image (typically from one of the two stereo cameras)
-- A **depth image** — one distance value per pixel. ROS2 message type is `sensor_msgs/Image`, encoded as `32FC1` (32-bit float, distances in meters) or `16UC1` (16-bit unsigned integer, distances in millimeters)
-- A **point cloud** (`sensor_msgs/PointCloud2`) derived from the depth + intrinsics
-- Some units include an IMU (D435i, ZED 2i)
-
-**Integration.**
-- **Physical interface:** USB-C (USB 3) on most consumer units; PoE on some industrial
-- **ROS2:** `realsense2_camera` (Intel), `zed-ros2-wrapper` (Stereolabs), `depthai-ros` (Luxonis OAK) → `sensor_msgs/Image`, `sensor_msgs/PointCloud2`, `sensor_msgs/CameraInfo`
-- **Non-ROS:** librealsense2 (Intel), ZED SDK (Stereolabs, GPU-accelerated), DepthAI SDK (Luxonis), OpenCV's `StereoBM` / `StereoSGBM` for roll-your-own from any two cameras
-
-**Limitations to watch out for.**
-- **Textureless surfaces fail.** Stereo matching needs visual texture. A blank white wall has nothing to match — the depth image will be full of holes there.
-- **Baseline ↔ range trade-off.** Wider baseline = better far-range accuracy but worse near-range (the cameras can't see the same close object). The D435 has a ~5 cm baseline; long-range stereo can be 10–20 cm or more.
-- **Compute cost.** Stereo matching is GPU-friendly but not free. The ZED line offloads to a host GPU; OAK cameras do it on-device.
-- **Sunlight is OK** (this is a real advantage over IR-projector depth cameras — passive stereo just needs ambient light).
-- **Reflective / transparent surfaces** still confuse it. Glass, mirrors, polished metal — stereo matching breaks down.
-
-**Pick when:** you want passive depth with no special lighting, and you can supply (or accept onboard) compute. The default depth sensor on most modern robots.
+**Limitations.**
+- **Blank surfaces fail.** Stereo matching needs visual texture; a plain white wall has nothing to match — depth image full of holes.
+- **Reflective / transparent surfaces** (glass, mirrors, polished metal) break stereo matching.
+- **Compute cost.** Stereo matching needs a GPU or on-device DSP. Cheap stereo without compute is slow.
+- **Sunlight is fine** — a real advantage over IR-projector depth cameras.
 
 ---
 
 ## Depth camera: time-of-flight (ToF)
 
-**What it does.** Fires an infrared light source at the scene; measures how long the light takes to return per-pixel. Returns depth directly without correspondence matching.
+Fires its own infrared light at the scene and times the return per pixel. Outputs the same depth image + point cloud as stereo, but without the "needs texture" problem — plain walls work fine.
 
-**Senses.** Phase shift or pulse-time of an infrared illuminator (typically 850 nm or 940 nm).
-
-**Input.** Power, the camera handles its own illumination.
-
-**Output.** Same shape as stereo — depth image + point cloud + (optionally) RGB image. No texture-dependent dropouts.
-
-**Integration.**
-- **Physical interface:** USB-C, Ethernet, MIPI-CSI on embedded ToF chips
-- **ROS2:** `k4a_ros2_driver` (Kinect Azure), vendor SDKs for newer units → `sensor_msgs/Image`, `sensor_msgs/PointCloud2`
-- **Non-ROS:** Kinect SDK (deprecated Azure Kinect line — still works), libfreenect2 (older Kinect v2), Orbbec SDK, Pico Zense SDK
-
-**Limitations to watch out for.**
-- **Outdoor performance dies.** Direct sunlight floods the IR sensor; depth dropouts or full failure. Indoor only, basically.
-- **Dark / absorbent surfaces** (matte black, fur) absorb the IR pulse — no return, no depth.
-- **Highly reflective surfaces** (mirrors, glass) return depth of *whatever's behind the mirror*. Confusing.
-- **Multi-path interference.** Corners and concave shapes can produce systematically wrong depth values; the IR bounces twice before returning.
-- **Microsoft discontinued the Azure Kinect line** in 2023. The depth-sensing R&D moved into HoloLens. ToF as a category is healthy (Orbbec, Pico Zense, Intel L515 was a great one but also discontinued); product lifecycles in this space are short.
-
-**Pick when:** indoor robotics where texture-poor surfaces are common (blank walls, plain floors) — depth from ToF will be cleaner than from stereo.
+**Limitations.**
+- **Outdoor performance dies.** Direct sunlight floods the IR sensor; indoor only.
+- **Dark / matte surfaces** (matte black, fur) absorb the IR pulse — no return, no depth.
+- **Mirrors / glass** return the depth of whatever's behind them. Confusing.
+- **Multi-path interference.** IR bouncing in corners produces systematically wrong depths.
+- **Short product lifecycles** in this space. Microsoft discontinued Azure Kinect in 2023; Intel discontinued the L515. Active vendors: Orbbec, Pico Zense.
 
 ---
 
 ## Depth camera: structured light
 
-**What it does.** Projects a known infrared pattern (dots or stripes) onto the scene; a normal IR camera captures the distorted pattern; the deformation tells you depth.
-
-**Senses.** Same as ToF — IR illumination plus an IR-sensitive camera.
-
-**Output.** Depth image + point cloud.
-
-**Integration.**
-- **Physical interface:** USB-C
-- **ROS2:** vendor drivers (Orbbec, RealSense L515 was structured light — discontinued); `realsense2_camera` for older SR300
-- **Non-ROS:** vendor SDKs
-
-**Limitations to watch out for.**
-- **Same outdoor failure as ToF** — IR pattern washes out in sunlight.
-- **Short range** — typically <2 m for high accuracy. Past that the projected pattern is too dim.
-- **Mostly historical at this point.** The original Kinect v1 used structured light; that approach has been displaced by stereo + ToF for most consumer applications.
-
-**Pick when:** historically the dominant cheap-3D-depth approach (Kinect v1 made it famous), now niche. Stereo and ToF are the active categories.
+Projects a known infrared pattern (dots or stripes) onto the scene; an IR camera reads how the pattern deforms; the deformation gives depth. Same indoor-only failure mode as ToF, plus a short range (~2 m for good accuracy). Mostly historical — the original Kinect v1 made it famous; stereo and ToF have displaced it. Worth knowing when you see one, not worth picking new.
 
 ---
 
-## Event cameras (asynchronous vision)
+## Event cameras
 
-**What it does.** Instead of returning frames, each pixel independently reports *changes* in brightness as they happen. No global clock; events arrive whenever something in the scene moves.
+Instead of returning frames, each pixel independently fires an event whenever it gets brighter or darker. No motion blur, microsecond timing, ~1000× the dynamic range of a frame camera, and almost no power use when the scene is still.
 
-**Senses.** Per-pixel log-brightness change events at microsecond resolution.
+The output is a stream of `(x, y, time, brighter/darker)` events — millions per second. Most code expects frames, so vendor SDKs reconstruct frame-like images from the event stream.
 
-**Output.** A stream of `(x, y, t, polarity)` events — millions per second, with no frames at all. Each event says "at time *t*, pixel (*x*, *y*) just got brighter or darker" (polarity = the direction of the change). Vendor SDKs convert these into frame-like images for downstream code that expects frames.
-
-**Integration.**
-- **ROS2:** `prophesee_event_ros_driver`, `dvs_ros2_driver` (DVS = Dynamic Vision Sensor, the academic name for event cameras) → custom `dvs_msgs/EventArray` or `sensor_msgs/Image` (accumulated frames)
-- **Non-ROS:** Metavision SDK (Prophesee), Inivation DV (DVS)
-
-**Why it matters.** No motion blur. Microsecond temporal resolution. ~1000× higher dynamic range than a frame camera. Native low-power operation (no events fire if nothing changes).
-
-**Limitations.** Niche; the toolchain is younger. ML training data is scarce. Most engineers haven't touched one.
-
-**Representative products:** [Prophesee EVK4](https://www.prophesee.ai/event-camera-evk4/) (~$3,000), [Inivation DAVIS346](https://inivation.com/) (~$5,000). Pick when: high-speed drones, vibration analysis, low-light surveillance, neuromorphic ML research.
+Niche today (toolchain is young, ML training data scarce), but the right answer for high-speed drones, vibration analysis, and very-low-light work. Products: [Prophesee EVK4](https://www.prophesee.ai/event-camera-evk4/) (~$3,000), [Inivation DAVIS346](https://inivation.com/) (~$5,000).
 
 ---
 
 ## Thermal cameras
 
-**What it does.** Imaging in long-wave infrared (8–14 μm). Each pixel reads the temperature radiated by what it sees.
-
-**Senses.** Far-infrared blackbody radiation.
-
-**Output.** A thermal image (`sensor_msgs/Image` with mono16 — temperature mapped to 16-bit values via a calibration curve).
-
-**Integration.**
-- **Physical interface:** USB, SPI on bare modules (FLIR Lepton)
-- **ROS2:** `flir_lepton_ros2`, `flir_boson_ros2`; vendor drivers for higher-end thermal
-- **Non-ROS:** FLIR Atlas / Spinnaker SDKs
-
-**Why it matters.** Sees through smoke, dust, total darkness. Detects living things (warm) against backgrounds (cool). Spots overheating equipment from a distance.
+Reads heat as an image — each pixel gives the temperature of what it sees. Sees through smoke and total darkness; detects living things against background; spots overheating equipment from a distance.
 
 **Limitations.**
-- Low resolution (160×120 to 640×512 typical). Don't expect to read text.
+- Low resolution (160×120 to 640×512). Don't expect to read text.
 - Glass and many plastics are opaque in thermal IR. Can't see through windows.
-- Expensive — even modest thermal cameras start around $300.
-- ITAR (International Traffic in Arms Regulations — US export-control rules) and similar restrictions apply to higher-resolution units; they cannot be freely shipped to all countries.
+- Starts at ~$300; nice ones cost thousands.
+- Higher-resolution units are export-controlled (ITAR — US arms regulations) and can't be freely shipped to all countries.
 
-**Representative products:** [FLIR Lepton 3.5](https://www.flir.com/products/lepton/) (~$250 module), [FLIR Boson+](https://www.flir.com/products/boson-plus/) (~$2,500), [Seek Thermal](https://www.thermal.com/) (~$200–$500 USB). Pick when: search & rescue, building inspection, agricultural monitoring, security.
+**Products:** [FLIR Lepton 3.5](https://www.flir.com/products/lepton/) (~$250 module), [FLIR Boson+](https://www.flir.com/products/boson-plus/) (~$2,500), [Seek Thermal](https://www.thermal.com/) (~$200–$500 USB). Pick when: search & rescue, building inspection, agricultural monitoring, security.
 
 ---
 
@@ -212,9 +125,7 @@ The reason cameras are so popular: silicon sensors are now sub-$1 in volume, the
 
 ---
 
-## LiDAR vs depth camera
-
-When do you reach for a depth camera vs a [LiDAR](../ch02_lidar_radar/README.md)?
+## Depth camera vs [LiDAR](../ch02_lidar_radar/README.md)
 
 | | Depth camera | 3D LiDAR |
 |---|---|---|
@@ -222,25 +133,10 @@ When do you reach for a depth camera vs a [LiDAR](../ch02_lidar_radar/README.md)
 | Resolution | Dense (1080p+) | Sparse (16–128 lines) |
 | RGB context | Yes | No |
 | Outdoor sun | Stereo OK, ToF/IR struggles | Mostly fine, fragile in rain/fog |
-| Power | 5–10 W (USB) | 8–30 W |
 | Cost | $100–$600 | $1,000–$80,000 |
 | Field of view | 60–120° forward | 360° horizontal |
-| Used for | Manipulation, close-range navigation, perception ML | Outdoor navigation, SLAM, automotive |
 
-Most modern robots use **both**: a depth camera for close-range manipulation and obstacle detail, plus LiDAR for medium-range navigation.
-
----
-
-## How to choose
-
-- **Indoor manipulation, close range:** RealSense D435 or D455. Default choice.
-- **Outdoor robot:** ZED 2i (passive stereo handles sunlight) or RealSense D456 (IP65).
-- **Need on-device AI without a GPU:** OAK-D — runs neural nets inside the camera.
-- **Just need RGB, no depth:** RPi Camera Module 3 or Logitech C920 — both fine.
-- **Fast motion, no motion blur:** global-shutter (Arducam, FLIR Blackfly).
-- **High-speed vision research:** event camera (Prophesee).
-- **See through smoke / find people in the dark:** thermal (FLIR Lepton).
-- **You're not sure between depth camera and LiDAR:** if range < 5 m → depth camera; if range > 5 m → LiDAR.
+Rule of thumb: depth camera under 5 m, LiDAR over 5 m. Most modern robots use both.
 
 ---
 

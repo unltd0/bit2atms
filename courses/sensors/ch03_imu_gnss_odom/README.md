@@ -24,41 +24,18 @@ The trick of every robot localization stack is to combine them so each sensor's 
 
 ## Inertial Measurement Unit (IMU)
 
-**What it does.** Reports linear acceleration and angular velocity in three axes. Higher-end units also report magnetic field (a 9-axis or "9-DoF" IMU — DoF = Degrees of Freedom, one per measured axis) and run on-chip sensor fusion to output orientation directly.
+Reports acceleration (m/s²) and angular rate (rad/s) in three axes at 100–1000 Hz, plus magnetic field on a 9-axis ("9-DoF") unit. Many modern chips also fuse the streams on-chip and output orientation directly as a quaternion. Outputs `sensor_msgs/Imu` and `sensor_msgs/MagneticField`. Drivers: `bno055`, `ros2_mpu6050_driver`, `xsens_mti_ros2_driver`.
 
-**Senses.**
-- **Accelerometer** — a tiny proof-mass on silicon springs; the springs deflect under acceleration (including the constant pull of gravity)
-- **Gyroscope** — a vibrating MEMS (Micro-Electro-Mechanical System) structure. When the chip rotates, the Coriolis force — the same apparent sideways force you'd feel walking outward on a spinning merry-go-round — shifts the vibration. Sensing the shift gives the rotation rate.
-- **Magnetometer** — measures Earth's magnetic field (it acts as a compass). Implementation uses Hall effect or magnetoresistance — the specific technique doesn't matter for usage.
-
-A 6-axis IMU measures the three perpendicular linear axes (X, Y, Z) and three rotational axes (roll, pitch, yaw). A 9-axis adds three magnetometer axes for absolute heading.
+A 6-axis IMU measures three perpendicular linear axes (X, Y, Z) and three rotational axes (roll, pitch, yaw); a 9-axis adds three magnetometer axes for absolute heading.
 
 ![Roll, pitch, yaw — Wikimedia Commons (CC BY-SA 3.0)](assets/roll_pitch_yaw.svg)
 
-**Input.** 3.3 V power, an I2C or SPI clock line (the two common short-distance digital protocols microcontrollers use to talk to chips), and an optional interrupt pin that fires when new data is ready.
-
-**Output.** Three streams at 100–1000 Hz: acceleration (m/s²), angular rate (rad/s), and on 9-axis units the magnetic field (μT — microtesla). Fusion-on-chip units also output a *quaternion* directly — a compact 4-number way to represent a 3D rotation, which the driver typically converts to roll/pitch/yaw for display.
-
-**Integration.**
-- **Physical interface:** I2C (most hobby breakouts), SPI (faster), UART (industrial)
-- **ROS2:** `bno055` (Bosch BNO055), `ros2_mpu6050_driver`, `xsens_mti_ros2_driver`, `microstrain_inertial_driver` → `sensor_msgs/Imu` and `sensor_msgs/MagneticField`
-- **Non-ROS:** Bosch BNO055 driver libraries, InvenSense MotionLink, Xsens MT Software Suite, Adafruit CircuitPython libraries (one-liners for breakouts)
-
-**Limitations to watch out for.**
-- **Gyro drift.** Integrating angular velocity (rate of rotation) gives orientation. Any *bias* — a small constant error baked into the sensor's reading — becomes unbounded heading drift over time. Hobby units drift 1–10° per minute when stationary. Industrial units drift <0.1°/hour.
-- **Accel noise + bias.** Integrating acceleration twice to get position is *catastrophically* bad. Position estimate from accel alone diverges in seconds. Never do this without external aiding.
-- **Magnetometer interference.** Anything ferrous (motors, speakers, steel rebar in floors) warps the local magnetic field. Indoor heading from a magnetometer is often unreliable; calibrate in situ and don't trust it near actuators.
-- **Temperature sensitivity.** Bias drifts with temperature. Industrial IMUs include calibration tables; hobby units don't.
-- **Sample-rate mismatch.** If your control loop runs at 50 Hz and the IMU runs at 1000 Hz, you're either downsampling (losing info) or buffering (adding latency). Decide deliberately.
-- **"9-DoF" doesn't mean "9 reliable degrees."** Mag axis is much worse than accel and gyro indoors.
-
-### Why & how it works
-
-A MEMS gyro is a tiny silicon tuning fork vibrating at fixed frequency. When the substrate rotates, the Coriolis force pushes the tines sideways — proportional to angular velocity. Capacitive sensors detect the sideways shift, and you get a rate gyro on a chip that costs cents. The accelerometer is conceptually simpler: a small proof mass on silicon springs, with capacitive sensing of its deflection.
-
-The reason orientation drifts is integration. The gyro measures *rate*; orientation is the integral. Any bias in the rate (even 0.01°/s, which is excellent for hobby parts) accumulates into 0.6° of heading error per minute, 36° per hour. After an hour stationary your "heading" is meaningless.
-
-This is why every serious IMU is **fused with something else** — magnetometer (yaw reference), GNSS (position reference), wheel odom (velocity reference), or visual odometry (everything reference).
+**Limitations.**
+- **Gyro drift.** Integrating the rate of rotation gives orientation — and any small constant error (*bias*) in the reading becomes unbounded heading drift over time. Hobby chips drift 1–10°/min stationary; industrial units drift <0.1°/hour.
+- **Accel double-integration is catastrophic.** Position from acceleration alone diverges in seconds. Never use accel alone for position.
+- **Magnetometer interference.** Anything ferrous (motors, speakers, steel-reinforced floors) warps the local field; indoor heading is often unreliable.
+- **Temperature sensitivity.** Bias shifts with temperature. Industrial IMUs have calibration tables; hobby units don't.
+- **"9-DoF" doesn't mean "9 reliable degrees."** The mag axis is much worse than accel and gyro indoors.
 
 **Representative products.**
 
@@ -79,36 +56,20 @@ This is why every serious IMU is **fused with something else** — magnetometer 
 
 ## GNSS / GPS
 
-**What it does.** Reports the antenna's position on Earth (latitude, longitude, altitude) by triangulating from satellites.
+Reports the antenna's (latitude, longitude, altitude) by triangulating from 4+ satellites. Outputs `sensor_msgs/NavSatFix`. Drivers: `nmea_navsat_driver` for any NMEA receiver, `ublox_gps` for u-blox modules.
 
-**Senses.** Time-of-arrival of microwave signals from 4 or more orbiting satellites. The receiver solves for its own (x, y, z) position plus *clock bias* — its own clock's offset from true GPS time — all four unknowns together.
+Two flavors:
+- **Standard GNSS** — ±2–5 m, 1–10 Hz.
+- **RTK GNSS** — ±2 cm, but only with a nearby base station or an NTRIP correction service (an internet stream of corrections from a known-location base).
 
-**Input.** 3.3 V power, antenna (active patch or external).
-
-**Output.**
-- **Standard GNSS:** position to ±2–5 m, updated 1–10 Hz. Sent as NMEA strings (a standard text format used by virtually every GPS device) or vendor-specific binary protocols.
-- **RTK GNSS:** position to ±2 cm — but only with a nearby base station (or an NTRIP service — Networked Transport of RTCM via Internet Protocol; in plain English, an internet service that streams the correction data needed for RTK)
-- **Multi-constellation** (GPS = US, GLONASS = Russia, Galileo = EU, BeiDou = China) — using all four satellite networks at once helps when buildings block half the sky
-
-**Integration.**
-- **Physical interface:** UART (NMEA), USB, I2C on small modules; some industrial units use Ethernet
-- **ROS2:** `nmea_navsat_driver` (any NMEA receiver), `ublox_dgnss` / `ublox_gps` for u-blox modules → `sensor_msgs/NavSatFix`, `sensor_msgs/TimeReference`
-- **Non-ROS:** u-blox u-center (config + visualization), `gpsd` on Linux, RTKLIB (open-source RTK processing)
-
-**Limitations to watch out for.**
-- **No indoor coverage.** Walls block GHz signals. Inside a building, GPS is dead.
-- **Urban canyons.** Tall buildings reflect signals, giving you "multipath" — position skitters by 10–50 m.
-- **Tree cover, weather.** Forests reduce accuracy 2–5×.
-- **Cold start time.** First fix from power-on can take 30 seconds to several minutes if the receiver doesn't have recent *almanac data* — a list of where each satellite should be at any given time.
-- **RTK needs a base station.** Either yours, NTRIP from a public network, or a paid commercial service. A standalone "RTK rover" with no base is just a normal receiver.
-- **Antenna placement matters more than people expect.** A patch antenna under your robot's metal chassis sees 30% of the sky and performs accordingly.
-- **GPS time ≠ wall-clock time.** Be careful when fusing — GPS uses its own *epoch* (start-of-time reference, currently set in 1980); your computer uses UTC plus a leap-second table. The two are usually a few seconds apart.
-
-### Why & how it works
-
-Each satellite broadcasts its own ID and the time the signal left. The receiver measures arrival time, multiplies by *c*, and gets the distance to that satellite. Four distances pin down the receiver's (x, y, z, time-bias). The math wants four satellites; in practice, 8+ are usually visible, and the extras give redundancy and better geometry.
-
-RTK ("Real-Time Kinematic") works by having a second receiver — a base station — at a *known* location nearby. The base sees the same satellites and computes its own error. Since both receivers see the same atmosphere, the rover can subtract the base's error in real time, going from ±3 m to ±2 cm.
+**Limitations.**
+- **No indoor coverage.** Walls block GHz signals.
+- **Urban canyons.** Tall buildings reflect signals (*multipath*) — position skitters by 10–50 m.
+- **Tree cover, weather.** Forests cut accuracy 2–5×.
+- **Cold start.** First fix from power-on can take 30 s to several minutes.
+- **RTK needs a base station.** A standalone "RTK rover" with no base is just a normal receiver.
+- **Antenna placement.** A patch antenna under your robot's metal chassis sees 30% of the sky and performs accordingly.
+- **GPS time ≠ wall-clock time.** GPS has its own epoch; your computer uses UTC. The two are usually a few seconds apart — careful when fusing timestamps.
 
 **Representative products.**
 
@@ -128,65 +89,33 @@ RTK ("Real-Time Kinematic") works by having a second receiver — a base station
 
 ## Wheel odometry
 
-**What it does.** Counts wheel rotations and converts to estimated robot travel.
+Counts wheel rotations (via encoders on the motor shaft) and converts them to estimated robot pose (x, y, θ) using the platform's kinematic model. Outputs `nav_msgs/Odometry` plus the `odom` → `base_link` TF — published by the motor controller node (`ros2_control` diff-drive controller, `roboclaw_driver`, etc.). Effectively free if you already have wheels and encoders.
 
-**Senses.** Rotations of a wheel — measured by an *encoder*, a small sensor mounted on the motor shaft or wheel axle that counts how many fractions of a turn the wheel has made. Not really a separate sensor — usually a property of the actuator stack.
-
-**Input.** Encoder pulses (digital), motor controller usually does the counting.
-
-**Output.** Distance traveled per wheel → robot pose (x, y, θ) via the platform's *kinematic model* (the geometry that converts wheel motion into robot motion). For a *differential-drive* robot (two independently-driven wheels, like a Roomba): average the two wheel velocities to get linear velocity; subtract them and divide by the wheelbase to get angular velocity; integrate to get the pose. *Ackermann* steering (car-like — a single rotating front axle) and *omnidirectional* bases (e.g., mecanum wheels that can move in any direction) use different formulas.
-
-**Integration.**
-- **Physical interface:** Quadrature encoder signals (digital), or absolute encoder (SPI/I2C/SSI). Read by motor controller or microcontroller, often relayed to the host over USB/UART/CAN.
-- **ROS2:** A motor-controller node (e.g., `ros2_control` differential drive controller, `roboclaw_driver`, `odrive_ros2_control`) → `nav_msgs/Odometry` and a TF transform from `odom` to `base_link`
-- **Non-ROS:** Counted in firmware on the motor controller; exposed to host as a register read
-
-**Limitations to watch out for.**
-- **Wheel slip.** Polished floors, gravel, tight turns, sudden acceleration — anything that breaks contact between tire and ground adds a permanent error.
-- **Wheel diameter drift.** Tire wear, inflation, weight loading change the effective diameter by a few percent. Over time, miles add up to meters of error.
-- **Differential-drive yaw error.** A 1% wheel-circumference mismatch between left and right wheels causes ~6° per meter of heading error. Calibrate.
-- **No absolute reference.** Pure wheel odom is dead reckoning. Errors only ever accumulate; they never self-correct.
-- **It's not really 6-DoF.** Wheel odom gives you (x, y, θ) on a plane. If the robot's pitching over a bump, the planar projection of motion is wrong.
-
-**Pick when:** you have wheels and motor encoders. This is essentially free — every wheeled robot publishes odometry. The interesting question isn't *whether* to use it, but *how to fuse it* with IMU and GNSS, which is the next section.
+**Limitations.**
+- **Wheel slip.** Polished floors, gravel, tight turns, sudden acceleration — anything that breaks tire-to-ground contact adds permanent error.
+- **Wheel diameter drift.** Tire wear and inflation change effective diameter by a few percent; miles of driving turn into meters of error.
+- **Differential-drive yaw error.** A 1% wheel-circumference mismatch causes ~6° of heading error per meter. Calibrate.
+- **No absolute reference.** Pure dead reckoning. Errors only grow — they never self-correct.
+- **It's 2D only.** If the robot pitches over a bump, the planar projection of motion is wrong.
 
 ---
 
-## How they fuse — the dead-reckoning trio
+## How they fuse
 
-This is the payoff. Each sensor fails in a *different* dimension:
+Each sensor fails differently — IMU drifts in time (seconds for position, minutes for heading), GNSS skitters in space (multipath, geometry), wheel odom accumulates error with distance. The standard combine is an **Extended Kalman Filter (EKF)** — an algorithm that maintains a best-guess state plus uncertainty and updates both whenever a new measurement arrives.
 
-| Sensor | Drifts in | Time-to-divergence | Bounded by |
-|---|---|---|---|
-| IMU | time (orientation), seconds (position) | seconds | nothing (open-loop integration) |
-| GNSS | space (multipath, geometry) | always present | satellite geometry |
-| Wheel odom | wheel-slip events | accumulates with distance | nothing |
-
-The standard fusion is an **Extended Kalman Filter (EKF)** — an algorithm that maintains a best-estimate state plus uncertainty, and updates both whenever a new measurement arrives. It runs all three sensors through one model. Conceptually:
-
-1. **Predict** the robot's next state using IMU + wheel odom (these are fast, low-latency)
-2. **Correct** the prediction whenever a GNSS measurement arrives (this is slow, but absolute)
+The shape:
+1. **Predict** the next state from IMU + wheel odom (fast, low-latency)
+2. **Correct** with GNSS when it arrives (slow, but absolute)
 3. Repeat at 50–200 Hz
 
-In ROS2 this is almost always [`robot_localization`](http://docs.ros.org/en/noetic/api/robot_localization/html/) — a community-maintained EKF/UKF node that subscribes to any combination of `sensor_msgs/Imu`, `nav_msgs/Odometry`, `sensor_msgs/NavSatFix`, and publishes a fused `nav_msgs/Odometry` on a unified TF tree. You configure it with a YAML matrix specifying which fields of which input topics are trusted.
+In ROS2 this is almost always [`robot_localization`](http://docs.ros.org/en/noetic/api/robot_localization/html/) — a community-maintained EKF/UKF node. Wire `sensor_msgs/Imu`, `nav_msgs/Odometry`, `sensor_msgs/NavSatFix` into it; get a fused `nav_msgs/Odometry` out. Configure with a YAML matrix saying which input fields to trust.
 
-The headline outputs:
-- **`odom` → `base_link`** — continuous, smooth, but drifts over hours (good for control loops)
-- **`map` → `odom`** — corrected by GNSS or visual landmarks, jumps when corrections arrive (good for navigation goals)
+The two output frames:
+- **`odom` → `base_link`** — continuous and smooth, drifts over hours. Use for control loops.
+- **`map` → `odom`** — corrected by absolute references; jumps when corrections arrive. Use for navigation goals.
 
-This two-frame setup is the standard ROS2 convention (REP-105). Your control loop reads from `odom`; your global plan reads from `map`.
-
----
-
-## How to choose
-
-- **Indoor robot, no GPS coverage:** IMU + wheel odom + (eventually) visual odometry or LiDAR-based SLAM. Skip GNSS entirely.
-- **Outdoor robot, m-level accuracy OK:** consumer GPS (NEO-M9N) + IMU + wheel odom. Fuse with `robot_localization`.
-- **Outdoor robot, cm-level accuracy needed:** RTK GPS (ZED-F9P or Emlid) + industrial IMU + wheel odom.
-- **Drone:** industrial IMU + RTK GPS + barometer. Wheel odom not applicable.
-- **Robot arm (no mobile base):** IMU only matters if the base moves. Joint encoders on the arm are different — those are in a future actuators course.
-- **Underwater / GPS-denied:** IMU + DVL (Doppler velocity log) + acoustic positioning. Out of scope here.
-- **You just need orientation, not position:** a 9-DoF IMU with on-chip fusion (BNO055, BNO085) is the easiest path.
+This is the standard ROS2 convention (REP-105).
 
 ---
 
